@@ -270,6 +270,7 @@ type TestFunctionInfo struct {
 	MatchConfidence   float64
 	MatchType         MatchType
 	HelperUsed        string // Name of helper function used (e.g., "resource.Test", "AccTestHelper")
+	HasCheckDestroy   bool   // HasCheckDestroy tracks presence of CheckDestroy in resource.TestCase
 }
 
 // TestStepInfo represents a single step within a resource.TestCase.
@@ -286,6 +287,7 @@ type TestStepInfo struct {
 	ExpectError        bool
 	IsUpdateStepFlag   bool
 	PreviousConfigHash string
+	HasPlanCheck       bool // HasPlanCheck tracks presence of ConfigPlanChecks
 }
 
 // IsUpdateStep returns true if this is not the first step and has a config.

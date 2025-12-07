@@ -154,13 +154,15 @@ func ParseTestFileWithConfig(file *ast.File, fset *token.FileSet, filePath strin
 			return true
 		}
 
+		steps, hasCheckDestroy := extractTestSteps(funcDecl.Body)
 		testFunc := TestFunctionInfo{
 			Name:             funcDecl.Name.Name,
 			FilePath:         filePath,
 			FunctionPos:      funcDecl.Pos(),
 			UsesResourceTest: true,
-			TestSteps:        extractTestSteps(funcDecl.Body),
+			TestSteps:        steps,
 			HelperUsed:       detectHelperUsed(funcDecl.Body, config.LocalHelpers),
+			HasCheckDestroy:  hasCheckDestroy,
 		}
 
 		for _, step := range testFunc.TestSteps {
@@ -564,11 +566,13 @@ func detectHelperUsed(body *ast.BlockStmt, localHelpers []LocalHelper) string {
 	return helperUsed
 }
 
-// extractTestSteps extracts test step information from a test function body
-func extractTestSteps(body *ast.BlockStmt) []TestStepInfo {
+// extractTestSteps extracts test step information from a test function body.
+// Returns the list of test steps and a boolean indicating whether CheckDestroy was found.
+func extractTestSteps(body *ast.BlockStmt) ([]TestStepInfo, bool) {
 	var steps []TestStepInfo
+	hasCheckDestroy := false
 	if body == nil {
-		return steps
+		return steps, hasCheckDestroy
 	}
 	stepNumber := 0
 
@@ -582,7 +586,7 @@ func extractTestSteps(body *ast.BlockStmt) []TestStepInfo {
 			if ident, ok := sel.X.(*ast.Ident); ok {
 				if ident.Name == "resource" && (sel.Sel.Name == "Test" || sel.Sel.Name == "ParallelTest") {
 					if len(call.Args) >= 2 {
-						steps = extractStepsFromTestCase(call.Args[1], &stepNumber)
+						steps, hasCheckDestroy = extractStepsFromTestCase(call.Args[1], &stepNumber)
 					}
 					return false
 				}
@@ -591,16 +595,18 @@ func extractTestSteps(body *ast.BlockStmt) []TestStepInfo {
 		return true
 	})
 
-	return steps
+	return steps, hasCheckDestroy
 }
 
-// extractStepsFromTestCase extracts steps from a resource.TestCase composite literal
-func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int) []TestStepInfo {
+// extractStepsFromTestCase extracts steps from a resource.TestCase composite literal.
+// Returns the list of test steps and a boolean indicating whether CheckDestroy was found.
+func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int) ([]TestStepInfo, bool) {
 	var steps []TestStepInfo
+	hasCheckDestroy := false
 
 	compLit, ok := testCaseExpr.(*ast.CompositeLit)
 	if !ok {
-		return steps
+		return steps, hasCheckDestroy
 	}
 
 	for _, elt := range compLit.Elts {
@@ -610,20 +616,25 @@ func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int) []TestStep
 		}
 
 		key, ok := kv.Key.(*ast.Ident)
-		if !ok || key.Name != "Steps" {
-			continue
-		}
-
-		stepsLit, ok := kv.Value.(*ast.CompositeLit)
 		if !ok {
 			continue
 		}
 
-		// Parse each step with hash
-		for _, stepExpr := range stepsLit.Elts {
-			step := parseTestStepWithHash(stepExpr, *stepNumber)
-			steps = append(steps, step)
-			*stepNumber++
+		switch key.Name {
+		case "CheckDestroy":
+			hasCheckDestroy = true
+		case "Steps":
+			stepsLit, ok := kv.Value.(*ast.CompositeLit)
+			if !ok {
+				continue
+			}
+
+			// Parse each step with hash
+			for _, stepExpr := range stepsLit.Elts {
+				step := parseTestStepWithHash(stepExpr, *stepNumber)
+				steps = append(steps, step)
+				*stepNumber++
+			}
 		}
 	}
 
@@ -635,7 +646,7 @@ func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int) []TestStep
 		}
 	}
 
-	return steps
+	return steps, hasCheckDestroy
 }
 
 // parseTestStep parses a single TestStep composite literal (backward compatible)
@@ -686,6 +697,8 @@ func parseTestStepWithHash(stepExpr ast.Expr, stepNum int) TestStepInfo {
 			}
 		case "ExpectError":
 			step.ExpectError = true
+		case "ConfigPlanChecks":
+			step.HasPlanCheck = true
 		}
 	}
 
@@ -710,6 +723,26 @@ func extractCheckFunctions(checkExpr ast.Expr) []string {
 	})
 
 	return functions
+}
+
+// CheckHasSweepers scans a file for resource.AddTestSweepers calls.
+// This is typically found in TestMain or init() functions.
+func CheckHasSweepers(file *ast.File) bool {
+	found := false
+	ast.Inspect(file, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+				if ident, ok := sel.X.(*ast.Ident); ok {
+					if ident.Name == "resource" && sel.Sel.Name == "AddTestSweepers" {
+						found = true
+						return false
+					}
+				}
+			}
+		}
+		return true
+	})
+	return found
 }
 
 // Public API functions

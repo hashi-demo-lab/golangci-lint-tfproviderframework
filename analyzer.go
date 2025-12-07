@@ -82,6 +82,20 @@ var ErrorTestAnalyzer = &analysis.Analyzer{
 	Run:  runErrorTestAnalyzer,
 }
 
+// DriftCheckAnalyzer ensures test functions have CheckDestroy for drift detection.
+var DriftCheckAnalyzer = &analysis.Analyzer{
+	Name: "tfprovider-test-drift-check",
+	Doc:  "Checks that acceptance tests include CheckDestroy for drift detection.",
+	Run:  runDriftCheckAnalyzer,
+}
+
+// SweeperAnalyzer ensures packages have sweeper registrations for cleanup.
+var SweeperAnalyzer = &analysis.Analyzer{
+	Name: "tfprovider-test-sweepers",
+	Doc:  "Checks that packages have test sweeper registrations for cleanup.",
+	Run:  runSweeperAnalyzer,
+}
+
 // StateCheckAnalyzer validates that test steps include state validation check functions.
 var StateCheckAnalyzer = &analysis.Analyzer{
 	Name: "tfprovider-test-check-functions",
@@ -333,8 +347,8 @@ func runStateCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
 				continue
 			}
 
-			// Regular test steps with Config should have Check fields
-			if !step.HasCheck && step.HasConfig {
+			// Regular test steps with Config should have Check fields or Plan checks
+			if !step.HasCheck && !step.HasPlanCheck && step.HasConfig {
 				// Try to find the resource being tested from InferredResources
 				resourceContext := ""
 				if len(testFunc.InferredResources) > 0 {
@@ -347,13 +361,52 @@ func runStateCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
 					pos = testFunc.FunctionPos
 				}
 
-				msg := fmt.Sprintf("test step in %s%s has no state validation checks\n"+
-					"  Suggestion: Add Check: resource.ComposeTestCheckFunc(...) to verify state",
+				msg := fmt.Sprintf("test step in %s%s has no state validation checks or plan checks\n"+
+					"  Suggestion: Add Check: resource.ComposeTestCheckFunc(...) or ConfigPlanChecks to verify state",
 					testFunc.Name, resourceContext)
 
 				// Report at the step position
 				pass.Reportf(pos, "%s", msg)
 			}
+		}
+	}
+
+	return nil, nil
+}
+
+func runDriftCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
+	settings := DefaultSettings()
+	registry := getOrBuildRegistry(pass, settings)
+
+	// Check test functions for missing CheckDestroy
+	for _, testFunc := range registry.GetAllTestFunctions() {
+		if !testFunc.HasCheckDestroy {
+			pos := testFunc.FunctionPos
+			msg := fmt.Sprintf("test function %s missing CheckDestroy for drift detection\n"+
+				"  Suggestion: Add CheckDestroy: testAccCheckDestroy to resource.TestCase",
+				testFunc.Name)
+			pass.Reportf(pos, "%s", msg)
+		}
+	}
+
+	return nil, nil
+}
+
+func runSweeperAnalyzer(pass *analysis.Pass) (interface{}, error) {
+	// Check if any file in the package has sweeper registrations
+	hasSweepers := false
+	for _, file := range pass.Files {
+		if CheckHasSweepers(file) {
+			hasSweepers = true
+			break
+		}
+	}
+
+	if !hasSweepers {
+		// Report at package level (first file position)
+		if len(pass.Files) > 0 {
+			pass.Reportf(pass.Files[0].Pos(), "package has no test sweeper registrations\n"+
+				"  Suggestion: Add resource.AddTestSweepers() calls for cleanup")
 		}
 	}
 
