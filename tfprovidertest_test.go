@@ -2,13 +2,13 @@ package tfprovidertest_test
 
 import (
 	"fmt"
+	"go/parser"
+	"go/token"
 	"testing"
 
 	tfprovidertest "github.com/example/tfprovidertest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	// Note: analysistest will be imported when integration tests are enabled
-	// "golang.org/x/tools/go/analysis/analysistest"
 )
 
 // T006: Test for Settings defaults
@@ -60,139 +60,236 @@ func TestResourceRegistry_Operations(t *testing.T) {
 // T008: Test for AST resource detection
 func TestAST_ResourceDetection(t *testing.T) {
 	t.Run("should detect terraform-plugin-framework resources", func(t *testing.T) {
-		t.Skip("AST parser not yet implemented")
+		sourceCode := `
+package provider
 
-		// Expected behavior:
-		// sourceCode := `
-		// package provider
-		//
-		// import "github.com/hashicorp/terraform-plugin-framework/resource/schema"
-		//
-		// type WidgetResource struct{}
-		//
-		// func (r *WidgetResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
-		//     resp.Schema = schema.Schema{
-		//         Attributes: map[string]schema.Attribute{
-		//             "name": schema.StringAttribute{Required: true},
-		//         },
-		//     }
-		// }
-		// `
-		//
-		// resources := parseResources(sourceCode)
-		// require.Len(t, resources, 1)
-		// assert.Equal(t, "widget", resources[0].Name)
-		// assert.False(t, resources[0].IsDataSource)
+import (
+	"context"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+)
+
+type WidgetResource struct{}
+
+func (r *WidgetResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"name": schema.StringAttribute{Required: true},
+		},
+	}
+}
+`
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "resource_widget.go", sourceCode, parser.ParseComments)
+		require.NoError(t, err)
+
+		resources := tfprovidertest.ParseResources(file, fset, "resource_widget.go")
+		require.Len(t, resources, 1)
+		assert.Equal(t, "widget", resources[0].Name)
+		assert.False(t, resources[0].IsDataSource)
+	})
+
+	t.Run("should detect resources with multiple attributes", func(t *testing.T) {
+		sourceCode := `
+package provider
+
+import (
+	"context"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+)
+
+type ServerResource struct{}
+
+func (r *ServerResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{Computed: true},
+			"name": schema.StringAttribute{Required: true},
+			"description": schema.StringAttribute{Optional: true},
+		},
+	}
+}
+`
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "resource_server.go", sourceCode, parser.ParseComments)
+		require.NoError(t, err)
+
+		resources := tfprovidertest.ParseResources(file, fset, "resource_server.go")
+		require.Len(t, resources, 1)
+		assert.Equal(t, "server", resources[0].Name)
+		assert.False(t, resources[0].IsDataSource)
+		assert.Len(t, resources[0].Attributes, 3)
 	})
 }
 
 // T009: Test for AST data source detection
 func TestAST_DataSourceDetection(t *testing.T) {
 	t.Run("should detect terraform-plugin-framework data sources", func(t *testing.T) {
-		t.Skip("AST parser not yet implemented")
+		sourceCode := `
+package provider
 
-		// Expected behavior:
-		// sourceCode := `
-		// package provider
-		//
-		// import "github.com/hashicorp/terraform-plugin-framework/datasource/schema"
-		//
-		// type AccountDataSource struct{}
-		//
-		// func (d *AccountDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-		//     resp.Schema = schema.Schema{
-		//         Attributes: map[string]schema.Attribute{
-		//             "id": schema.StringAttribute{Computed: true},
-		//         },
-		//     }
-		// }
-		// `
-		//
-		// dataSources := parseDataSources(sourceCode)
-		// require.Len(t, dataSources, 1)
-		// assert.Equal(t, "account", dataSources[0].Name)
-		// assert.True(t, dataSources[0].IsDataSource)
+import (
+	"context"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+)
+
+type AccountDataSource struct{}
+
+func (d *AccountDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resp.Schema = schema.Schema{
+		Attributes: map[string]schema.Attribute{
+			"id": schema.StringAttribute{Computed: true},
+		},
+	}
+}
+`
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "data_source_account.go", sourceCode, parser.ParseComments)
+		require.NoError(t, err)
+
+		resources := tfprovidertest.ParseResources(file, fset, "data_source_account.go")
+		require.Len(t, resources, 1)
+		assert.Equal(t, "account", resources[0].Name)
+		assert.True(t, resources[0].IsDataSource)
 	})
 }
 
 // T010: Test for test file parsing
 func TestAST_TestFileParsing(t *testing.T) {
 	t.Run("should parse TestAcc functions from test files", func(t *testing.T) {
-		t.Skip("Test file parser not yet implemented")
+		sourceCode := `
+package provider
 
-		// Expected behavior:
-		// sourceCode := `
-		// package provider
-		//
-		// import (
-		//     "testing"
-		//     "github.com/hashicorp/terraform-plugin-testing/helper/resource"
-		// )
-		//
-		// func TestAccResourceWidget_basic(t *testing.T) {
-		//     resource.Test(t, resource.TestCase{
-		//         Steps: []resource.TestStep{
-		//             {
-		//                 Config: "resource \"example_widget\" \"test\" { name = \"example\" }",
-		//                 Check: resource.ComposeTestCheckFunc(
-		//                     resource.TestCheckResourceAttr("example_widget.test", "name", "example"),
-		//                 ),
-		//             },
-		//         },
-		//     })
-		// }
-		// `
-		//
-		// testFile := parseTestFile(sourceCode)
-		// require.NotNil(t, testFile)
-		// assert.Equal(t, "widget", testFile.ResourceName)
-		// require.Len(t, testFile.TestFunctions, 1)
-		// assert.Equal(t, "TestAccResourceWidget_basic", testFile.TestFunctions[0].Name)
-		// assert.True(t, testFile.TestFunctions[0].UsesResourceTest)
+import (
+	"testing"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func TestAccResourceWidget_basic(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{
+				Config: "resource example_widget test { name = example }",
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("example_widget.test", "name", "example"),
+				),
+			},
+		},
+	})
+}
+`
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "resource_widget_test.go", sourceCode, parser.ParseComments)
+		require.NoError(t, err)
+
+		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_widget_test.go")
+		require.NotNil(t, testFile)
+		assert.Equal(t, "widget", testFile.ResourceName)
+		require.Len(t, testFile.TestFunctions, 1)
+		assert.Equal(t, "TestAccResourceWidget_basic", testFile.TestFunctions[0].Name)
+		assert.True(t, testFile.TestFunctions[0].UsesResourceTest)
 	})
 
 	t.Run("should detect multi-step tests for update coverage", func(t *testing.T) {
-		t.Skip("Test file parser not yet implemented")
+		sourceCode := `
+package provider
 
-		// Expected behavior:
-		// sourceCode := `
-		// func TestAccResourceConfig_update(t *testing.T) {
-		//     resource.Test(t, resource.TestCase{
-		//         Steps: []resource.TestStep{
-		//             {Config: "step1"},
-		//             {Config: "step2"},
-		//         },
-		//     })
-		// }
-		// `
-		//
-		// testFile := parseTestFile(sourceCode)
-		// testFunc := testFile.TestFunctions[0]
-		// assert.Len(t, testFunc.TestSteps, 2)
+import (
+	"testing"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func TestAccResourceConfig_update(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{Config: "step1"},
+			{Config: "step2"},
+		},
+	})
+}
+`
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "resource_config_test.go", sourceCode, parser.ParseComments)
+		require.NoError(t, err)
+
+		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_config_test.go")
+		require.NotNil(t, testFile)
+		require.Len(t, testFile.TestFunctions, 1)
+		testFunc := testFile.TestFunctions[0]
+		assert.Len(t, testFunc.TestSteps, 2)
+		assert.True(t, testFunc.TestSteps[0].HasConfig)
+		assert.True(t, testFunc.TestSteps[1].HasConfig)
 	})
 
 	t.Run("should detect import test steps", func(t *testing.T) {
-		t.Skip("Test file parser not yet implemented")
+		sourceCode := `
+package provider
 
-		// Expected behavior:
-		// sourceCode := `
-		// func TestAccResourceServer_import(t *testing.T) {
-		//     resource.Test(t, resource.TestCase{
-		//         Steps: []resource.TestStep{
-		//             {
-		//                 ResourceName:      "example_server.test",
-		//                 ImportState:       true,
-		//                 ImportStateVerify: true,
-		//             },
-		//         },
-		//     })
-		// }
-		// `
-		//
-		// testFile := parseTestFile(sourceCode)
-		// testStep := testFile.TestFunctions[0].TestSteps[0]
-		// assert.True(t, testStep.ImportState)
-		// assert.True(t, testStep.ImportStateVerify)
+import (
+	"testing"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func TestAccResourceServer_import(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{
+				ResourceName:      "example_server.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+`
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "resource_server_test.go", sourceCode, parser.ParseComments)
+		require.NoError(t, err)
+
+		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_server_test.go")
+		require.NotNil(t, testFile)
+		require.Len(t, testFile.TestFunctions, 1)
+		require.Len(t, testFile.TestFunctions[0].TestSteps, 1)
+		testStep := testFile.TestFunctions[0].TestSteps[0]
+		assert.True(t, testStep.ImportState)
+		assert.True(t, testStep.ImportStateVerify)
+		assert.True(t, testFile.TestFunctions[0].HasImportStep)
+	})
+
+	t.Run("should detect error test steps with ExpectError", func(t *testing.T) {
+		sourceCode := `
+package provider
+
+import (
+	"regexp"
+	"testing"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func TestAccResourceValidated_error(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{
+				Config:      "resource example_validated test { email = invalid }",
+				ExpectError: regexp.MustCompile("invalid email"),
+			},
+		},
+	})
+}
+`
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "resource_validated_test.go", sourceCode, parser.ParseComments)
+		require.NoError(t, err)
+
+		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_validated_test.go")
+		require.NotNil(t, testFile)
+		require.Len(t, testFile.TestFunctions, 1)
+		require.Len(t, testFile.TestFunctions[0].TestSteps, 1)
+		testStep := testFile.TestFunctions[0].TestSteps[0]
+		assert.True(t, testStep.ExpectError)
+		assert.True(t, testFile.TestFunctions[0].HasErrorCase)
 	})
 }
 
@@ -303,40 +400,113 @@ func TestPlugin_Settings(t *testing.T) {
 	})
 }
 
-// Integration tests using analysistest.Run() for all 5 analyzers
-func TestBasicTestAnalyzer_Integration(t *testing.T) {
-	t.Skip("TODO: Create testdata directories for analysistest")
-	// testdata := analysistest.TestData()
-	// analysistest.Run(t, testdata, tfprovidertest.BasicTestAnalyzer, "testlintdata/basic_missing")
-	// analysistest.Run(t, testdata, tfprovidertest.BasicTestAnalyzer, "testlintdata/basic_passing")
+// T300: Test for custom test helpers
+func TestCustomTestHelpers(t *testing.T) {
+	t.Run("should detect resource.ParallelTest as valid test", func(t *testing.T) {
+		sourceCode := `
+package provider
+
+import (
+	"testing"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func TestAccWidget_parallel(t *testing.T) {
+	resource.ParallelTest(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{Config: "config"},
+		},
+	})
+}
+`
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "resource_widget_test.go", sourceCode, parser.ParseComments)
+		require.NoError(t, err)
+
+		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_widget_test.go")
+		require.NotNil(t, testFile)
+		require.Len(t, testFile.TestFunctions, 1)
+		assert.Equal(t, "TestAccWidget_parallel", testFile.TestFunctions[0].Name)
+		assert.True(t, testFile.TestFunctions[0].UsesResourceTest)
+	})
+
+	t.Run("should detect custom test helpers when configured", func(t *testing.T) {
+		sourceCode := `
+package provider
+
+import (
+	"testing"
+	"mycompany/testhelper"
+)
+
+func TestAccWidget_custom(t *testing.T) {
+	testhelper.AccTest(t, testhelper.TestCase{
+		Steps: []testhelper.TestStep{
+			{Config: "config"},
+		},
+	})
+}
+`
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "resource_widget_test.go", sourceCode, parser.ParseComments)
+		require.NoError(t, err)
+
+		// Without custom helpers, should not find test
+		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_widget_test.go")
+		assert.Nil(t, testFile) // No test found without custom helper
+
+		// With custom helpers, should find test
+		testFile = tfprovidertest.ParseTestFileWithHelpers(file, fset, "resource_widget_test.go", []string{"testhelper.AccTest"})
+		require.NotNil(t, testFile)
+		require.Len(t, testFile.TestFunctions, 1)
+		assert.Equal(t, "TestAccWidget_custom", testFile.TestFunctions[0].Name)
+	})
 }
 
-func TestUpdateTestAnalyzer_Integration(t *testing.T) {
-	t.Skip("TODO: Create testdata directories for analysistest")
-	// testdata := analysistest.TestData()
-	// analysistest.Run(t, testdata, tfprovidertest.UpdateTestAnalyzer, "testlintdata/update_missing")
-	// analysistest.Run(t, testdata, tfprovidertest.UpdateTestAnalyzer, "testlintdata/update_passing")
+// T301: Test for extractResourceNameFromTestFunc with various patterns
+func TestExtractResourceNameFromTestFunc_AdditionalPatterns(t *testing.T) {
+	t.Run("should extract resource name from various test patterns", func(t *testing.T) {
+		tests := []struct {
+			funcName string
+			expected string
+		}{
+			// Standard patterns
+			{"TestAccWidget_basic", "widget"},
+			{"TestAccServer_create", "server"},
+			{"TestAccDataSourceHttp_basic", "http"},
+			// With underscore in resource name
+			{"TestAccPrivateKey_RSA", "private_key"},
+			// Single word resource
+			{"TestAccWidget", "widget"},
+			// Empty after prefix should return empty
+			{"TestAcc", ""},
+			// Just Test prefix with uppercase letter after
+			{"TestWidget_basic", "widget"},
+		}
+
+		for _, tc := range tests {
+			result := tfprovidertest.ExtractResourceNameFromTestFunc(tc.funcName)
+			assert.Equal(t, tc.expected, result, "funcName: %s", tc.funcName)
+		}
+	})
 }
 
-func TestImportTestAnalyzer_Integration(t *testing.T) {
-	t.Skip("TODO: Create testdata directories for analysistest")
-	// testdata := analysistest.TestData()
-	// analysistest.Run(t, testdata, tfprovidertest.ImportTestAnalyzer, "testlintdata/import_missing")
-	// analysistest.Run(t, testdata, tfprovidertest.ImportTestAnalyzer, "testlintdata/import_passing")
-}
+// T302: Test for Settings.CustomTestHelpers
+func TestSettings_CustomTestHelpers(t *testing.T) {
+	t.Run("default settings should have empty custom test helpers", func(t *testing.T) {
+		settings := tfprovidertest.DefaultSettings()
+		assert.Empty(t, settings.CustomTestHelpers)
+	})
 
-func TestErrorTestAnalyzer_Integration(t *testing.T) {
-	t.Skip("TODO: Create testdata directories for analysistest")
-	// testdata := analysistest.TestData()
-	// analysistest.Run(t, testdata, tfprovidertest.ErrorTestAnalyzer, "testlintdata/error_missing")
-	// analysistest.Run(t, testdata, tfprovidertest.ErrorTestAnalyzer, "testlintdata/error_passing")
-}
+	t.Run("CustomTestHelpers can be set via settings", func(t *testing.T) {
+		settings := map[string]interface{}{
+			"CustomTestHelpers": []string{"myhelper.Test", "otherhelper.Run"},
+		}
 
-func TestStateCheckAnalyzer_Integration(t *testing.T) {
-	t.Skip("TODO: Create testdata directories for analysistest")
-	// testdata := analysistest.TestData()
-	// analysistest.Run(t, testdata, tfprovidertest.StateCheckAnalyzer, "testlintdata/statecheck_missing")
-	// analysistest.Run(t, testdata, tfprovidertest.StateCheckAnalyzer, "testlintdata/statecheck_passing")
+		plugin, err := tfprovidertest.New(settings)
+		require.NoError(t, err)
+		require.NotNil(t, plugin)
+	})
 }
 
 // T091: Performance benchmarks

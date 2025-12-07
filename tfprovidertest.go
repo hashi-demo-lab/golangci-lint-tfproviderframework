@@ -53,6 +53,10 @@ type Settings struct {
 	// tested if a corresponding test file exists with any Test* functions, even if
 	// the function names don't follow the standard naming conventions.
 	EnableFileBasedMatching bool `yaml:"enable-file-based-matching"`
+	// CustomTestHelpers defines additional test helper function names that wrap resource.Test()
+	// By default, only resource.Test() is recognized. Add custom wrappers here.
+	// Example: ["testhelper.AccTest", "internal.RunAccTest"]
+	CustomTestHelpers []string `yaml:"custom-test-helpers"`
 }
 
 // DefaultSettings returns the default configuration with all analyzers enabled.
@@ -73,6 +77,7 @@ func DefaultSettings() Settings {
 		TestNamePatterns:        []string{}, // Empty means use all default patterns
 		Verbose:                 false, // Verbose mode disabled by default
 		EnableFileBasedMatching: true,  // Enable file-based matching by default
+		CustomTestHelpers:       []string{}, // Empty means only resource.Test() is recognized
 	}
 }
 
@@ -130,6 +135,26 @@ func CamelCaseToSnakeCaseExported(s string) string {
 // ExtractResourceNameFromTestFunc is an exported version of extractResourceNameFromTestFunc for testing
 func ExtractResourceNameFromTestFunc(funcName string) string {
 	return extractResourceNameFromTestFunc(funcName)
+}
+
+// ParseResources is an exported version of parseResources for testing
+func ParseResources(file *ast.File, fset *token.FileSet, filePath string) []*ResourceInfo {
+	return parseResources(file, fset, filePath)
+}
+
+// ParseTestFile is an exported version of parseTestFile for testing
+func ParseTestFile(file *ast.File, fset *token.FileSet, filePath string) *TestFileInfo {
+	return parseTestFile(file, fset, filePath)
+}
+
+// ParseTestFileWithHelpers is an exported version of parseTestFileWithHelpers for testing
+func ParseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string) *TestFileInfo {
+	return parseTestFileWithHelpers(file, fset, filePath, customHelpers)
+}
+
+// CheckUsesResourceTestWithHelpers is an exported version for testing
+func CheckUsesResourceTestWithHelpers(body *ast.BlockStmt, customHelpers []string) bool {
+	return checkUsesResourceTestWithHelpers(body, customHelpers)
 }
 
 // HasMatchingTestFile checks if a resource has a matching test file with Test* functions.
@@ -854,7 +879,15 @@ func hasImportStateMethod(file *ast.File, resourceName string) bool {
 }
 
 // T016: Test file parser - now supports multiple naming conventions
+// parseTestFile parses a test file and extracts test function information.
+// It delegates to parseTestFileWithHelpers with no custom helpers.
 func parseTestFile(file *ast.File, fset *token.FileSet, filePath string) *TestFileInfo {
+	return parseTestFileWithHelpers(file, fset, filePath, nil)
+}
+
+// parseTestFileWithHelpers parses a test file with support for custom test helpers.
+// customHelpers specifies additional test helper function names that wrap resource.Test().
+func parseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string) *TestFileInfo {
 	var testFuncs []TestFunctionInfo
 	var resourceName string
 	isDataSource := false
@@ -872,6 +905,17 @@ func parseTestFile(file *ast.File, fset *token.FileSet, filePath string) *TestFi
 		} else if strings.HasPrefix(nameWithoutTest, "ephemeral_") {
 			// Handle ephemeral resources (e.g., ephemeral_private_key)
 			resourceName = strings.TrimPrefix(nameWithoutTest, "ephemeral_")
+		} else if strings.HasSuffix(nameWithoutTest, "_resource") {
+			// Handle reversed naming: group_resource_test.go -> group
+			resourceName = strings.TrimSuffix(nameWithoutTest, "_resource")
+		} else if strings.HasSuffix(nameWithoutTest, "_data_source") {
+			// Handle reversed naming: inventory_data_source_test.go -> inventory
+			resourceName = strings.TrimSuffix(nameWithoutTest, "_data_source")
+			isDataSource = true
+		} else if strings.HasSuffix(nameWithoutTest, "_datasource") {
+			// Handle reversed naming: group_datasource_test.go -> group
+			resourceName = strings.TrimSuffix(nameWithoutTest, "_datasource")
+			isDataSource = true
 		}
 	}
 
@@ -899,8 +943,8 @@ func parseTestFile(file *ast.File, fset *token.FileSet, filePath string) *TestFi
 			isDataSource = true
 		}
 
-		// Check if test uses resource.Test()
-		usesResourceTest := checkUsesResourceTest(funcDecl.Body)
+		// Check if test uses resource.Test() or custom test helpers
+		usesResourceTest := checkUsesResourceTestWithHelpers(funcDecl.Body, customHelpers)
 		if !usesResourceTest {
 			return true
 		}
@@ -938,7 +982,8 @@ func parseTestFile(file *ast.File, fset *token.FileSet, filePath string) *TestFi
 	}
 }
 
-// extractResourceNameFromTestFunc extracts the resource name from various test function naming patterns
+// extractResourceNameFromTestFunc extracts the resource name from various test function naming patterns.
+// Returns empty string if no resource name can be extracted - caller should rely on filename in this case.
 func extractResourceNameFromTestFunc(funcName string) string {
 	// Try various patterns in order of specificity
 	patterns := []struct {
@@ -959,10 +1004,29 @@ func extractResourceNameFromTestFunc(funcName string) string {
 				continue
 			}
 
+			// Skip if the remaining name starts with underscore (e.g., TestDataSource_200)
+			// This means the resource name is not in the function name
+			if strings.HasPrefix(name, "_") {
+				// For patterns like TestDataSource_200, there's no resource name in the function
+				// Fall through to try shorter prefixes, but we should not extract from generic "Test" prefix
+				if p.prefix == "Test" {
+					// We've tried all specific patterns, give up
+					return ""
+				}
+				continue
+			}
+
 			// Split on underscore to get just the resource name part
 			parts := strings.SplitN(name, "_", 2)
 			if len(parts) > 0 && parts[0] != "" {
 				resourcePart := parts[0]
+
+				// Skip if the resource part is a type identifier (DataSource, Resource)
+				// This happens when we fall through from a more specific pattern to "Test"
+				// e.g., TestDataSource_200 -> after removing "Test" we get "DataSource_200"
+				if resourcePart == "DataSource" || resourcePart == "Resource" {
+					return ""
+				}
 
 				// Handle patterns like "PrivateKeyRSA" -> extract "PrivateKey"
 				// We need to split CamelCase and take just the first meaningful part
@@ -974,7 +1038,63 @@ func extractResourceNameFromTestFunc(funcName string) string {
 		}
 	}
 
+	// Fallback: If the function starts with Test and has CamelCase parts after,
+	// try to extract the first CamelCase word as a potential resource name.
+	// This handles non-standard patterns like TestMyCustomResource_something
+	if strings.HasPrefix(funcName, "Test") && len(funcName) > 4 {
+		remainder := funcName[4:] // Remove "Test"
+		if len(remainder) > 0 && unicode.IsUpper(rune(remainder[0])) {
+			// Extract first CamelCase word (up to first underscore or lowercase transition)
+			firstWord := extractFirstCamelCaseWord(remainder)
+			if firstWord != "" && firstWord != "Acc" && firstWord != "Resource" && firstWord != "DataSource" {
+				return toSnakeCase(firstWord)
+			}
+		}
+	}
+
 	return ""
+}
+
+// extractFirstCamelCaseWord extracts the first CamelCase word from a string.
+// For "PrivateKeyRSA_basic" returns "PrivateKey", for "Widget_test" returns "Widget".
+func extractFirstCamelCaseWord(s string) string {
+	if s == "" {
+		return ""
+	}
+
+	var result strings.Builder
+	runes := []rune(s)
+
+	for i, r := range runes {
+		// Stop at underscore
+		if r == '_' {
+			break
+		}
+
+		// Stop at second uppercase letter that starts a new word
+		// (but not if we're at the start or if previous was also uppercase - handles acronyms)
+		if i > 0 && unicode.IsUpper(r) {
+			prev := runes[i-1]
+			// If previous was lowercase, this starts a new word
+			if unicode.IsLower(prev) {
+				break
+			}
+			// If previous was uppercase and next is lowercase, this starts a new word (e.g., RSAKey)
+			if i+1 < len(runes) && unicode.IsLower(runes[i+1]) {
+				break
+			}
+		}
+
+		result.WriteRune(r)
+	}
+
+	word := result.String()
+	// Return empty if we only got an acronym (all uppercase, 3 or fewer chars)
+	if len(word) <= 3 && word == strings.ToUpper(word) {
+		return ""
+	}
+
+	return word
 }
 
 // extractResourceFromCamelCase extracts the resource name from a CamelCase string,
@@ -1013,7 +1133,16 @@ func extractResourceFromCamelCase(s string) string {
 	return result
 }
 
+// checkUsesResourceTest checks if a function body contains a call to resource.Test()
+// or any of the custom test helper functions.
 func checkUsesResourceTest(body *ast.BlockStmt) bool {
+	return checkUsesResourceTestWithHelpers(body, nil)
+}
+
+// checkUsesResourceTestWithHelpers checks if a function body contains a call to resource.Test()
+// or any of the custom test helper functions specified in customHelpers.
+// customHelpers format: ["package.Function", "otherpackage.OtherFunc"]
+func checkUsesResourceTestWithHelpers(body *ast.BlockStmt, customHelpers []string) bool {
 	if body == nil {
 		return false
 	}
@@ -1027,9 +1156,21 @@ func checkUsesResourceTest(body *ast.BlockStmt) bool {
 		// Check for resource.Test() call
 		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
 			if ident, ok := sel.X.(*ast.Ident); ok {
-				if ident.Name == "resource" && sel.Sel.Name == "Test" {
+				// Check standard resource.Test() or resource.ParallelTest()
+				if ident.Name == "resource" && (sel.Sel.Name == "Test" || sel.Sel.Name == "ParallelTest") {
 					found = true
 					return false
+				}
+
+				// Check custom test helpers
+				for _, helper := range customHelpers {
+					parts := strings.SplitN(helper, ".", 2)
+					if len(parts) == 2 {
+						if ident.Name == parts[0] && sel.Sel.Name == parts[1] {
+							found = true
+							return false
+						}
+					}
 				}
 			}
 		}
@@ -1300,8 +1441,8 @@ func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
 			continue
 		}
 
-		// Parse test file
-		testFile := parseTestFile(file, pass.Fset, filePath)
+		// Parse test file with custom test helpers support
+		testFile := parseTestFileWithHelpers(file, pass.Fset, filePath, settings.CustomTestHelpers)
 		if testFile != nil && testFile.ResourceName != "" {
 			registry.RegisterTestFile(testFile)
 		}

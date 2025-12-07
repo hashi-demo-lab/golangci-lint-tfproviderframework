@@ -151,6 +151,19 @@ func validateProvider(providerPath string) ValidationResults {
 			continue
 		}
 
+		// Also try reversed naming: group_resource.go -> group
+		if strings.HasSuffix(baseName, "_resource.go") {
+			// Skip base classes
+			if strings.HasPrefix(baseName, "base") {
+				continue
+			}
+			// Extract resource name from filename: group_resource.go -> group
+			name := strings.TrimSuffix(baseName, "_resource.go")
+			results.Resources = append(results.Resources, name)
+			resourceMap[name] = path
+			continue
+		}
+
 		if strings.HasPrefix(baseName, "data_source_") && strings.HasSuffix(baseName, ".go") {
 			// Extract data source name from filename: data_source_helm_template.go -> helm_template
 			name := strings.TrimPrefix(baseName, "data_source_")
@@ -166,6 +179,36 @@ func validateProvider(providerPath string) ValidationResults {
 			name = strings.TrimSuffix(name, ".go")
 			results.DataSources = append(results.DataSources, name)
 			dataSourceMap[name] = path
+			continue
+		}
+
+		// Also try reversed naming: inventory_data_source.go or group_datasource.go
+		if strings.HasSuffix(baseName, "_data_source.go") || strings.HasSuffix(baseName, "_datasource.go") {
+			// Skip base classes
+			if strings.HasPrefix(baseName, "base") {
+				continue
+			}
+			// Extract data source name: inventory_data_source.go -> inventory
+			name := strings.TrimSuffix(baseName, "_data_source.go")
+			if strings.HasSuffix(baseName, "_datasource.go") {
+				name = strings.TrimSuffix(baseName, "_datasource.go")
+			}
+			results.DataSources = append(results.DataSources, name)
+			dataSourceMap[name] = path
+			continue
+		}
+
+		if strings.HasPrefix(baseName, "ephemeral_") && strings.HasSuffix(baseName, ".go") {
+			// Skip test files
+			if strings.HasSuffix(baseName, "_test.go") {
+				continue
+			}
+			// Extract ephemeral resource name from filename: ephemeral_private_key.go -> private_key_ephemeral
+			name := strings.TrimPrefix(baseName, "ephemeral_")
+			name = strings.TrimSuffix(name, ".go")
+			name = name + "_ephemeral" // Match convention
+			results.Resources = append(results.Resources, name)
+			resourceMap[name] = path
 			continue
 		}
 
@@ -195,55 +238,140 @@ func validateProvider(providerPath string) ValidationResults {
 	}
 
 	// Parse test files to find which resources have tests
+	// Also use file-based matching: if data_source_http_test.go exists with Test* functions,
+	// mark "http" as having tests
 	for path := range testFiles {
 		file, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			continue
 		}
 
+		baseName := filepath.Base(path)
+		var fileResourceName string
+		var isDataSourceTest bool
+
+		// Extract resource name from filename (file-based matching)
+		if strings.HasPrefix(baseName, "data_source_") && strings.HasSuffix(baseName, "_test.go") {
+			fileResourceName = strings.TrimPrefix(baseName, "data_source_")
+			fileResourceName = strings.TrimSuffix(fileResourceName, "_test.go")
+			isDataSourceTest = true
+		} else if strings.HasPrefix(baseName, "resource_") && strings.HasSuffix(baseName, "_test.go") {
+			fileResourceName = strings.TrimPrefix(baseName, "resource_")
+			fileResourceName = strings.TrimSuffix(fileResourceName, "_test.go")
+		} else if strings.HasPrefix(baseName, "ephemeral_") && strings.HasSuffix(baseName, "_test.go") {
+			// Ephemeral resources (TLS provider pattern)
+			fileResourceName = strings.TrimPrefix(baseName, "ephemeral_")
+			fileResourceName = strings.TrimSuffix(fileResourceName, "_test.go")
+			// Add _ephemeral suffix to match the resource name
+			fileResourceName = fileResourceName + "_ephemeral"
+		} else if strings.HasSuffix(baseName, "_resource_test.go") {
+			// Reversed naming: group_resource_test.go -> group
+			fileResourceName = strings.TrimSuffix(baseName, "_resource_test.go")
+		} else if strings.HasSuffix(baseName, "_data_source_test.go") || strings.HasSuffix(baseName, "_datasource_test.go") {
+			// Reversed naming: inventory_data_source_test.go -> inventory
+			fileResourceName = strings.TrimSuffix(baseName, "_data_source_test.go")
+			if strings.HasSuffix(baseName, "_datasource_test.go") {
+				fileResourceName = strings.TrimSuffix(baseName, "_datasource_test.go")
+			}
+			isDataSourceTest = true
+		}
+
+		// Count test functions in the file
+		testFunctionCount := 0
 		ast.Inspect(file, func(n ast.Node) bool {
 			funcDecl, ok := n.(*ast.FuncDecl)
-			if !ok || !strings.HasPrefix(funcDecl.Name.Name, "TestAcc") {
+			if !ok {
 				return true
 			}
 
-			// Extract resource name from test function
 			testName := funcDecl.Name.Name
 
+			// Match any test function: Test*, not just TestAcc*
+			if !strings.HasPrefix(testName, "Test") {
+				return true
+			}
+
+			testFunctionCount++
+
+			// Extract resource name from test function using multiple patterns
 			// Try multiple patterns for test function names:
 			// 1. TestAccDataSourceHelmTemplate_* -> helm_template
 			// 2. TestAccDataTemplate_* -> helm_template (abbreviated pattern)
 			// 3. TestAccHelmRelease_* -> helm_release
 			// 4. TestAccResourceHelmRelease_* -> helm_release
+			// 5. TestDataSource_200 -> (use file-based matching)
+			// 6. TestPrivateKeyRSA -> private_key
 
 			if strings.HasPrefix(testName, "TestAccDataSource") {
 				// Data source test: TestAccDataSourceHelmTemplate_* -> helm_template
 				parts := strings.SplitN(strings.TrimPrefix(testName, "TestAccDataSource"), "_", 2)
-				if len(parts) > 0 {
+				if len(parts) > 0 && parts[0] != "" {
 					resourceTests[toSnakeCase(parts[0])] = true
 				}
 			} else if strings.HasPrefix(testName, "TestAccData") {
 				// Abbreviated data source test: TestAccDataTemplate_* -> helm_template
 				parts := strings.SplitN(strings.TrimPrefix(testName, "TestAccData"), "_", 2)
-				if len(parts) > 0 {
+				if len(parts) > 0 && parts[0] != "" {
 					resourceTests[toSnakeCase(parts[0])] = true
 				}
 			} else if strings.HasPrefix(testName, "TestAccResource") {
 				// Resource test: TestAccResourceHelmRelease_* -> helm_release
 				parts := strings.SplitN(strings.TrimPrefix(testName, "TestAccResource"), "_", 2)
-				if len(parts) > 0 {
+				if len(parts) > 0 && parts[0] != "" {
 					resourceTests[toSnakeCase(parts[0])] = true
 				}
 			} else if strings.HasPrefix(testName, "TestAcc") {
 				// Generic resource test: TestAccHelmRelease_* -> helm_release
 				name := strings.TrimPrefix(testName, "TestAcc")
 				parts := strings.SplitN(name, "_", 2)
-				if len(parts) > 0 {
+				if len(parts) > 0 && parts[0] != "" {
 					resourceTests[toSnakeCase(parts[0])] = true
+				}
+			} else if strings.HasPrefix(testName, "TestDataSource") {
+				// Non-Acc data source test: TestDataSource_200 or TestDataSourceHttp_basic
+				name := strings.TrimPrefix(testName, "TestDataSource")
+				if !strings.HasPrefix(name, "_") && name != "" {
+					// Has resource name in function: TestDataSourceHttp_basic -> http
+					parts := strings.SplitN(name, "_", 2)
+					if len(parts) > 0 && parts[0] != "" {
+						resourceTests[toSnakeCase(parts[0])] = true
+					}
+				}
+				// If starts with underscore (TestDataSource_200), rely on file-based matching
+			} else if strings.HasPrefix(testName, "TestResource") {
+				// Non-Acc resource test: TestResourceWidget_basic -> widget
+				name := strings.TrimPrefix(testName, "TestResource")
+				if !strings.HasPrefix(name, "_") && name != "" {
+					parts := strings.SplitN(name, "_", 2)
+					if len(parts) > 0 && parts[0] != "" {
+						resourceTests[toSnakeCase(parts[0])] = true
+					}
+				}
+			} else if strings.HasPrefix(testName, "Test") {
+				// Generic test: TestPrivateKeyRSA -> private_key
+				name := strings.TrimPrefix(testName, "Test")
+				if name != "" && !strings.HasPrefix(name, "_") {
+					// Skip type identifiers like DataSource, Resource
+					if name != "DataSource" && name != "Resource" && !strings.HasPrefix(name, "DataSource_") && !strings.HasPrefix(name, "Resource_") {
+						parts := strings.SplitN(name, "_", 2)
+						if len(parts) > 0 && parts[0] != "" {
+							// Clean up CamelCase resource names
+							extracted := extractResourceFromCamelCase(parts[0])
+							if extracted != "" {
+								resourceTests[toSnakeCase(extracted)] = true
+							}
+						}
+					}
 				}
 			}
 			return true
 		})
+
+		// File-based matching: if file matches pattern and has test functions, mark resource as tested
+		if fileResourceName != "" && testFunctionCount > 0 {
+			resourceTests[fileResourceName] = true
+			_ = isDataSourceTest // For future use if needed
+		}
 	}
 
 	// Check for untested resources
@@ -327,4 +455,40 @@ func toSnakeCase(s string) string {
 		result.WriteRune(r)
 	}
 	return strings.ToLower(result.String())
+}
+
+// extractResourceFromCamelCase extracts the resource name from a CamelCase string,
+// removing known suffixes like RSA, ECDSA, ED25519, etc.
+func extractResourceFromCamelCase(s string) string {
+	if s == "" {
+		return ""
+	}
+
+	// Known algorithm/type suffixes to strip
+	suffixes := []string{
+		"RSA",
+		"ECDSA",
+		"ED25519",
+		"SHA256",
+		"SHA384",
+		"SHA512",
+		"V1",
+		"V2",
+		"V3",
+	}
+
+	result := s
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(result, suffix) {
+			result = strings.TrimSuffix(result, suffix)
+			break
+		}
+	}
+
+	// If we stripped everything or nothing remains, return original
+	if result == "" {
+		return s
+	}
+
+	return result
 }
