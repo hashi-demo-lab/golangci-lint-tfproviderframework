@@ -39,12 +39,12 @@ func (m MatchType) String() string {
 }
 
 // ResourceRegistry maintains thread-safe mappings of resources, data sources,
-// and their associated test files discovered during AST analysis.
+// and their associated test functions discovered during AST analysis.
 type ResourceRegistry struct {
 	mu             sync.RWMutex
-	resources      map[string]*ResourceInfo
-	dataSources    map[string]*ResourceInfo
-	testFiles      map[string]*TestFileInfo
+	definitions    map[string]*ResourceInfo // Unified map of all resources and data sources
+	resources      map[string]*ResourceInfo // Legacy: filtered view of resources (IsDataSource=false)
+	dataSources    map[string]*ResourceInfo // Legacy: filtered view of data sources (IsDataSource=true)
 	testFunctions  []*TestFunctionInfo
 	resourceTests  map[string][]*TestFunctionInfo
 	fileToResource map[string]string
@@ -53,9 +53,9 @@ type ResourceRegistry struct {
 // NewResourceRegistry creates a new empty resource registry.
 func NewResourceRegistry() *ResourceRegistry {
 	return &ResourceRegistry{
+		definitions:    make(map[string]*ResourceInfo),
 		resources:      make(map[string]*ResourceInfo),
 		dataSources:    make(map[string]*ResourceInfo),
-		testFiles:      make(map[string]*TestFileInfo),
 		testFunctions:  make([]*TestFunctionInfo, 0),
 		resourceTests:  make(map[string][]*TestFunctionInfo),
 		fileToResource: make(map[string]string),
@@ -63,22 +63,22 @@ func NewResourceRegistry() *ResourceRegistry {
 }
 
 // RegisterResource adds a resource or data source to the registry.
+// It stores the resource in both the unified definitions map and the
+// appropriate filtered map (resources or dataSources) for backward compatibility.
 func (r *ResourceRegistry) RegisterResource(info *ResourceInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// Store in unified definitions map
+	r.definitions[info.Name] = info
+
+	// Also store in legacy filtered maps for backward compatibility
 	if info.IsDataSource {
 		r.dataSources[info.Name] = info
 	} else {
 		r.resources[info.Name] = info
 	}
 	r.fileToResource[info.FilePath] = info.Name
-}
-
-// RegisterTestFile adds a test file to the registry.
-func (r *ResourceRegistry) RegisterTestFile(info *TestFileInfo) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.testFiles[info.ResourceName] = info
 }
 
 // GetResource retrieves a resource by name.
@@ -110,33 +110,19 @@ func (r *ResourceRegistry) GetResourceByFile(filePath string) *ResourceInfo {
 	return nil
 }
 
-// GetTestFile retrieves test file information for a given resource name.
-func (r *ResourceRegistry) GetTestFile(resourceName string) *TestFileInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.testFiles[resourceName]
-}
-
 // GetUntestedResources returns all resources and data sources that lack test coverage.
-// It checks both the legacy testFiles map and the new resourceTests map for backward compatibility.
 func (r *ResourceRegistry) GetUntestedResources() []*ResourceInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	var untested []*ResourceInfo
 	for name, resource := range r.resources {
-		// Check both legacy testFiles and new resourceTests for coverage
-		_, hasLegacyTest := r.testFiles[name]
-		hasLinkedTests := len(r.resourceTests[name]) > 0
-		if !hasLegacyTest && !hasLinkedTests {
+		if len(r.resourceTests[name]) == 0 {
 			untested = append(untested, resource)
 		}
 	}
 	for name, dataSource := range r.dataSources {
-		// Check both legacy testFiles and new resourceTests for coverage
-		_, hasLegacyTest := r.testFiles[name]
-		hasLinkedTests := len(r.resourceTests[name]) > 0
-		if !hasLegacyTest && !hasLinkedTests {
+		if len(r.resourceTests[name]) == 0 {
 			untested = append(untested, dataSource)
 		}
 	}
@@ -165,15 +151,25 @@ func (r *ResourceRegistry) GetAllDataSources() map[string]*ResourceInfo {
 	return copy
 }
 
-// GetAllTestFiles returns a copy of all test files (thread-safe).
-func (r *ResourceRegistry) GetAllTestFiles() map[string]*TestFileInfo {
+// GetAllDefinitions returns a copy of all resources and data sources in a single map (thread-safe).
+// This is the preferred method for iterating over all resource types, as it avoids
+// the need to merge separate resources and dataSources maps.
+func (r *ResourceRegistry) GetAllDefinitions() map[string]*ResourceInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	copy := make(map[string]*TestFileInfo, len(r.testFiles))
-	for k, v := range r.testFiles {
-		copy[k] = v
+	result := make(map[string]*ResourceInfo, len(r.definitions))
+	for k, v := range r.definitions {
+		result[k] = v
 	}
-	return copy
+	return result
+}
+
+// GetResourceOrDataSource retrieves a resource or data source by name using the unified definitions map.
+// This is more efficient than calling GetResource() followed by GetDataSource().
+func (r *ResourceRegistry) GetResourceOrDataSource(name string) *ResourceInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.definitions[name]
 }
 
 // RegisterTestFunction adds a test function to the global index.
@@ -356,13 +352,10 @@ type VerboseDiagnosticInfo struct {
 	SuggestedFixes     []string
 }
 
-// HasMatchingTestFile checks if a resource has a matching test file with Test* functions.
+// HasMatchingTestFile checks if a resource has matching test functions.
 func HasMatchingTestFile(resourceName string, isDataSource bool, registry *ResourceRegistry) bool {
-	testFile := registry.GetTestFile(resourceName)
-	if testFile == nil {
-		return false
-	}
-	return len(testFile.TestFunctions) > 0
+	testFunctions := registry.GetResourceTests(resourceName)
+	return len(testFunctions) > 0
 }
 
 // BuildExpectedTestPath constructs the expected test file path for a given resource.
@@ -384,20 +377,20 @@ func BuildExpectedTestFunc(resource *ResourceInfo) string {
 }
 
 // ClassifyTestFunctionMatch determines if a test function matches a resource.
+// This function uses the same pattern matching logic as the Linker to ensure consistency.
 func ClassifyTestFunctionMatch(funcName string, resourceName string) (status string, reason string) {
-	titleName := toTitleCase(resourceName)
-	matchPatterns := []string{
-		"TestAcc" + titleName,
-		"TestAccResource" + titleName,
-		"TestAccDataSource" + titleName,
-		"TestResource" + titleName,
-		"TestDataSource" + titleName,
+	// Use the same matching logic as the Linker
+	// Create a resource set with just this resource
+	resourceNames := map[string]bool{resourceName: true}
+
+	// Try to match using the same logic as matchResourceByName
+	matched, found := MatchResourceByName(funcName, resourceNames)
+	if found && matched == resourceName {
+		return "matched", ""
 	}
-	for _, pattern := range matchPatterns {
-		if strings.HasPrefix(funcName, pattern) {
-			return "matched", ""
-		}
-	}
+
+	// If we get here, the function doesn't match
+	// Provide helpful diagnostic reasons
 	if strings.HasPrefix(funcName, "TestAcc") {
 		return "not_matched", "does not match resource '" + resourceName + "'"
 	}
@@ -425,10 +418,23 @@ func BuildVerboseDiagnosticInfo(resource *ResourceInfo, registry *ResourceRegist
 		ResourceLine: 0,
 	}
 	expectedTestPath := BuildExpectedTestPath(resource)
-	testFile := registry.GetTestFile(resource.Name)
-	if testFile != nil {
-		info.TestFilesSearched = []TestFileSearchResult{{FilePath: testFile.FilePath, Found: true}}
-		for _, testFunc := range testFile.TestFunctions {
+	testFunctions := registry.GetResourceTests(resource.Name)
+
+	// Collect unique test file paths
+	testFilePaths := make(map[string]bool)
+	for _, testFunc := range testFunctions {
+		if testFunc.FilePath != "" {
+			testFilePaths[testFunc.FilePath] = true
+		}
+	}
+
+	if len(testFunctions) > 0 {
+		// Mark test files as found
+		for path := range testFilePaths {
+			info.TestFilesSearched = append(info.TestFilesSearched, TestFileSearchResult{FilePath: path, Found: true})
+		}
+		// Add test function info
+		for _, testFunc := range testFunctions {
 			status, reason := ClassifyTestFunctionMatch(testFunc.Name, resource.Name)
 			info.TestFunctionsFound = append(info.TestFunctionsFound, TestFunctionMatchInfo{
 				Name: testFunc.Name, Line: 0, MatchStatus: status, MatchReason: reason,
@@ -437,27 +443,35 @@ func BuildVerboseDiagnosticInfo(resource *ResourceInfo, registry *ResourceRegist
 	} else {
 		info.TestFilesSearched = []TestFileSearchResult{{FilePath: expectedTestPath, Found: false}}
 	}
+
 	titleName := toTitleCase(resource.Name)
 	if resource.IsDataSource {
 		info.ExpectedPatterns = []string{"TestAccDataSource" + titleName + "*", "TestDataSource" + titleName + "*"}
 	} else {
 		info.ExpectedPatterns = []string{"TestAcc" + titleName + "*", "TestAccResource" + titleName + "*", "TestResource" + titleName + "*"}
 	}
-	info.SuggestedFixes = buildSuggestedFixes(resource, testFile)
+	info.SuggestedFixes = buildSuggestedFixes(resource, testFunctions)
 	return info
 }
 
-func buildSuggestedFixes(resource *ResourceInfo, testFile *TestFileInfo) []string {
+func buildSuggestedFixes(resource *ResourceInfo, testFunctions []*TestFunctionInfo) []string {
 	var fixes []string
 	expectedFunc := BuildExpectedTestFunc(resource)
-	if testFile == nil {
+	if len(testFunctions) == 0 {
 		expectedPath := BuildExpectedTestPath(resource)
 		fixes = append(fixes, fmt.Sprintf("Create test file %s with function %s", filepath.Base(expectedPath), expectedFunc))
-	} else if len(testFile.TestFunctions) == 0 {
-		fixes = append(fixes, fmt.Sprintf("Add acceptance test function %s to %s", expectedFunc, filepath.Base(testFile.FilePath)))
 	} else {
-		fixes = append(fixes, fmt.Sprintf("Option 1: Rename tests to follow convention (%s)", expectedFunc))
-		fixes = append(fixes, "Option 2: Configure custom test patterns in .golangci.yml:\n      test-name-patterns:\n        - \"Test"+toTitleCase(resource.Name)+"\"")
+		// Get first test file path
+		testFilePath := ""
+		if len(testFunctions) > 0 && testFunctions[0].FilePath != "" {
+			testFilePath = testFunctions[0].FilePath
+		}
+		if testFilePath != "" {
+			fixes = append(fixes, fmt.Sprintf("Option 1: Rename tests to follow convention (%s)", expectedFunc))
+			fixes = append(fixes, "Option 2: Configure custom test patterns in .golangci.yml:\n      test-name-patterns:\n        - \"Test"+toTitleCase(resource.Name)+"\"")
+		} else {
+			fixes = append(fixes, fmt.Sprintf("Add acceptance test function %s", expectedFunc))
+		}
 	}
 	return fixes
 }

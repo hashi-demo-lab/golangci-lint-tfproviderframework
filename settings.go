@@ -51,13 +51,9 @@ type Settings struct {
 	CustomTestHelpers []string `yaml:"custom-test-helpers"`
 
 	// Matching strategies
-	// EnableFunctionMatching enables matching resources to tests via function name analysis
-	EnableFunctionMatching bool `yaml:"enable-function-matching"`
-	// EnableFileBasedMatching enables fallback matching where a resource is considered
-	// tested if a corresponding test file exists with any Test* functions, even if
-	// the function names don't follow the standard naming conventions.
-	EnableFileBasedMatching bool `yaml:"enable-file-based-matching"`
-	// EnableFuzzyMatching enables fuzzy string matching for resource-to-test associations
+	// EnableFuzzyMatching enables fuzzy string matching for resource-to-test associations.
+	// This is disabled by default as it can be expensive and may produce false positives.
+	// Function name matching and file-based matching always run as they are fast and accurate.
 	EnableFuzzyMatching bool `yaml:"enable-fuzzy-matching"`
 	// FuzzyMatchThreshold sets the minimum similarity score (0.0-1.0) for fuzzy matches
 	FuzzyMatchThreshold float64 `yaml:"fuzzy-match-threshold"`
@@ -110,10 +106,9 @@ func DefaultSettings() Settings {
 		CustomTestHelpers: []string{}, // Empty means only resource.Test() is recognized
 
 		// Matching strategies
-		EnableFunctionMatching:  true,  // Enable function name matching by default
-		EnableFileBasedMatching: true,  // Enable file-based matching by default
-		EnableFuzzyMatching:     false, // Fuzzy matching disabled by default
-		FuzzyMatchThreshold:     0.7,   // 70% similarity threshold for fuzzy matches
+		// Function name matching and file-based matching always run (fast and accurate)
+		EnableFuzzyMatching: false, // Fuzzy matching disabled by default (expensive, false positives)
+		FuzzyMatchThreshold: 0.7,   // 70% similarity threshold for fuzzy matches
 
 		// Provider configuration
 		ProviderPrefix:        "",
@@ -139,11 +134,6 @@ func (s *Settings) Validate() error {
 		if _, err := regexp.Compile(s.ResourceNamingPattern); err != nil {
 			return fmt.Errorf("invalid resource-naming-pattern: %w", err)
 		}
-	}
-
-	// At least one matching strategy must be enabled
-	if !s.EnableFunctionMatching && !s.EnableFileBasedMatching && !s.EnableFuzzyMatching {
-		return fmt.Errorf("at least one matching strategy must be enabled")
 	}
 
 	return nil

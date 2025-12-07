@@ -646,3 +646,390 @@ func TestExclusionDiagnostics_Fields(t *testing.T) {
 		t.Errorf("TotalExcluded = %d, want 2", diag.TotalExcluded)
 	}
 }
+
+func TestParserConfig_DefaultConfig(t *testing.T) {
+	config := DefaultParserConfig()
+
+	if config.CustomHelpers != nil {
+		t.Errorf("DefaultParserConfig().CustomHelpers = %v, want nil", config.CustomHelpers)
+	}
+	if config.LocalHelpers != nil {
+		t.Errorf("DefaultParserConfig().LocalHelpers = %v, want nil", config.LocalHelpers)
+	}
+	if config.TestNamePatterns != nil {
+		t.Errorf("DefaultParserConfig().TestNamePatterns = %v, want nil", config.TestNamePatterns)
+	}
+}
+
+func TestParseTestFileWithConfig_EmptyConfig(t *testing.T) {
+	src := `
+package provider_test
+
+import (
+	"testing"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func TestAccWidget_basic(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{
+				Config: testAccWidgetConfig_basic(),
+			},
+		},
+	})
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "resource_widget_test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("failed to parse source: %v", err)
+	}
+
+	config := DefaultParserConfig()
+	testFileInfo := ParseTestFileWithConfig(file, fset, "resource_widget_test.go", config)
+
+	if testFileInfo == nil {
+		t.Fatal("ParseTestFileWithConfig returned nil")
+	}
+
+	if len(testFileInfo.TestFunctions) != 1 {
+		t.Errorf("expected 1 test function, got %d", len(testFileInfo.TestFunctions))
+	}
+
+	if testFileInfo.TestFunctions[0].Name != "TestAccWidget_basic" {
+		t.Errorf("test function name = %q, want %q", testFileInfo.TestFunctions[0].Name, "TestAccWidget_basic")
+	}
+}
+
+func TestParseTestFileWithConfig_CustomHelpers(t *testing.T) {
+	src := `
+package provider_test
+
+import (
+	"testing"
+	"github.com/example/testhelper"
+)
+
+func TestAccWidget_basic(t *testing.T) {
+	testhelper.AccTest(t, testhelper.TestCase{
+		Steps: []testhelper.TestStep{
+			{
+				Config: testAccWidgetConfig_basic(),
+			},
+		},
+	})
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "resource_widget_test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("failed to parse source: %v", err)
+	}
+
+	config := ParserConfig{
+		CustomHelpers: []string{"testhelper.AccTest"},
+	}
+	testFileInfo := ParseTestFileWithConfig(file, fset, "resource_widget_test.go", config)
+
+	if testFileInfo == nil {
+		t.Fatal("ParseTestFileWithConfig returned nil")
+	}
+
+	if len(testFileInfo.TestFunctions) != 1 {
+		t.Errorf("expected 1 test function, got %d", len(testFileInfo.TestFunctions))
+	}
+
+	if testFileInfo.TestFunctions[0].Name != "TestAccWidget_basic" {
+		t.Errorf("test function name = %q, want %q", testFileInfo.TestFunctions[0].Name, "TestAccWidget_basic")
+	}
+}
+
+func TestParseTestFileWithConfig_LocalHelpers(t *testing.T) {
+	// First, parse a file with a local helper
+	helperSrc := `
+package provider_test
+
+import (
+	"testing"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func AccTestHelper(t *testing.T, tc resource.TestCase) {
+	resource.Test(t, tc)
+}
+`
+	fset := token.NewFileSet()
+	helperFile, err := parser.ParseFile(fset, "helpers_test.go", helperSrc, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("failed to parse helper source: %v", err)
+	}
+
+	localHelpers := FindLocalTestHelpers([]*ast.File{helperFile}, fset)
+	if len(localHelpers) != 1 {
+		t.Fatalf("expected 1 local helper, got %d", len(localHelpers))
+	}
+
+	// Now parse a test file that uses the local helper
+	testSrc := `
+package provider_test
+
+import "testing"
+
+func TestAccWidget_basic(t *testing.T) {
+	AccTestHelper(t, resource.TestCase{})
+}
+`
+	testFile, err := parser.ParseFile(fset, "resource_widget_test.go", testSrc, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("failed to parse test source: %v", err)
+	}
+
+	config := ParserConfig{
+		LocalHelpers: localHelpers,
+	}
+	testFileInfo := ParseTestFileWithConfig(testFile, fset, "resource_widget_test.go", config)
+
+	if testFileInfo == nil {
+		t.Fatal("ParseTestFileWithConfig returned nil")
+	}
+
+	if len(testFileInfo.TestFunctions) != 1 {
+		t.Errorf("expected 1 test function, got %d", len(testFileInfo.TestFunctions))
+	}
+
+	if testFileInfo.TestFunctions[0].Name != "TestAccWidget_basic" {
+		t.Errorf("test function name = %q, want %q", testFileInfo.TestFunctions[0].Name, "TestAccWidget_basic")
+	}
+
+	if testFileInfo.TestFunctions[0].HelperUsed != "AccTestHelper" {
+		t.Errorf("helper used = %q, want %q", testFileInfo.TestFunctions[0].HelperUsed, "AccTestHelper")
+	}
+}
+
+func TestParseTestFileWithConfig_TestNamePatterns(t *testing.T) {
+	src := `
+package provider_test
+
+import (
+	"testing"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func TestIntegration_Widget(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{
+				Config: testAccWidgetConfig_basic(),
+			},
+		},
+	})
+}
+
+func TestAcc_Widget(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{
+				Config: testAccWidgetConfig_basic(),
+			},
+		},
+	})
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "resource_widget_test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("failed to parse source: %v", err)
+	}
+
+	// Test with custom pattern that only matches TestIntegration*
+	config := ParserConfig{
+		TestNamePatterns: []string{"TestIntegration*"},
+	}
+	testFileInfo := ParseTestFileWithConfig(file, fset, "resource_widget_test.go", config)
+
+	if testFileInfo == nil {
+		t.Fatal("ParseTestFileWithConfig returned nil")
+	}
+
+	if len(testFileInfo.TestFunctions) != 1 {
+		t.Errorf("expected 1 test function, got %d", len(testFileInfo.TestFunctions))
+	}
+
+	if testFileInfo.TestFunctions[0].Name != "TestIntegration_Widget" {
+		t.Errorf("test function name = %q, want %q", testFileInfo.TestFunctions[0].Name, "TestIntegration_Widget")
+	}
+}
+
+func TestParseTestFileWithConfig_AllOptions(t *testing.T) {
+	// First, create a local helper
+	helperSrc := `
+package provider_test
+
+import (
+	"testing"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func MyTestHelper(t *testing.T, tc resource.TestCase) {
+	resource.Test(t, tc)
+}
+`
+	fset := token.NewFileSet()
+	helperFile, err := parser.ParseFile(fset, "helpers_test.go", helperSrc, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("failed to parse helper source: %v", err)
+	}
+
+	localHelpers := FindLocalTestHelpers([]*ast.File{helperFile}, fset)
+
+	// Test file with custom test name pattern
+	testSrc := `
+package provider_test
+
+import (
+	"testing"
+	"github.com/example/testhelper"
+)
+
+func TestCustom_Widget_basic(t *testing.T) {
+	MyTestHelper(t, resource.TestCase{})
+}
+
+func TestCustom_Widget_update(t *testing.T) {
+	testhelper.ParallelTest(t, testhelper.TestCase{})
+}
+
+func TestIgnored_Widget(t *testing.T) {
+	MyTestHelper(t, resource.TestCase{})
+}
+`
+	testFile, err := parser.ParseFile(fset, "resource_widget_test.go", testSrc, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("failed to parse test source: %v", err)
+	}
+
+	// Config with all options set
+	config := ParserConfig{
+		CustomHelpers:    []string{"testhelper.ParallelTest"},
+		LocalHelpers:     localHelpers,
+		TestNamePatterns: []string{"TestCustom*"},
+	}
+	testFileInfo := ParseTestFileWithConfig(testFile, fset, "resource_widget_test.go", config)
+
+	if testFileInfo == nil {
+		t.Fatal("ParseTestFileWithConfig returned nil")
+	}
+
+	// Should only find TestCustom* tests that use either custom or local helpers
+	if len(testFileInfo.TestFunctions) != 2 {
+		t.Errorf("expected 2 test functions, got %d", len(testFileInfo.TestFunctions))
+		for _, tf := range testFileInfo.TestFunctions {
+			t.Logf("  found: %s", tf.Name)
+		}
+	}
+
+	// Verify both TestCustom* tests were found
+	foundBasic := false
+	foundUpdate := false
+	for _, tf := range testFileInfo.TestFunctions {
+		if tf.Name == "TestCustom_Widget_basic" {
+			foundBasic = true
+			if tf.HelperUsed != "MyTestHelper" {
+				t.Errorf("TestCustom_Widget_basic helper = %q, want %q", tf.HelperUsed, "MyTestHelper")
+			}
+		}
+		if tf.Name == "TestCustom_Widget_update" {
+			foundUpdate = true
+		}
+	}
+
+	if !foundBasic {
+		t.Error("TestCustom_Widget_basic not found")
+	}
+	if !foundUpdate {
+		t.Error("TestCustom_Widget_update not found")
+	}
+}
+
+func TestParseTestFileWithConfig_BackwardCompatibility(t *testing.T) {
+	src := `
+package provider_test
+
+import (
+	"testing"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func TestAccWidget_basic(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{
+				Config: testAccWidgetConfig_basic(),
+			},
+		},
+	})
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "resource_widget_test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("failed to parse source: %v", err)
+	}
+
+	// Test that old functions still work
+	oldResult := ParseTestFile(file, fset, "resource_widget_test.go")
+	newResult := ParseTestFileWithConfig(file, fset, "resource_widget_test.go", DefaultParserConfig())
+
+	if oldResult == nil || newResult == nil {
+		t.Fatal("one of the parse functions returned nil")
+	}
+
+	if len(oldResult.TestFunctions) != len(newResult.TestFunctions) {
+		t.Errorf("old and new results differ: old=%d, new=%d", len(oldResult.TestFunctions), len(newResult.TestFunctions))
+	}
+
+	if oldResult.TestFunctions[0].Name != newResult.TestFunctions[0].Name {
+		t.Errorf("function names differ: old=%q, new=%q", oldResult.TestFunctions[0].Name, newResult.TestFunctions[0].Name)
+	}
+}
+
+func TestParseTestFileWithConfig_WithHelpersBackwardCompatibility(t *testing.T) {
+	src := `
+package provider_test
+
+import (
+	"testing"
+	"github.com/example/testhelper"
+)
+
+func TestAccWidget_basic(t *testing.T) {
+	testhelper.AccTest(t, testhelper.TestCase{})
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "resource_widget_test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("failed to parse source: %v", err)
+	}
+
+	customHelpers := []string{"testhelper.AccTest"}
+
+	// Test that old function still works
+	oldResult := ParseTestFileWithHelpers(file, fset, "resource_widget_test.go", customHelpers)
+	newResult := ParseTestFileWithConfig(file, fset, "resource_widget_test.go", ParserConfig{
+		CustomHelpers: customHelpers,
+	})
+
+	if oldResult == nil || newResult == nil {
+		t.Fatal("one of the parse functions returned nil")
+	}
+
+	if len(oldResult.TestFunctions) != len(newResult.TestFunctions) {
+		t.Errorf("old and new results differ: old=%d, new=%d", len(oldResult.TestFunctions), len(newResult.TestFunctions))
+	}
+
+	if oldResult.TestFunctions[0].Name != newResult.TestFunctions[0].Name {
+		t.Errorf("function names differ: old=%q, new=%q", oldResult.TestFunctions[0].Name, newResult.TestFunctions[0].Name)
+	}
+}

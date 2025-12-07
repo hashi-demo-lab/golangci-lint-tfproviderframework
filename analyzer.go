@@ -6,9 +6,53 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"golang.org/x/tools/go/analysis"
 )
+
+// registryCache holds the cached registry per analysis pass to avoid rebuilding it 5 times
+type registryCache struct {
+	mu       sync.Mutex
+	registry *ResourceRegistry
+	once     sync.Once
+}
+
+// Global cache map keyed by analysis.Pass pointer to support multiple concurrent analysis runs
+var (
+	globalCacheMu sync.Mutex
+	globalCache   = make(map[*analysis.Pass]*registryCache)
+)
+
+// getOrBuildRegistry retrieves a cached registry for the given pass, or builds it if not yet cached.
+// This ensures buildRegistry is called only once per analysis pass, even when 5 analyzers run.
+func getOrBuildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
+	globalCacheMu.Lock()
+	cache, exists := globalCache[pass]
+	if !exists {
+		cache = &registryCache{}
+		globalCache[pass] = cache
+	}
+	globalCacheMu.Unlock()
+
+	// Use sync.Once to ensure buildRegistry is called only once per pass
+	cache.once.Do(func() {
+		cache.mu.Lock()
+		defer cache.mu.Unlock()
+		cache.registry = buildRegistry(pass, settings)
+	})
+
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	return cache.registry
+}
+
+// clearRegistryCache clears the cache for a given pass (used for cleanup after analysis)
+func clearRegistryCache(pass *analysis.Pass) {
+	globalCacheMu.Lock()
+	defer globalCacheMu.Unlock()
+	delete(globalCache, pass)
+}
 
 // BasicTestAnalyzer detects resources and data sources lacking acceptance tests.
 var BasicTestAnalyzer = &analysis.Analyzer{
@@ -49,7 +93,7 @@ var StateCheckAnalyzer = &analysis.Analyzer{
 // Detects resources and data sources that lack basic acceptance tests
 func runBasicTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	settings := DefaultSettings()
-	registry := buildRegistry(pass, settings)
+	registry := getOrBuildRegistry(pass, settings)
 
 	// Report untested resources with enhanced location information
 	untested := registry.GetUntestedResources()
@@ -80,56 +124,12 @@ func runBasicTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 		pass.Reportf(resource.SchemaPos, "%s", msg)
 	}
 
-	// Check for resources with test files but no TestAcc functions
-	allResources := registry.GetAllResources()
-	allTestFiles := registry.GetAllTestFiles()
-	for name, resource := range allResources {
-		if testFile, exists := allTestFiles[name]; exists {
-			if len(testFile.TestFunctions) == 0 {
-				pos := pass.Fset.Position(resource.SchemaPos)
-				expectedTestFunc := BuildExpectedTestFunc(resource)
-
-				msg := fmt.Sprintf("resource '%s' has test file but no TestAcc functions\n"+
-					"  Resource: %s:%d\n"+
-					"  Test file: %s\n"+
-					"  Expected test function: %s\n"+
-					"  Suggestion: Add acceptance test function %s to %s",
-					name, pos.Filename, pos.Line,
-					testFile.FilePath, expectedTestFunc,
-					expectedTestFunc, filepath.Base(testFile.FilePath))
-
-				pass.Reportf(resource.SchemaPos, "%s", msg)
-			}
-		}
-	}
-
-	allDataSources := registry.GetAllDataSources()
-	for name, dataSource := range allDataSources {
-		if testFile, exists := allTestFiles[name]; exists {
-			if len(testFile.TestFunctions) == 0 {
-				pos := pass.Fset.Position(dataSource.SchemaPos)
-				expectedTestFunc := BuildExpectedTestFunc(dataSource)
-
-				msg := fmt.Sprintf("data source '%s' has test file but no TestAcc functions\n"+
-					"  Data source: %s:%d\n"+
-					"  Test file: %s\n"+
-					"  Expected test function: %s\n"+
-					"  Suggestion: Add acceptance test function %s to %s",
-					name, pos.Filename, pos.Line,
-					testFile.FilePath, expectedTestFunc,
-					expectedTestFunc, filepath.Base(testFile.FilePath))
-
-				pass.Reportf(dataSource.SchemaPos, "%s", msg)
-			}
-		}
-	}
-
 	return nil, nil
 }
 
 func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	settings := DefaultSettings()
-	registry := buildRegistry(pass, settings)
+	registry := getOrBuildRegistry(pass, settings)
 
 	// Check for resources with updatable attributes but no update tests
 	// Only check regular resources (not data sources)
@@ -149,42 +149,17 @@ func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 			continue
 		}
 
-		// Use registry.GetResourceTests to get all linked test functions
-		// This uses the new function-first linking approach
-		linkedTests := registry.GetResourceTests(name)
-
-		// Also check legacy testFiles for backward compatibility
-		testFile := registry.GetTestFile(name)
-
-		// Combine test functions from both sources
-		var allTestFuncs []*TestFunctionInfo
-		for _, fn := range linkedTests {
-			allTestFuncs = append(allTestFuncs, fn)
-		}
-		if testFile != nil {
-			for i := range testFile.TestFunctions {
-				// Avoid duplicates - check if already in linked tests
-				found := false
-				for _, linked := range linkedTests {
-					if linked.Name == testFile.TestFunctions[i].Name {
-						found = true
-						break
-					}
-				}
-				if !found {
-					allTestFuncs = append(allTestFuncs, &testFile.TestFunctions[i])
-				}
-			}
-		}
+		// Get all test functions for this resource
+		testFunctions := registry.GetResourceTests(name)
 
 		// No tests at all - covered by BasicTestAnalyzer
-		if len(allTestFuncs) == 0 {
+		if len(testFunctions) == 0 {
 			continue
 		}
 
 		// Check if any test function has a real update step
 		hasUpdateTest := false
-		for _, testFunc := range allTestFuncs {
+		for _, testFunc := range testFunctions {
 			for _, step := range testFunc.TestSteps {
 				// Use IsRealUpdateStep to properly distinguish real updates
 				// from "Apply -> Import" patterns
@@ -254,7 +229,7 @@ func IsAttributeUpdatable(attr AttributeInfo) bool {
 
 func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	settings := DefaultSettings()
-	registry := buildRegistry(pass, settings)
+	registry := getOrBuildRegistry(pass, settings)
 
 	// Check for resources with ImportState but no import tests
 	// Only check regular resources (not data sources)
@@ -264,16 +239,16 @@ func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 			continue
 		}
 
-		// Check if resource has test file with import test step
-		testFile := registry.GetTestFile(name)
-		if testFile == nil {
-			// No test file at all - but this is covered by BasicTestAnalyzer
+		// Get all test functions for this resource
+		testFunctions := registry.GetResourceTests(name)
+		if len(testFunctions) == 0 {
+			// No tests at all - but this is covered by BasicTestAnalyzer
 			continue
 		}
 
 		// Check if ANY test function has an import step
 		hasImportTest := false
-		for _, testFunc := range testFile.TestFunctions {
+		for _, testFunc := range testFunctions {
 			if testFunc.HasImportStep {
 				hasImportTest = true
 				break
@@ -295,7 +270,7 @@ func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 
 func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	settings := DefaultSettings()
-	registry := buildRegistry(pass, settings)
+	registry := getOrBuildRegistry(pass, settings)
 
 	// Check for resources with validation rules but no error tests
 	for name, resource := range registry.GetAllResources() {
@@ -314,16 +289,16 @@ func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 			continue
 		}
 
-		// Check if resource has test file with error test
-		testFile := registry.GetTestFile(name)
-		if testFile == nil {
-			// No test file at all - but this is covered by BasicTestAnalyzer
+		// Get all test functions for this resource
+		testFunctions := registry.GetResourceTests(name)
+		if len(testFunctions) == 0 {
+			// No tests at all - but this is covered by BasicTestAnalyzer
 			continue
 		}
 
 		// Check if ANY test function has an error case
 		hasErrorTest := false
-		for _, testFunc := range testFile.TestFunctions {
+		for _, testFunc := range testFunctions {
 			if testFunc.HasErrorCase {
 				hasErrorTest = true
 				break
@@ -347,42 +322,37 @@ func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 
 func runStateCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	settings := DefaultSettings()
-	registry := buildRegistry(pass, settings)
+	registry := getOrBuildRegistry(pass, settings)
 
 	// Check for test steps without Check fields
-	// Iterate through all test files and their functions
-	for _, testFile := range registry.GetAllTestFiles() {
-		for _, testFunc := range testFile.TestFunctions {
-			for _, step := range testFunc.TestSteps {
-				// Skip import and error test steps - they don't require Check
-				if step.ImportState || step.ExpectError {
-					continue
+	// Iterate through all test functions
+	for _, testFunc := range registry.GetAllTestFunctions() {
+		for _, step := range testFunc.TestSteps {
+			// Skip import and error test steps - they don't require Check
+			if step.ImportState || step.ExpectError {
+				continue
+			}
+
+			// Regular test steps with Config should have Check fields
+			if !step.HasCheck && step.HasConfig {
+				// Try to find the resource being tested from InferredResources
+				resourceContext := ""
+				if len(testFunc.InferredResources) > 0 {
+					resourceContext = fmt.Sprintf(" (testing %s)", testFunc.InferredResources[0])
 				}
 
-				// Regular test steps with Config should have Check fields
-				if !step.HasCheck && step.HasConfig {
-					// Find the resource to get its name for the error message
-					resourceName := testFile.ResourceName
-
-					// Build resource context for the message
-					resourceContext := ""
-					if resourceName != "" {
-						resourceContext = fmt.Sprintf(" (testing %s)", resourceName)
-					}
-
-					// Use step position if available, otherwise use function position
-					pos := step.StepPos
-					if pos == 0 {
-						pos = testFunc.FunctionPos
-					}
-
-					msg := fmt.Sprintf("test step in %s%s has no state validation checks\n"+
-						"  Suggestion: Add Check: resource.ComposeTestCheckFunc(...) to verify state",
-						testFunc.Name, resourceContext)
-
-					// Report at the step position
-					pass.Reportf(pos, "%s", msg)
+				// Use step position if available, otherwise use function position
+				pos := step.StepPos
+				if pos == 0 {
+					pos = testFunc.FunctionPos
 				}
+
+				msg := fmt.Sprintf("test step in %s%s has no state validation checks\n"+
+					"  Suggestion: Add Check: resource.ComposeTestCheckFunc(...) to verify state",
+					testFunc.Name, resourceContext)
+
+				// Report at the step position
+				pass.Reportf(pos, "%s", msg)
 			}
 		}
 	}

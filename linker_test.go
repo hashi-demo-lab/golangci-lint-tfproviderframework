@@ -3,6 +3,7 @@
 package tfprovidertest
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -21,7 +22,6 @@ func TestLinkerFunctionNameMatching(t *testing.T) {
 
 	// Run linker
 	settings := DefaultSettings()
-	settings.EnableFunctionMatching = true
 	linker := NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
@@ -57,8 +57,6 @@ func TestLinkerFileProximityMatching(t *testing.T) {
 	reg.RegisterTestFunction(fn)
 
 	settings := DefaultSettings()
-	settings.EnableFunctionMatching = true
-	settings.EnableFileBasedMatching = true
 	linker := NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
@@ -88,8 +86,6 @@ func TestLinkerFileProximityDataSource(t *testing.T) {
 	reg.RegisterTestFunction(fn)
 
 	settings := DefaultSettings()
-	settings.EnableFunctionMatching = true
-	settings.EnableFileBasedMatching = true
 	linker := NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
@@ -111,8 +107,6 @@ func TestLinkerFuzzyMatching(t *testing.T) {
 	reg.RegisterTestFunction(fn)
 
 	settings := DefaultSettings()
-	settings.EnableFunctionMatching = true
-	settings.EnableFileBasedMatching = false
 	settings.EnableFuzzyMatching = true
 	settings.FuzzyMatchThreshold = 0.7
 	linker := NewLinker(reg, settings)
@@ -160,7 +154,7 @@ func TestCalculateSimilarity(t *testing.T) {
 		maxExpected float64
 	}{
 		{"widget", "widget", 1.0, 1.0},
-		{"widget", "widgets", 0.8, 1.0},  // 1 char difference in 7 char string
+		{"widget", "widgets", 0.8, 1.0}, // 1 char difference in 7 char string
 		{"instance", "instances", 0.8, 1.0},
 		{"bucket", "socket", 0.5, 0.7}, // Different words
 		{"", "", 1.0, 1.0},
@@ -192,9 +186,6 @@ func TestLinkerNoMatch(t *testing.T) {
 	reg.RegisterTestFunction(fn)
 
 	settings := DefaultSettings()
-	settings.EnableFunctionMatching = true
-	settings.EnableFileBasedMatching = true
-	settings.EnableFuzzyMatching = false
 	linker := NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
@@ -276,8 +267,6 @@ func TestLinkerPriorityMatching(t *testing.T) {
 	reg.RegisterTestFunction(fn)
 
 	settings := DefaultSettings()
-	settings.EnableFunctionMatching = true
-	settings.EnableFileBasedMatching = true
 	linker := NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
@@ -508,6 +497,102 @@ func TestMatchResourceByName(t *testing.T) {
 			if found != tt.expectedFound {
 				t.Errorf("MatchResourceByName(%q) found = %v, want %v",
 					tt.funcName, found, tt.expectedFound)
+			}
+		})
+	}
+}
+
+// TestLinkerClassifyConsistency verifies that if the Linker matches a test function
+// to a resource, ClassifyTestFunctionMatch also returns "matched".
+// This ensures the two systems use the same matching logic.
+func TestLinkerClassifyConsistency(t *testing.T) {
+	tests := []struct {
+		name         string
+		funcName     string
+		resourceName string
+	}{
+		{"basic TestAcc pattern", "TestAccWidget_basic", "widget"},
+		{"TestAccResource pattern", "TestAccResourceWidget_update", "widget"},
+		{"TestAccDataSource pattern", "TestAccDataSourceHTTP_basic", "http"},
+		{"strips provider prefix", "TestAccAWSInstance_basic", "instance"},
+		{"with generated suffix", "TestAccBucket_generated", "bucket"},
+		{"with complete suffix", "TestAccServer_complete", "server"},
+		{"camelCase to snake_case", "TestAccAwsS3Bucket_basic", "aws_s3_bucket"},
+		{"without provider prefix", "TestAccAwsS3Bucket_basic", "s3_bucket"},
+		{"TestResource pattern", "TestResourceWidget_basic", "widget"},
+		{"TestDataSource pattern", "TestDataSourceHTTP_complete", "http"},
+		{"disappears suffix", "TestAccInstance_disappears", "instance"},
+		{"import suffix", "TestAccDatabase_import", "database"},
+		{"migrate suffix", "TestAccServer_migrate", "server"},
+		{"full suffix", "TestAccWidget_full", "widget"},
+		{"minimal suffix", "TestAccGadget_minimal", "gadget"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test with Linker's MatchResourceByName
+			resourceNames := map[string]bool{tt.resourceName: true}
+			matched, found := MatchResourceByName(tt.funcName, resourceNames)
+
+			if !found || matched != tt.resourceName {
+				t.Fatalf("MatchResourceByName(%q, %q) failed: matched=%q, found=%v",
+					tt.funcName, tt.resourceName, matched, found)
+			}
+
+			// Test with ClassifyTestFunctionMatch - should also return "matched"
+			status, reason := ClassifyTestFunctionMatch(tt.funcName, tt.resourceName)
+			if status != "matched" {
+				t.Errorf("CONSISTENCY ERROR: Linker matched %q to %q, but ClassifyTestFunctionMatch returned status=%q, reason=%q",
+					tt.funcName, tt.resourceName, status, reason)
+				t.Errorf("This breaks the consistency requirement: linked tests should NEVER show 'pattern mismatch' in diagnostics")
+			}
+		})
+	}
+}
+
+// TestClassifyNonMatchingFunctions verifies that ClassifyTestFunctionMatch
+// correctly identifies non-matching functions with appropriate reasons.
+func TestClassifyNonMatchingFunctions(t *testing.T) {
+	tests := []struct {
+		name            string
+		funcName        string
+		resourceName    string
+		expectedStatus  string
+		reasonSubstring string // Part of the reason to verify
+	}{
+		{
+			name:            "wrong resource name",
+			funcName:        "TestAccWidget_basic",
+			resourceName:    "gadget",
+			expectedStatus:  "not_matched",
+			reasonSubstring: "does not match resource",
+		},
+		{
+			name:            "completely different name",
+			funcName:        "TestAccFooBar_basic",
+			resourceName:    "widget",
+			expectedStatus:  "not_matched",
+			reasonSubstring: "does not match resource",
+		},
+		{
+			name:            "not a test function",
+			funcName:        "HelperFunction",
+			resourceName:    "widget",
+			expectedStatus:  "not_matched",
+			reasonSubstring: "does not follow test naming convention",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, reason := ClassifyTestFunctionMatch(tt.funcName, tt.resourceName)
+			if status != tt.expectedStatus {
+				t.Errorf("ClassifyTestFunctionMatch(%q, %q) status = %q, want %q",
+					tt.funcName, tt.resourceName, status, tt.expectedStatus)
+			}
+			if tt.reasonSubstring != "" && !strings.Contains(reason, tt.reasonSubstring) {
+				t.Errorf("ClassifyTestFunctionMatch(%q, %q) reason = %q, want to contain %q",
+					tt.funcName, tt.resourceName, reason, tt.reasonSubstring)
 			}
 		})
 	}
