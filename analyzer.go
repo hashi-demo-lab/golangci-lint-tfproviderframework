@@ -47,8 +47,9 @@ func getOrBuildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistr
 	return cache.registry
 }
 
-// clearRegistryCache clears the cache for a given pass (used for cleanup after analysis)
-func clearRegistryCache(pass *analysis.Pass) {
+// ClearRegistryCache clears the cache for a given pass (used for cleanup after analysis).
+// Exported for use by external tools that need to manage the cache lifecycle.
+func ClearRegistryCache(pass *analysis.Pass) {
 	globalCacheMu.Lock()
 	defer globalCacheMu.Unlock()
 	delete(globalCache, pass)
@@ -147,7 +148,10 @@ func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 
 	// Check for resources with updatable attributes but no update tests
 	// Only check regular resources (not data sources)
-	for name, resource := range registry.GetAllResources() {
+	for name, resource := range registry.GetAllDefinitions() {
+		if resource.IsDataSource {
+			continue
+		}
 		// Check if resource has updatable attributes using isAttributeUpdatable
 		hasUpdatable := false
 		var updatableAttrs []string
@@ -247,7 +251,10 @@ func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 
 	// Check for resources with ImportState but no import tests
 	// Only check regular resources (not data sources)
-	for name, resource := range registry.GetAllResources() {
+	for name, resource := range registry.GetAllDefinitions() {
+		if resource.IsDataSource {
+			continue
+		}
 		// Only check resources that implement ImportState
 		if !resource.HasImportState {
 			continue
@@ -287,7 +294,10 @@ func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	registry := getOrBuildRegistry(pass, settings)
 
 	// Check for resources with validation rules but no error tests
-	for name, resource := range registry.GetAllResources() {
+	for name, resource := range registry.GetAllDefinitions() {
+		if resource.IsDataSource {
+			continue
+		}
 		// Check if resource has validation rules
 		hasValidation := false
 		var validatedAttrs []string
@@ -338,37 +348,18 @@ func runStateCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	settings := DefaultSettings()
 	registry := getOrBuildRegistry(pass, settings)
 
-	// Check for test steps without Check fields
-	// Iterate through all test functions
-	for _, testFunc := range registry.GetAllTestFunctions() {
-		for _, step := range testFunc.TestSteps {
-			// Skip import and error test steps - they don't require Check
-			if step.ImportState || step.ExpectError {
-				continue
-			}
-
-			// Regular test steps with Config should have Check fields or Plan checks
-			if !step.HasCheck && !step.HasPlanCheck && step.HasConfig {
-				// Try to find the resource being tested from InferredResources
-				resourceContext := ""
-				if len(testFunc.InferredResources) > 0 {
-					resourceContext = fmt.Sprintf(" (testing %s)", testFunc.InferredResources[0])
-				}
-
-				// Use step position if available, otherwise use function position
-				pos := step.StepPos
-				if pos == 0 {
-					pos = testFunc.FunctionPos
-				}
-
-				msg := fmt.Sprintf("test step in %s%s has no state validation checks or plan checks\n"+
-					"  Suggestion: Add Check: resource.ComposeTestCheckFunc(...) or ConfigPlanChecks to verify state",
-					testFunc.Name, resourceContext)
-
-				// Report at the step position
-				pass.Reportf(pos, "%s", msg)
-			}
+	// Report at resource level - only flag resources missing ALL state/plan checks
+	for _, coverage := range registry.GetResourcesMissingStateChecks() {
+		resourceType := "resource"
+		if coverage.Resource.IsDataSource {
+			resourceType = "data source"
 		}
+
+		msg := fmt.Sprintf("%s '%s' has %d test(s) but none include state validation (Check) or plan checks (ConfigPlanChecks)\n"+
+			"  Suggestion: Add Check: resource.ComposeTestCheckFunc(...) or ConfigPlanChecks to at least one test",
+			resourceType, coverage.Resource.Name, coverage.TestCount)
+
+		pass.Reportf(coverage.Resource.SchemaPos, "%s", msg)
 	}
 
 	return nil, nil
@@ -378,15 +369,14 @@ func runDriftCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	settings := DefaultSettings()
 	registry := getOrBuildRegistry(pass, settings)
 
-	// Check test functions for missing CheckDestroy
-	for _, testFunc := range registry.GetAllTestFunctions() {
-		if !testFunc.HasCheckDestroy {
-			pos := testFunc.FunctionPos
-			msg := fmt.Sprintf("test function %s missing CheckDestroy for drift detection\n"+
-				"  Suggestion: Add CheckDestroy: testAccCheckDestroy to resource.TestCase",
-				testFunc.Name)
-			pass.Reportf(pos, "%s", msg)
-		}
+	// Report at resource level - only flag resources missing CheckDestroy
+	// Data sources are excluded as they don't create resources to destroy
+	for _, coverage := range registry.GetResourcesMissingCheckDestroy() {
+		msg := fmt.Sprintf("resource '%s' has %d test(s) but none include CheckDestroy for drift detection\n"+
+			"  Suggestion: Add CheckDestroy: testAccCheckDestroy to at least one test's resource.TestCase",
+			coverage.Resource.Name, coverage.TestCount)
+
+		pass.Reportf(coverage.Resource.SchemaPos, "%s", msg)
 	}
 
 	return nil, nil

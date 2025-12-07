@@ -40,7 +40,7 @@ func TestResourceRegistry_Operations(t *testing.T) {
 		}
 		registry.RegisterResource(resource)
 
-		retrieved := registry.GetResource("widget")
+		retrieved := registry.GetResourceOrDataSource("widget")
 		require.NotNil(t, retrieved)
 		assert.Equal(t, "widget", retrieved.Name)
 	})
@@ -470,38 +470,6 @@ func TestAccWidget_custom(t *testing.T) {
 	})
 }
 
-// T301: Test for extractResourceNameFromTestFunc with various patterns
-// NOTE: This tests DEPRECATED functionality. ExtractResourceNameFromTestFunc is deprecated
-// in favor of file-based matching. It now always returns empty string.
-func TestExtractResourceNameFromTestFunc_AdditionalPatterns(t *testing.T) {
-	t.Skip("ExtractResourceNameFromTestFunc is deprecated - file-based matching is now used")
-
-	t.Run("should extract resource name from various test patterns", func(t *testing.T) {
-		tests := []struct {
-			funcName string
-			expected string
-		}{
-			// Standard patterns
-			{"TestAccWidget_basic", "widget"},
-			{"TestAccServer_create", "server"},
-			{"TestAccDataSourceHttp_basic", "http"},
-			// With underscore in resource name
-			{"TestAccPrivateKey_RSA", "private_key"},
-			// Single word resource
-			{"TestAccWidget", "widget"},
-			// Empty after prefix should return empty
-			{"TestAcc", ""},
-			// Just Test prefix with uppercase letter after
-			{"TestWidget_basic", "widget"},
-		}
-
-		for _, tc := range tests {
-			result := tfprovidertest.ExtractResourceNameFromTestFunc(tc.funcName)
-			assert.Equal(t, tc.expected, result, "funcName: %s", tc.funcName)
-		}
-	})
-}
-
 // T302: Test for Settings.CustomTestHelpers
 func TestSettings_CustomTestHelpers(t *testing.T) {
 	t.Run("default settings should have empty custom test helpers", func(t *testing.T) {
@@ -535,7 +503,7 @@ func BenchmarkResourceRegistry_Register(b *testing.B) {
 	}
 }
 
-func BenchmarkResourceRegistry_GetResource(b *testing.B) {
+func BenchmarkResourceRegistry_GetResourceOrDataSource(b *testing.B) {
 	registry := tfprovidertest.NewResourceRegistry()
 
 	// Setup: register 100 resources
@@ -550,7 +518,7 @@ func BenchmarkResourceRegistry_GetResource(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		registry.GetResource("resource_50")
+		registry.GetResourceOrDataSource("resource_50")
 	}
 }
 
@@ -859,30 +827,6 @@ func TestSettings_ExcludeMigrationFilesConfigurable(t *testing.T) {
 // Task 1: TestDataSource_* Pattern Matching Tests (Priority 1.3)
 // =============================================================================
 
-// T105: Test for extractResourceNameFromTestFunc with TestDataSource_* patterns
-func TestExtractResourceNameFromTestFunc_DataSourcePatterns(t *testing.T) {
-	t.Skip("ExtractResourceNameFromTestFunc is deprecated - file-based matching is now used")
-
-	t.Run("should extract resource name from TestDataSource_ pattern when filename provides context", func(t *testing.T) {
-		// TestDataSource_200 in data_source_http_test.go should map to "http"
-		// The function alone cannot determine this, we need file context
-		result := tfprovidertest.ExtractResourceNameFromTestFunc("TestDataSource_200")
-		// This should return empty because the resource name isn't in the function name
-		// The fallback to filename-based extraction should handle this
-		assert.Equal(t, "", result, "TestDataSource_200 doesn't contain resource name, should return empty")
-	})
-
-	t.Run("should extract resource name from standard TestDataSource pattern", func(t *testing.T) {
-		result := tfprovidertest.ExtractResourceNameFromTestFunc("TestDataSourceHttp_basic")
-		assert.Equal(t, "http", result)
-	})
-
-	t.Run("should extract resource name from TestAccDataSource pattern", func(t *testing.T) {
-		result := tfprovidertest.ExtractResourceNameFromTestFunc("TestAccDataSourceHttp_basic")
-		assert.Equal(t, "http", result)
-	})
-}
-
 // T106: Test for parseTestFile with file-based resource name extraction
 func TestParseTestFile_FilenameBasedResourceExtraction(t *testing.T) {
 	t.Run("should use filename to determine resource name when function names don't contain it", func(t *testing.T) {
@@ -915,37 +859,6 @@ func TestIsTestFunction_NonStandardPatterns(t *testing.T) {
 // =============================================================================
 // Task 2: Support TestResource* without Acc Tests (Priority 2.1)
 // =============================================================================
-
-// T108: Test for extractResourceNameFromTestFunc with TLS provider patterns
-func TestExtractResourceNameFromTestFunc_TLSPatterns(t *testing.T) {
-	t.Skip("ExtractResourceNameFromTestFunc is deprecated - file-based matching is now used")
-
-	t.Run("should extract private_key from TestPrivateKeyRSA", func(t *testing.T) {
-		result := tfprovidertest.ExtractResourceNameFromTestFunc("TestPrivateKeyRSA")
-		assert.Equal(t, "private_key", result)
-	})
-
-	t.Run("should extract private_key from TestPrivateKeyECDSA", func(t *testing.T) {
-		result := tfprovidertest.ExtractResourceNameFromTestFunc("TestPrivateKeyECDSA")
-		assert.Equal(t, "private_key", result)
-	})
-
-	t.Run("should extract private_key from TestPrivateKeyED25519", func(t *testing.T) {
-		result := tfprovidertest.ExtractResourceNameFromTestFunc("TestPrivateKeyED25519")
-		assert.Equal(t, "private_key", result)
-	})
-
-	t.Run("should extract locally_signed_cert from TestResourceLocallySignedCert", func(t *testing.T) {
-		result := tfprovidertest.ExtractResourceNameFromTestFunc("TestResourceLocallySignedCert")
-		assert.Equal(t, "locally_signed_cert", result)
-	})
-
-	t.Run("should extract private_key from TestAccPrivateKeyRSA_UpgradeFromVersion3_4_0", func(t *testing.T) {
-		result := tfprovidertest.ExtractResourceNameFromTestFunc("TestAccPrivateKeyRSA_UpgradeFromVersion3_4_0")
-		// Should extract private_key from the AccPrivateKey part
-		assert.Equal(t, "private_key", result)
-	})
-}
 
 // T109: Test for isTestFunction with TestResource* patterns (without Acc)
 func TestIsTestFunction_TestResourceWithoutAcc(t *testing.T) {
@@ -1423,10 +1336,13 @@ func TestRegistry_GetAllDefinitions(t *testing.T) {
 		definitions := registry.GetAllDefinitions()
 
 		assert.Len(t, definitions, 2)
-		assert.NotNil(t, definitions["widget"])
-		assert.NotNil(t, definitions["http"])
-		assert.False(t, definitions["widget"].IsDataSource)
-		assert.True(t, definitions["http"].IsDataSource)
+		// Use GetResourceOrDataSource for lookups (handles compound keys internally)
+		widgetInfo := registry.GetResourceOrDataSource("widget")
+		httpInfo := registry.GetResourceOrDataSource("http")
+		assert.NotNil(t, widgetInfo)
+		assert.NotNil(t, httpInfo)
+		assert.False(t, widgetInfo.IsDataSource)
+		assert.True(t, httpInfo.IsDataSource)
 	})
 
 	t.Run("should return empty map when no resources registered", func(t *testing.T) {
@@ -1450,37 +1366,6 @@ func TestRegistry_GetAllDefinitions(t *testing.T) {
 		for i := 0; i < 10; i++ {
 			<-done
 		}
-	})
-}
-
-// T702: Test that GetResources and GetDataSources filter correctly
-func TestRegistry_FilteredGetters(t *testing.T) {
-	t.Run("GetAllResources should only return non-data-sources", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
-
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "gadget", IsDataSource: false})
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", IsDataSource: true})
-
-		resources := registry.GetAllResources()
-		assert.Len(t, resources, 2)
-		assert.NotNil(t, resources["widget"])
-		assert.NotNil(t, resources["gadget"])
-		assert.Nil(t, resources["http"])
-	})
-
-	t.Run("GetAllDataSources should only return data sources", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
-
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", IsDataSource: true})
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "ami", IsDataSource: true})
-
-		dataSources := registry.GetAllDataSources()
-		assert.Len(t, dataSources, 2)
-		assert.NotNil(t, dataSources["http"])
-		assert.NotNil(t, dataSources["ami"])
-		assert.Nil(t, dataSources["widget"])
 	})
 }
 

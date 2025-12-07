@@ -15,9 +15,10 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-// Regex to find 'resource "example_widget" "name" {'
-// Captures the resource type (e.g., "example_widget")
-var resourceTypeRegex = regexp.MustCompile(`resource\s+"([^"]+)"\s+"[^"]+"\s+\{`)
+// Regex to find 'resource "example_widget" "name" {' or 'action "example_action" "name" {'
+// Captures the resource/action type (e.g., "example_widget", "aap_eda_eventstream_post")
+// This handles both standard resources and terraform-plugin-framework actions
+var resourceTypeRegex = regexp.MustCompile(`(?:resource|action)\s+"([^"]+)"\s+"[^"]+"\s+\{`)
 
 // LocalHelper represents a discovered local test helper function.
 type LocalHelper struct {
@@ -81,13 +82,115 @@ func hashConfigExpr(expr ast.Expr) string {
 	return hex.EncodeToString(hash[:8]) // First 8 bytes for brevity
 }
 
-// parseResources extracts all resources and data sources from a Go source file.
+// parseResources extracts all resources, data sources, and actions from a Go source file.
+// It uses multiple detection strategies:
+// 1. Schema() method on types ending with Resource/DataSource/Action
+// 2. MetadataEntitySlug in factory functions (NewXxxDataSource, NewXxxResource)
+// 3. Metadata() method with resp.TypeName assignment
+// 4. NewXxxAction factory functions returning action.Action
 func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*ResourceInfo {
 	var resources []*ResourceInfo
+	// Use compound key "kind:name" to allow same name across different kinds
+	// (e.g., "job" resource and "job" action can coexist)
+	seen := make(map[string]bool)
 
+	seenKey := func(kind ResourceKind, name string) string {
+		return kind.String() + ":" + name
+	}
+
+	// Strategy 1: Look for Schema() methods on Resource/DataSource/Action types
 	ast.Inspect(file, func(n ast.Node) bool {
 		funcDecl, ok := n.(*ast.FuncDecl)
 		if !ok || funcDecl.Recv == nil || funcDecl.Name.Name != "Schema" {
+			return true
+		}
+
+		recvType := getReceiverTypeName(funcDecl.Recv)
+		if recvType == "" {
+			return true
+		}
+
+		var kind ResourceKind
+		isDataSource := strings.HasSuffix(recvType, "DataSource")
+		isResource := strings.HasSuffix(recvType, "Resource")
+		isAction := strings.HasSuffix(recvType, "Action")
+
+		if isDataSource {
+			kind = KindDataSource
+		} else if isAction {
+			// Skip actions in Strategy 1 - they're handled by Strategy 4/4b
+			// which properly extracts the TypeName from Metadata method
+			return true
+		} else if isResource {
+			kind = KindResource
+		} else {
+			return true
+		}
+
+		name := extractResourceName(recvType)
+		key := seenKey(kind, name)
+		if name == "" || seen[key] {
+			return true
+		}
+
+		seen[key] = true
+		resource := &ResourceInfo{
+			Name:         name,
+			Kind:         kind,
+			IsDataSource: isDataSource,
+			IsAction:     isAction,
+			FilePath:     filePath,
+			SchemaPos:    funcDecl.Pos(),
+			Attributes:   extractAttributes(funcDecl.Body),
+		}
+
+		resources = append(resources, resource)
+		return true
+	})
+
+	// Strategy 2: Look for NewXxxDataSource/NewXxxResource factory functions
+	// with MetadataEntitySlug in StringDescriptions struct
+	ast.Inspect(file, func(n ast.Node) bool {
+		funcDecl, ok := n.(*ast.FuncDecl)
+		if !ok || funcDecl.Recv != nil {
+			return true
+		}
+
+		funcName := funcDecl.Name.Name
+		isDataSource := strings.HasPrefix(funcName, "New") && strings.Contains(funcName, "DataSource")
+		isResource := strings.HasPrefix(funcName, "New") && strings.Contains(funcName, "Resource") && !strings.Contains(funcName, "DataSource")
+
+		if !isDataSource && !isResource {
+			return true
+		}
+
+		// Look for MetadataEntitySlug in the function body
+		if funcDecl.Body != nil {
+			name := extractMetadataEntitySlug(funcDecl.Body)
+			kind := KindResource
+			if isDataSource {
+				kind = KindDataSource
+			}
+			key := seenKey(kind, name)
+			if name != "" && !seen[key] {
+				seen[key] = true
+				resources = append(resources, &ResourceInfo{
+					Name:         name,
+					Kind:         kind,
+					IsDataSource: isDataSource,
+					FilePath:     filePath,
+					SchemaPos:    funcDecl.Pos(),
+				})
+			}
+		}
+
+		return true
+	})
+
+	// Strategy 3: Look for Metadata() methods with resp.TypeName assignment
+	ast.Inspect(file, func(n ast.Node) bool {
+		funcDecl, ok := n.(*ast.FuncDecl)
+		if !ok || funcDecl.Recv == nil || funcDecl.Name.Name != "Metadata" {
 			return true
 		}
 
@@ -103,30 +206,224 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 			return true
 		}
 
-		name := extractResourceName(recvType)
-		if name == "" {
-			return true
+		// Look for resp.TypeName = "..." assignment
+		if funcDecl.Body != nil {
+			name := extractTypeNameFromMetadata(funcDecl.Body)
+			kind := KindResource
+			if isDataSource {
+				kind = KindDataSource
+			}
+			key := seenKey(kind, name)
+			if name != "" && !seen[key] {
+				seen[key] = true
+				resources = append(resources, &ResourceInfo{
+					Name:         name,
+					Kind:         kind,
+					IsDataSource: isDataSource,
+					FilePath:     filePath,
+					SchemaPos:    funcDecl.Pos(),
+				})
+			}
 		}
 
-		resource := &ResourceInfo{
-			Name:         name,
-			IsDataSource: isDataSource,
-			FilePath:     filePath,
-			SchemaPos:    funcDecl.Pos(),
-			Attributes:   extractAttributes(funcDecl.Body),
-		}
-
-		resources = append(resources, resource)
 		return true
 	})
 
+	// Strategy 4: Look for NewXxxAction factory functions returning action.Action
+	// Also collect action type names for later Metadata extraction
+	actionTypeNames := make(map[string]token.Pos) // typeName -> position
+	ast.Inspect(file, func(n ast.Node) bool {
+		funcDecl, ok := n.(*ast.FuncDecl)
+		if !ok || funcDecl.Recv != nil {
+			return true
+		}
+
+		funcName := funcDecl.Name.Name
+		// Match patterns like NewJobAction, NewWorkflowJobAction, NewEDAEventStreamPostAction
+		if !strings.HasPrefix(funcName, "New") || !strings.HasSuffix(funcName, "Action") {
+			return true
+		}
+
+		// Verify return type is action.Action
+		if funcDecl.Type.Results == nil || len(funcDecl.Type.Results.List) == 0 {
+			return true
+		}
+
+		returnType := ""
+		if sel, ok := funcDecl.Type.Results.List[0].Type.(*ast.SelectorExpr); ok {
+			if ident, ok := sel.X.(*ast.Ident); ok {
+				returnType = ident.Name + "." + sel.Sel.Name
+			}
+		}
+
+		if returnType != "action.Action" {
+			return true
+		}
+
+		// Extract action type name from factory function (e.g., NewJobAction -> JobAction)
+		typeName := strings.TrimPrefix(funcName, "New")
+		actionTypeNames[typeName] = funcDecl.Pos()
+
+		return true
+	})
+
+	// Strategy 4b: For each action type, find its Metadata method and extract TypeName
+	// This gives us the canonical name used in HCL configs (e.g., "eda_eventstream_post")
+	// Track which action types we've already processed via Metadata
+	processedActionTypes := make(map[string]bool)
+	ast.Inspect(file, func(n ast.Node) bool {
+		funcDecl, ok := n.(*ast.FuncDecl)
+		if !ok || funcDecl.Name.Name != "Metadata" || funcDecl.Recv == nil {
+			return true
+		}
+
+		// Check receiver type against known action types
+		recvType := getReceiverTypeName(funcDecl.Recv)
+		pos, isAction := actionTypeNames[recvType]
+		if !isAction {
+			return true
+		}
+
+		// Mark this action type as processed (don't use fallback)
+		processedActionTypes[recvType] = true
+
+		// Extract TypeName from Metadata method body
+		if funcDecl.Body != nil {
+			name := extractTypeNameFromMetadata(funcDecl.Body)
+			key := seenKey(KindAction, name)
+			if name != "" && !seen[key] {
+				seen[key] = true
+				resources = append(resources, &ResourceInfo{
+					Name:      name,
+					Kind:      KindAction,
+					IsAction:  true,
+					FilePath:  filePath,
+					SchemaPos: pos,
+				})
+			}
+		}
+
+		return true
+	})
+
+	// Fallback: For actions without Metadata methods, use the factory function name
+	for typeName, pos := range actionTypeNames {
+		// Skip if we already processed this via Metadata
+		if processedActionTypes[typeName] {
+			continue
+		}
+		name := extractActionName("New" + typeName)
+		key := seenKey(KindAction, name)
+		if name != "" && !seen[key] {
+			seen[key] = true
+			resources = append(resources, &ResourceInfo{
+				Name:      name,
+				Kind:      KindAction,
+				IsAction:  true,
+				FilePath:  filePath,
+				SchemaPos: pos,
+			})
+		}
+	}
+
 	for _, resource := range resources {
-		if !resource.IsDataSource {
+		if resource.Kind == KindResource {
 			resource.HasImportState = hasImportStateMethod(file, resource.Name)
 		}
 	}
 
 	return resources
+}
+
+// extractActionName extracts the action name from a factory function name.
+// Examples: NewJobAction -> job, NewWorkflowJobAction -> workflow_job
+// Note: Actions may share base names with resources (e.g., both "job" resource and "job" action exist).
+// The registry uses Kind to differentiate them.
+func extractActionName(funcName string) string {
+	// Remove "New" prefix and "Action" suffix
+	name := strings.TrimPrefix(funcName, "New")
+	name = strings.TrimSuffix(name, "Action")
+	if name == "" {
+		return ""
+	}
+
+	// Convert PascalCase to snake_case
+	return toSnakeCase(name)
+}
+
+// extractMetadataEntitySlug extracts the resource name from MetadataEntitySlug in a function body.
+// It looks for patterns like: MetadataEntitySlug: "organization"
+func extractMetadataEntitySlug(body *ast.BlockStmt) string {
+	var name string
+	ast.Inspect(body, func(n ast.Node) bool {
+		kv, ok := n.(*ast.KeyValueExpr)
+		if !ok {
+			return true
+		}
+
+		// Check if key is MetadataEntitySlug
+		if ident, ok := kv.Key.(*ast.Ident); ok {
+			if ident.Name == "MetadataEntitySlug" {
+				// Extract string value
+				if lit, ok := kv.Value.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					name = strings.Trim(lit.Value, `"`)
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return name
+}
+
+// extractTypeNameFromMetadata extracts the resource name from resp.TypeName assignment.
+// It looks for patterns like: resp.TypeName = "provider_name" or resp.TypeName = req.ProviderTypeName + "_name"
+func extractTypeNameFromMetadata(body *ast.BlockStmt) string {
+	var name string
+	ast.Inspect(body, func(n ast.Node) bool {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+			return true
+		}
+
+		// Check for resp.TypeName on LHS
+		sel, ok := assign.Lhs[0].(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok || ident.Name != "resp" || sel.Sel.Name != "TypeName" {
+			return true
+		}
+
+		// Try to extract the resource name from RHS
+		switch rhs := assign.Rhs[0].(type) {
+		case *ast.BasicLit:
+			// Direct string assignment: resp.TypeName = "resource_name"
+			if rhs.Kind == token.STRING {
+				fullName := strings.Trim(rhs.Value, `"`)
+				// Remove provider prefix if present (e.g., "provider_resource" -> "resource")
+				if idx := strings.Index(fullName, "_"); idx > 0 {
+					name = fullName[idx+1:]
+				} else {
+					name = fullName
+				}
+				return false
+			}
+		case *ast.BinaryExpr:
+			// Concatenation: resp.TypeName = req.ProviderTypeName + "_name"
+			if rhs.Op == token.ADD {
+				if lit, ok := rhs.Y.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					suffix := strings.Trim(lit.Value, `"`)
+					// Remove leading underscore if present
+					name = strings.TrimPrefix(suffix, "_")
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return name
 }
 
 // ParseTestFileWithConfig parses a test file with full configuration support.
@@ -138,6 +435,9 @@ func ParseTestFileWithConfig(file *ast.File, fset *token.FileSet, filePath strin
 	}
 
 	resourceName, isDataSource := extractResourceNameFromFilePath(filePath)
+
+	// Build helper function map: function name -> resource/action patterns in return strings
+	helperPatterns := buildHelperPatternMap(file)
 
 	var testFuncs []TestFunctionInfo
 
@@ -159,7 +459,7 @@ func ParseTestFileWithConfig(file *ast.File, fset *token.FileSet, filePath strin
 			return true
 		}
 
-		steps, hasCheckDestroy, inferred := extractTestSteps(funcDecl.Body)
+		steps, hasCheckDestroy, inferred := extractTestStepsWithHelpers(funcDecl.Body, helperPatterns)
 		testFunc := TestFunctionInfo{
 			Name:              funcDecl.Name.Name,
 			FilePath:          filePath,
@@ -400,27 +700,6 @@ func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
 	return reg
 }
 
-// parseTestFileWithHelpersAndLocals parses a test file with both custom and local helpers.
-// Deprecated: Use ParseTestFileWithConfig instead.
-func parseTestFileWithHelpersAndLocals(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string, localHelpers []LocalHelper) *TestFileInfo {
-	config := ParserConfig{
-		CustomHelpers: customHelpers,
-		LocalHelpers:  localHelpers,
-	}
-	return ParseTestFileWithConfig(file, fset, filePath, config)
-}
-
-// parseTestFileWithSettings parses a test file with full settings support.
-// Deprecated: Use ParseTestFileWithConfig instead. This function is kept for backward compatibility.
-func parseTestFileWithSettings(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string, localHelpers []LocalHelper, testNamePatterns []string) *TestFileInfo {
-	config := ParserConfig{
-		CustomHelpers:    customHelpers,
-		LocalHelpers:     localHelpers,
-		TestNamePatterns: testNamePatterns,
-	}
-	return ParseTestFileWithConfig(file, fset, filePath, config)
-}
-
 // matchesTestPattern checks if a function name matches the test patterns.
 // If testNamePatterns is empty, it uses default patterns (TestAcc*, TestResource*, etc.)
 func matchesTestPattern(funcName string, testNamePatterns []string) bool {
@@ -572,38 +851,109 @@ func detectHelperUsed(body *ast.BlockStmt, localHelpers []LocalHelper) string {
 	return helperUsed
 }
 
-// extractTestSteps extracts test step information from a test function body.
-// Returns the list of test steps, a boolean indicating whether CheckDestroy was found,
-// and a slice of inferred resource names extracted from Config strings.
-func extractTestSteps(body *ast.BlockStmt) ([]TestStepInfo, bool, []string) {
-	var steps []TestStepInfo
-	hasCheckDestroy := false
-	uniqueInferred := make(map[string]bool)
-	if body == nil {
-		return steps, hasCheckDestroy, nil
+// buildHelperPatternMap scans a file for helper functions that return HCL strings
+// and extracts resource/action patterns from them.
+func buildHelperPatternMap(file *ast.File) map[string][]string {
+	patterns := make(map[string][]string)
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		funcDecl, ok := n.(*ast.FuncDecl)
+		if !ok || funcDecl.Body == nil {
+			return true
+		}
+
+		funcName := funcDecl.Name.Name
+
+		// Look for return statements with string literals or fmt.Sprintf
+		ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+			ret, ok := n.(*ast.ReturnStmt)
+			if !ok || len(ret.Results) == 0 {
+				return true
+			}
+
+			for _, result := range ret.Results {
+				extractPatternsFromExpr(result, func(pattern string) {
+					patterns[funcName] = append(patterns[funcName], pattern)
+				})
+			}
+			return true
+		})
+		return true
+	})
+
+	return patterns
+}
+
+// extractPatternsFromExpr extracts resource/action patterns from an expression.
+// It handles string literals, fmt.Sprintf calls, and string concatenation.
+func extractPatternsFromExpr(expr ast.Expr, addPattern func(string)) {
+	switch e := expr.(type) {
+	case *ast.BasicLit:
+		if e.Kind == token.STRING {
+			content := strings.Trim(e.Value, "`\"")
+			matches := resourceTypeRegex.FindAllStringSubmatch(content, -1)
+			for _, match := range matches {
+				if len(match) > 1 {
+					addPattern(match[1])
+				}
+			}
+		}
+	case *ast.CallExpr:
+		// Handle fmt.Sprintf and similar
+		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
+			if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "fmt" {
+				// Look at the format string (first argument)
+				if len(e.Args) > 0 {
+					extractPatternsFromExpr(e.Args[0], addPattern)
+				}
+			}
+		}
+	case *ast.BinaryExpr:
+		// Handle string concatenation
+		if e.Op == token.ADD {
+			extractPatternsFromExpr(e.X, addPattern)
+			extractPatternsFromExpr(e.Y, addPattern)
+		}
 	}
-	stepNumber := 0
+}
+
+// extractTestStepsWithHelpers is like extractTestSteps but also looks up helper patterns.
+func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string][]string) ([]TestStepInfo, bool, []string) {
+	var steps []TestStepInfo
+	var hasCheckDestroy bool
+	uniqueInferred := make(map[string]bool)
+	stepNumber := 1
 
 	ast.Inspect(body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
+		callExpr, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
 
-		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-			if ident, ok := sel.X.(*ast.Ident); ok {
-				if ident.Name == "resource" && (sel.Sel.Name == "Test" || sel.Sel.Name == "ParallelTest") {
-					if len(call.Args) >= 2 {
-						steps, hasCheckDestroy = extractStepsFromTestCase(call.Args[1], &stepNumber, uniqueInferred)
-					}
-					return false
-				}
-			}
+		sel, ok := callExpr.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
 		}
+
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok || (ident.Name != "resource" && sel.Sel.Name != "Test" && sel.Sel.Name != "ParallelTest") {
+			return true
+		}
+
+		// Find TestCase argument
+		if len(callExpr.Args) < 2 {
+			return true
+		}
+
+		testSteps, foundCheckDestroy := extractStepsFromTestCaseWithHelpers(callExpr.Args[1], &stepNumber, uniqueInferred, helperPatterns)
+		steps = append(steps, testSteps...)
+		if foundCheckDestroy {
+			hasCheckDestroy = true
+		}
+
 		return true
 	})
 
-	// Convert uniqueInferred map keys to slice
 	var inferredResources []string
 	for resourceName := range uniqueInferred {
 		inferredResources = append(inferredResources, resourceName)
@@ -612,10 +962,8 @@ func extractTestSteps(body *ast.BlockStmt) ([]TestStepInfo, bool, []string) {
 	return steps, hasCheckDestroy, inferredResources
 }
 
-// extractStepsFromTestCase extracts steps from a resource.TestCase composite literal.
-// Returns the list of test steps and a boolean indicating whether CheckDestroy was found.
-// The inferred map is populated with resource names extracted from Config strings.
-func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int, inferred map[string]bool) ([]TestStepInfo, bool) {
+// extractStepsFromTestCaseWithHelpers extracts steps and looks up helper patterns.
+func extractStepsFromTestCaseWithHelpers(testCaseExpr ast.Expr, stepNumber *int, inferred map[string]bool, helperPatterns map[string][]string) ([]TestStepInfo, bool) {
 	var steps []TestStepInfo
 	hasCheckDestroy := false
 
@@ -644,16 +992,14 @@ func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int, inferred m
 				continue
 			}
 
-			// Parse each step with hash
 			for _, stepExpr := range stepsLit.Elts {
-				step := parseTestStepWithHash(stepExpr, *stepNumber, inferred)
+				step := parseTestStepWithHashAndHelpers(stepExpr, *stepNumber, inferred, helperPatterns)
 				steps = append(steps, step)
 				*stepNumber++
 			}
 		}
 	}
 
-	// Second pass: Determine update steps
 	for i := range steps {
 		if i > 0 {
 			steps[i].PreviousConfigHash = steps[i-1].ConfigHash
@@ -664,14 +1010,8 @@ func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int, inferred m
 	return steps, hasCheckDestroy
 }
 
-// parseTestStep parses a single TestStep composite literal (backward compatible)
-func parseTestStep(stepExpr ast.Expr, stepNum int) TestStepInfo {
-	return parseTestStepWithHash(stepExpr, stepNum, nil)
-}
-
-// parseTestStepWithHash parses a single TestStep composite literal and computes its config hash.
-// If inferred is non-nil, resource names extracted from Config strings are added to it.
-func parseTestStepWithHash(stepExpr ast.Expr, stepNum int, inferred map[string]bool) TestStepInfo {
+// parseTestStepWithHashAndHelpers parses a step and looks up helper patterns for Config.
+func parseTestStepWithHashAndHelpers(stepExpr ast.Expr, stepNum int, inferred map[string]bool, helperPatterns map[string][]string) TestStepInfo {
 	step := TestStepInfo{
 		StepNumber: stepNum,
 	}
@@ -701,19 +1041,20 @@ func parseTestStepWithHash(stepExpr ast.Expr, stepNum int, inferred map[string]b
 			step.HasConfig = true
 			step.ConfigHash = hashConfigExpr(kv.Value)
 
-			// Extract resource name from Config string
 			if inferred != nil {
-				if basicLit, ok := kv.Value.(*ast.BasicLit); ok && basicLit.Kind == token.STRING {
-					// Remove backticks or quotes
-					configContent := strings.Trim(basicLit.Value, "`\"")
-					matches := resourceTypeRegex.FindAllStringSubmatch(configContent, -1)
-					for _, match := range matches {
-						if len(match) > 1 {
-							inferred[match[1]] = true
+				// Try direct extraction first
+				extractResourceNamesFromConfigValue(kv.Value, inferred)
+
+				// If Config is a function call, look up helper patterns
+				if callExpr, ok := kv.Value.(*ast.CallExpr); ok {
+					if ident, ok := callExpr.Fun.(*ast.Ident); ok {
+						if patterns, exists := helperPatterns[ident.Name]; exists {
+							for _, p := range patterns {
+								inferred[p] = true
+							}
 						}
 					}
 				}
-				// Note: We intentionally skip dynamic configs (fmt.Sprintf) for now
 			}
 		case "Check":
 			step.HasCheck = true
@@ -728,12 +1069,17 @@ func parseTestStepWithHash(stepExpr ast.Expr, stepNum int, inferred map[string]b
 			}
 		case "ExpectError":
 			step.ExpectError = true
-		case "ConfigPlanChecks":
-			step.HasPlanCheck = true
 		}
 	}
 
 	return step
+}
+
+// extractResourceNamesFromConfigValue extracts resource/action names from a Config value.
+func extractResourceNamesFromConfigValue(expr ast.Expr, inferred map[string]bool) {
+	extractPatternsFromExpr(expr, func(pattern string) {
+		inferred[pattern] = true
+	})
 }
 
 // extractCheckFunctions extracts check function names from a Check field

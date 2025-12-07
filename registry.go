@@ -48,8 +48,6 @@ func (m MatchType) String() string {
 type ResourceRegistry struct {
 	mu             sync.RWMutex
 	definitions    map[string]*ResourceInfo // Unified map of all resources and data sources
-	resources      map[string]*ResourceInfo // Legacy: filtered view of resources (IsDataSource=false)
-	dataSources    map[string]*ResourceInfo // Legacy: filtered view of data sources (IsDataSource=true)
 	testFunctions  []*TestFunctionInfo
 	resourceTests  map[string][]*TestFunctionInfo
 	fileToResource map[string]string
@@ -59,45 +57,34 @@ type ResourceRegistry struct {
 func NewResourceRegistry() *ResourceRegistry {
 	return &ResourceRegistry{
 		definitions:    make(map[string]*ResourceInfo),
-		resources:      make(map[string]*ResourceInfo),
-		dataSources:    make(map[string]*ResourceInfo),
 		testFunctions:  make([]*TestFunctionInfo, 0),
 		resourceTests:  make(map[string][]*TestFunctionInfo),
 		fileToResource: make(map[string]string),
 	}
 }
 
-// RegisterResource adds a resource or data source to the registry.
-// It stores the resource in both the unified definitions map and the
-// appropriate filtered map (resources or dataSources) for backward compatibility.
+// registryKey creates a unique key for a resource in the registry.
+// This allows resources, data sources, and actions with the same base name to coexist.
+func registryKey(kind ResourceKind, name string) string {
+	return kind.String() + ":" + name
+}
+
+// RegisterResource adds a resource, data source, or action to the registry.
 func (r *ResourceRegistry) RegisterResource(info *ResourceInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Store in unified definitions map
-	r.definitions[info.Name] = info
-
-	// Also store in legacy filtered maps for backward compatibility
-	if info.IsDataSource {
-		r.dataSources[info.Name] = info
-	} else {
-		r.resources[info.Name] = info
+	// Infer Kind from deprecated IsDataSource/IsAction fields for backward compatibility
+	if info.IsDataSource && info.Kind == KindResource {
+		info.Kind = KindDataSource
 	}
-	r.fileToResource[info.FilePath] = info.Name
-}
+	if info.IsAction && info.Kind == KindResource {
+		info.Kind = KindAction
+	}
 
-// GetResource retrieves a resource by name.
-func (r *ResourceRegistry) GetResource(name string) *ResourceInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.resources[name]
-}
-
-// GetDataSource retrieves a data source by name.
-func (r *ResourceRegistry) GetDataSource(name string) *ResourceInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.dataSources[name]
+	key := registryKey(info.Kind, info.Name)
+	r.definitions[key] = info
+	r.fileToResource[info.FilePath] = key
 }
 
 // GetResourceByFile retrieves a resource by its file path.
@@ -105,12 +92,7 @@ func (r *ResourceRegistry) GetResourceByFile(filePath string) *ResourceInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if resourceName, ok := r.fileToResource[filePath]; ok {
-		if resource, ok := r.resources[resourceName]; ok {
-			return resource
-		}
-		if dataSource, ok := r.dataSources[resourceName]; ok {
-			return dataSource
-		}
+		return r.definitions[resourceName]
 	}
 	return nil
 }
@@ -121,39 +103,12 @@ func (r *ResourceRegistry) GetUntestedResources() []*ResourceInfo {
 	defer r.mu.RUnlock()
 
 	var untested []*ResourceInfo
-	for name, resource := range r.resources {
+	for name, info := range r.definitions {
 		if len(r.resourceTests[name]) == 0 {
-			untested = append(untested, resource)
-		}
-	}
-	for name, dataSource := range r.dataSources {
-		if len(r.resourceTests[name]) == 0 {
-			untested = append(untested, dataSource)
+			untested = append(untested, info)
 		}
 	}
 	return untested
-}
-
-// GetAllResources returns a copy of all resources (thread-safe).
-func (r *ResourceRegistry) GetAllResources() map[string]*ResourceInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	copy := make(map[string]*ResourceInfo, len(r.resources))
-	for k, v := range r.resources {
-		copy[k] = v
-	}
-	return copy
-}
-
-// GetAllDataSources returns a copy of all data sources (thread-safe).
-func (r *ResourceRegistry) GetAllDataSources() map[string]*ResourceInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	copy := make(map[string]*ResourceInfo, len(r.dataSources))
-	for k, v := range r.dataSources {
-		copy[k] = v
-	}
-	return copy
 }
 
 // GetAllDefinitions returns a copy of all resources and data sources in a single map (thread-safe).
@@ -170,11 +125,25 @@ func (r *ResourceRegistry) GetAllDefinitions() map[string]*ResourceInfo {
 }
 
 // GetResourceOrDataSource retrieves a resource or data source by name using the unified definitions map.
-// This is more efficient than calling GetResource() followed by GetDataSource().
+// It accepts either a simple name ("widget") or a compound key ("resource:widget").
+// For simple names, it returns the first matching definition found.
 func (r *ResourceRegistry) GetResourceOrDataSource(name string) *ResourceInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.definitions[name]
+
+	// If it's already a compound key, use it directly
+	if strings.Contains(name, ":") {
+		return r.definitions[name]
+	}
+
+	// For simple names, try each kind in order
+	for _, kind := range []ResourceKind{KindResource, KindDataSource, KindAction} {
+		key := registryKey(kind, name)
+		if info := r.definitions[key]; info != nil {
+			return info
+		}
+	}
+	return nil
 }
 
 // RegisterTestFunction adds a test function to the global index.
@@ -194,36 +163,96 @@ func (r *ResourceRegistry) GetAllTestFunctions() []*TestFunctionInfo {
 }
 
 // LinkTestToResource associates a test function with a resource.
+// It accepts either a simple name ("widget") or a compound key ("resource:widget").
+// For simple names, it finds the first matching definition and uses its compound key.
 func (r *ResourceRegistry) LinkTestToResource(resourceName string, fn *TestFunctionInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.resourceTests[resourceName] = append(r.resourceTests[resourceName], fn)
+
+	key := resourceName
+	// If it's not already a compound key, try to find the right one
+	if !strings.Contains(resourceName, ":") {
+		// Try each kind in order of priority
+		for _, kind := range []ResourceKind{KindResource, KindDataSource, KindAction} {
+			candidateKey := registryKey(kind, resourceName)
+			if _, exists := r.definitions[candidateKey]; exists {
+				key = candidateKey
+				break
+			}
+		}
+	}
+	r.resourceTests[key] = append(r.resourceTests[key], fn)
 }
 
 // GetResourceTests returns all test functions associated with a resource.
+// It accepts either a simple name ("widget") or a compound key ("resource:widget").
+// For simple names, it aggregates tests from all matching kinds (resource, datasource, action).
 func (r *ResourceRegistry) GetResourceTests(resourceName string) []*TestFunctionInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.resourceTests[resourceName]
+
+	// If it's already a compound key (contains ":"), use it directly
+	if strings.Contains(resourceName, ":") {
+		return r.resourceTests[resourceName]
+	}
+
+	// For simple names, aggregate tests from all kinds
+	var allTests []*TestFunctionInfo
+	for _, kind := range []ResourceKind{KindResource, KindDataSource, KindAction} {
+		key := registryKey(kind, resourceName)
+		if tests := r.resourceTests[key]; len(tests) > 0 {
+			allTests = append(allTests, tests...)
+		}
+	}
+	return allTests
 }
 
 // GetUnmatchedTestFunctions returns test functions that couldn't be associated with any resource.
+// A test is considered unmatched if it has MatchTypeNone (no matching strategy succeeded).
 func (r *ResourceRegistry) GetUnmatchedTestFunctions() []*TestFunctionInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var unmatched []*TestFunctionInfo
 	for _, fn := range r.testFunctions {
-		if len(fn.InferredResources) == 0 {
+		if fn.MatchType == MatchTypeNone {
 			unmatched = append(unmatched, fn)
 		}
 	}
 	return unmatched
 }
 
-// ResourceInfo holds metadata about a Terraform resource or data source.
+// ResourceKind represents the type of Terraform provider component.
+type ResourceKind int
+
+const (
+	// KindResource represents a standard Terraform resource.
+	KindResource ResourceKind = iota
+	// KindDataSource represents a Terraform data source.
+	KindDataSource
+	// KindAction represents a Terraform action (plugin framework).
+	KindAction
+)
+
+// String returns the string representation of a ResourceKind.
+func (k ResourceKind) String() string {
+	switch k {
+	case KindResource:
+		return "resource"
+	case KindDataSource:
+		return "data source"
+	case KindAction:
+		return "action"
+	default:
+		return "unknown"
+	}
+}
+
+// ResourceInfo holds metadata about a Terraform resource, data source, or action.
 type ResourceInfo struct {
 	Name           string
-	IsDataSource   bool
+	Kind           ResourceKind // New: replaces IsDataSource
+	IsDataSource   bool         // Deprecated: use Kind == KindDataSource
+	IsAction       bool         // Deprecated: use Kind == KindAction
 	FilePath       string
 	SchemaPos      token.Pos
 	Attributes     []AttributeInfo
@@ -330,6 +359,165 @@ func (t *TestStepInfo) DetermineIfUpdateStep(prevStep *TestStepInfo) bool {
 // IsValidImportStep returns true if this step properly tests ImportState.
 func (t *TestStepInfo) IsValidImportStep() bool {
 	return t.ImportState && t.ImportStateVerify
+}
+
+// HasStateOrPlanCheck returns true if this test function has at least one step
+// with state validation (Check field) or plan validation (ConfigPlanChecks).
+func (t *TestFunctionInfo) HasStateOrPlanCheck() bool {
+	for _, step := range t.TestSteps {
+		if step.HasCheck || step.HasPlanCheck {
+			return true
+		}
+	}
+	return false
+}
+
+// ResourceCoverage represents aggregated test coverage for a single resource or data source.
+type ResourceCoverage struct {
+	Resource         *ResourceInfo
+	Tests            []*TestFunctionInfo
+	HasBasicTest     bool // At least one test exists
+	HasStateCheck    bool // At least one test has Check field
+	HasPlanCheck     bool // At least one test has ConfigPlanChecks
+	HasCheckDestroy  bool // At least one test has CheckDestroy
+	HasImportTest    bool // At least one test has ImportState step
+	HasUpdateTest    bool // At least one test has update steps (multiple configs)
+	HasErrorTest     bool // At least one test has ExpectError
+	TestCount        int
+	StepCount        int
+	UpdateStepCount  int
+	ImportStepCount  int
+}
+
+// GetResourceCoverage computes aggregated test coverage for a resource.
+func (r *ResourceRegistry) GetResourceCoverage(resourceName string) *ResourceCoverage {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	resource := r.definitions[resourceName]
+	if resource == nil {
+		return nil
+	}
+
+	tests := r.resourceTests[resourceName]
+	coverage := &ResourceCoverage{
+		Resource:  resource,
+		Tests:     tests,
+		TestCount: len(tests),
+	}
+
+	for _, test := range tests {
+		coverage.HasBasicTest = true
+
+		if test.HasCheckDestroy {
+			coverage.HasCheckDestroy = true
+		}
+		if test.HasImportStep {
+			coverage.HasImportTest = true
+		}
+		if test.HasErrorCase {
+			coverage.HasErrorTest = true
+		}
+
+		for _, step := range test.TestSteps {
+			coverage.StepCount++
+
+			if step.HasCheck {
+				coverage.HasStateCheck = true
+			}
+			if step.HasPlanCheck {
+				coverage.HasPlanCheck = true
+			}
+			if step.ImportState {
+				coverage.ImportStepCount++
+			}
+			if step.IsRealUpdateStep() {
+				coverage.HasUpdateTest = true
+				coverage.UpdateStepCount++
+			}
+		}
+	}
+
+	return coverage
+}
+
+// GetAllResourceCoverage returns coverage information for all resources and data sources.
+func (r *ResourceRegistry) GetAllResourceCoverage() []*ResourceCoverage {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var coverages []*ResourceCoverage
+	for name, resource := range r.definitions {
+		tests := r.resourceTests[name]
+		coverage := &ResourceCoverage{
+			Resource:  resource,
+			Tests:     tests,
+			TestCount: len(tests),
+		}
+
+		for _, test := range tests {
+			coverage.HasBasicTest = true
+
+			if test.HasCheckDestroy {
+				coverage.HasCheckDestroy = true
+			}
+			if test.HasImportStep {
+				coverage.HasImportTest = true
+			}
+			if test.HasErrorCase {
+				coverage.HasErrorTest = true
+			}
+
+			for _, step := range test.TestSteps {
+				coverage.StepCount++
+
+				if step.HasCheck {
+					coverage.HasStateCheck = true
+				}
+				if step.HasPlanCheck {
+					coverage.HasPlanCheck = true
+				}
+				if step.ImportState {
+					coverage.ImportStepCount++
+				}
+				if step.IsRealUpdateStep() {
+					coverage.HasUpdateTest = true
+					coverage.UpdateStepCount++
+				}
+			}
+		}
+
+		coverages = append(coverages, coverage)
+	}
+
+	return coverages
+}
+
+// GetResourcesMissingStateChecks returns resources that have tests but no state/plan checks.
+func (r *ResourceRegistry) GetResourcesMissingStateChecks() []*ResourceCoverage {
+	coverages := r.GetAllResourceCoverage()
+	var missing []*ResourceCoverage
+	for _, cov := range coverages {
+		// Only report resources that have tests but lack validation
+		if cov.HasBasicTest && !cov.HasStateCheck && !cov.HasPlanCheck {
+			missing = append(missing, cov)
+		}
+	}
+	return missing
+}
+
+// GetResourcesMissingCheckDestroy returns resources that have tests but no CheckDestroy.
+func (r *ResourceRegistry) GetResourcesMissingCheckDestroy() []*ResourceCoverage {
+	coverages := r.GetAllResourceCoverage()
+	var missing []*ResourceCoverage
+	for _, cov := range coverages {
+		// Only report resources that have tests but lack CheckDestroy
+		// Data sources typically don't need CheckDestroy
+		if cov.HasBasicTest && !cov.HasCheckDestroy && !cov.Resource.IsDataSource {
+			missing = append(missing, cov)
+		}
+	}
+	return missing
 }
 
 // TestFileSearchResult represents a test file that was searched for a resource.

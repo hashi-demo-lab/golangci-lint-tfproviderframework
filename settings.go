@@ -138,10 +138,3 @@ func (s *Settings) Validate() error {
 
 	return nil
 }
-
-// defaultTestPatterns returns the default test function name patterns
-var defaultTestPatterns = []string{
-	"TestAcc",        // Standard HashiCorp pattern: TestAccResourceFoo_basic
-	"TestResource",   // Alternative: TestResourceFoo
-	"TestDataSource", // Alternative: TestDataSourceFoo
-}

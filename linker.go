@@ -39,23 +39,33 @@ func (l *Linker) LinkTestsToResources() {
 	// Use unified definitions map instead of merging separate resources/dataSources maps
 	allDefinitions := l.registry.GetAllDefinitions()
 
-	// Build resource names set for matching
-	resourceNames := make(map[string]bool, len(allDefinitions))
-	for name := range allDefinitions {
-		resourceNames[name] = true
+	// Build maps for matching:
+	// - simpleNames: maps simple name ("job") to true for quick lookup
+	// - nameToKeys: maps simple name to all registry keys (e.g., "job" -> ["resource:job", "action:job"])
+	simpleNames := make(map[string]bool)
+	nameToKeys := make(map[string][]string)
+	for key, info := range allDefinitions {
+		simpleNames[info.Name] = true
+		nameToKeys[info.Name] = append(nameToKeys[info.Name], key)
 	}
 
 	for _, fn := range l.registry.GetAllTestFunctions() {
-		matches := l.findResourceMatches(fn, resourceNames)
+		matches := l.findResourceMatches(fn, simpleNames)
 
 		// Update function with matches
 		for _, match := range matches {
-			fn.InferredResources = append(fn.InferredResources, match.ResourceName)
+			// Only append to InferredResources for non-inferred matches
+			// (inferred resources are already populated by the parser from Config strings)
+			if match.MatchType != MatchTypeInferred {
+				fn.InferredResources = append(fn.InferredResources, match.ResourceName)
+			}
 			fn.MatchConfidence = match.Confidence
 			fn.MatchType = match.MatchType
 
-			// Link to resource
-			l.registry.LinkTestToResource(match.ResourceName, fn)
+			// Link test to ALL matching registry entries (resource, datasource, action with same name)
+			for _, key := range nameToKeys[match.ResourceName] {
+				l.registry.LinkTestToResource(key, fn)
+			}
 		}
 	}
 }
@@ -66,27 +76,50 @@ func (l *Linker) findResourceMatches(fn *TestFunctionInfo, resourceNames map[str
 	var matches []ResourceMatch
 
 	// Strategy 0: Inferred Content Matching (highest priority)
-	// Check if the test explicitly configures a known resource in its Config strings.
+	// Check if the test explicitly configures known resources in its Config strings.
 	// This is the most reliable strategy as it comes from parsing the actual HCL configuration
-	// that the test uses. If a test's Config string contains a resource block, we know
-	// definitively which resource it's testing.
+	// that the test uses. If a test's Config string contains resource blocks, we know
+	// definitively which resources it's testing.
+	// We collect ALL matching inferred resources (not just the first one), because a test
+	// may legitimately test multiple resources (e.g., an action test that also creates inventory).
+	// We try both the full name (e.g., "aap_eda_eventstream_post") and the name without
+	// provider prefix (e.g., "eda_eventstream_post").
+	seen := make(map[string]bool) // Track already-matched names to avoid duplicates
 	for _, inferredName := range fn.InferredResources {
-		if resourceNames[inferredName] {
+		// Try exact match first
+		if resourceNames[inferredName] && !seen[inferredName] {
 			matches = append(matches, ResourceMatch{
 				ResourceName: inferredName,
 				Confidence:   1.0,
 				MatchType:    MatchTypeInferred,
 			})
-			return matches // High confidence match from config parsing
+			seen[inferredName] = true
+			continue
 		}
+		// Try with provider prefix stripped
+		strippedName := stripProviderPrefix(inferredName)
+		if strippedName != inferredName && resourceNames[strippedName] && !seen[strippedName] {
+			matches = append(matches, ResourceMatch{
+				ResourceName: strippedName,
+				Confidence:   1.0,
+				MatchType:    MatchTypeInferred,
+			})
+			seen[strippedName] = true
+		}
+	}
+	// If we found any inferred matches, return them all
+	if len(matches) > 0 {
+		return matches
 	}
 
 	// Strategy 1: Function name extraction (high confidence)
 	// Always enabled as it's fast and accurate
-	if resourceName, found := ExtractResourceFromFuncName(fn.Name); found {
-		if resourceNames[resourceName] {
+	// Try all possible resource names from the function name
+	allCandidates := ExtractAllResourcesFromFuncName(fn.Name)
+	for _, candidate := range allCandidates {
+		if resourceNames[candidate] {
 			matches = append(matches, ResourceMatch{
-				ResourceName: resourceName,
+				ResourceName: candidate,
 				Confidence:   1.0,
 				MatchType:    MatchTypeFunctionName,
 			})
