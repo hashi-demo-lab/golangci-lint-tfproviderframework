@@ -151,6 +151,27 @@ func (r *ResourceRegistry) GetAllDataSources() map[string]*ResourceInfo {
 	return copy
 }
 
+// GetAllDefinitions returns a copy of all resources and data sources in a single map (thread-safe).
+// This is the preferred method for iterating over all resource types, as it avoids
+// the need to merge separate resources and dataSources maps.
+func (r *ResourceRegistry) GetAllDefinitions() map[string]*ResourceInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make(map[string]*ResourceInfo, len(r.definitions))
+	for k, v := range r.definitions {
+		result[k] = v
+	}
+	return result
+}
+
+// GetResourceOrDataSource retrieves a resource or data source by name using the unified definitions map.
+// This is more efficient than calling GetResource() followed by GetDataSource().
+func (r *ResourceRegistry) GetResourceOrDataSource(name string) *ResourceInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.definitions[name]
+}
+
 // RegisterTestFunction adds a test function to the global index.
 func (r *ResourceRegistry) RegisterTestFunction(fn *TestFunctionInfo) {
 	r.mu.Lock()
