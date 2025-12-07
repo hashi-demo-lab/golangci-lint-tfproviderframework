@@ -250,3 +250,97 @@ func minInt(nums ...int) int {
 	}
 	return m
 }
+
+// testFunctionPrefixes are the common prefixes used in test function names.
+// These are stripped when matching test functions to resources.
+var testFunctionPrefixes = []string{
+	"TestAccDataSource",
+	"TestAccResource",
+	"TestAcc",
+	"TestDataSource",
+	"TestResource",
+	"Test",
+}
+
+// testFunctionSuffixes are the common suffixes used in test function names.
+// These are stripped when matching test functions to resources.
+var testFunctionSuffixes = []string{
+	"_basic",
+	"_generated",
+	"_complete",
+	"_update",
+	"_import",
+	"_disappears",
+	"_migrate",
+	"_full",
+	"_minimal",
+}
+
+// matchResourceByName attempts to match a test function name to a resource name
+// by stripping known prefixes and suffixes and converting to snake_case.
+//
+// For example:
+//   - TestAccAwsS3Bucket_basic -> aws_s3_bucket
+//   - TestAccResourceWidget_update -> widget
+//   - TestDataSourceHTTP_complete -> http
+//
+// Returns the matched resource name and whether a match was found.
+func matchResourceByName(funcName string, resourceNames map[string]bool) (string, bool) {
+	// Strip prefix
+	name := funcName
+	for _, prefix := range testFunctionPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			name = strings.TrimPrefix(name, prefix)
+			break
+		}
+	}
+
+	// If the name starts with an underscore after stripping prefix, skip it
+	name = strings.TrimPrefix(name, "_")
+
+	// Extract the resource part before any underscore suffix
+	// e.g., "AwsS3Bucket_basic" -> "AwsS3Bucket"
+	parts := strings.SplitN(name, "_", 2)
+	resourcePart := parts[0]
+
+	// Also try stripping known suffixes from the full name
+	for _, suffix := range testFunctionSuffixes {
+		if strings.HasSuffix(name, suffix) {
+			// Get the part before the suffix
+			withoutSuffix := strings.TrimSuffix(name, suffix)
+			// If this creates a valid snake_case, use it
+			if withoutSuffix != "" && !strings.HasSuffix(withoutSuffix, "_") {
+				parts = strings.SplitN(withoutSuffix, "_", 2)
+				resourcePart = parts[0]
+				break
+			}
+		}
+	}
+
+	// Convert to snake_case
+	snakeName := toSnakeCase(resourcePart)
+
+	// Check if it matches a registered resource
+	if resourceNames[snakeName] {
+		return snakeName, true
+	}
+
+	// Try without provider prefix (e.g., AwsS3Bucket -> s3_bucket)
+	// This handles cases like "TestAccAWSInstance_basic" where AWS is the provider
+	if len(snakeName) > 0 {
+		// Split on first underscore and try the rest
+		parts := strings.SplitN(snakeName, "_", 2)
+		if len(parts) == 2 && parts[1] != "" {
+			if resourceNames[parts[1]] {
+				return parts[1], true
+			}
+		}
+	}
+
+	return "", false
+}
+
+// MatchResourceByName is the public API for matching test function names to resources.
+func MatchResourceByName(funcName string, resourceNames map[string]bool) (string, bool) {
+	return matchResourceByName(funcName, resourceNames)
+}

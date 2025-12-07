@@ -297,6 +297,13 @@ func (t *TestStepInfo) IsUpdateStep() bool {
 	return t.StepNumber > 0 && t.HasConfig
 }
 
+// IsRealUpdateStep returns true if this step is a genuine update step,
+// excluding import steps and steps without configs.
+// This is used to distinguish real update tests from "Apply -> Import" patterns.
+func (t *TestStepInfo) IsRealUpdateStep() bool {
+	return t.StepNumber > 0 && t.HasConfig && !t.ImportState
+}
+
 // DetermineIfUpdateStep checks if a step is an update step.
 func (t *TestStepInfo) DetermineIfUpdateStep(prevStep *TestStepInfo) bool {
 	if t.StepNumber == 0 {

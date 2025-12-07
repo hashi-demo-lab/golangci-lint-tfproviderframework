@@ -939,3 +939,217 @@ func TestRequiresReplaceResult(t *testing.T) {
 		assert.Equal(t, "", result.ModifierName)
 	})
 }
+
+// Test IsRealUpdateStep method (Phase 2.2)
+func TestTestStepInfo_IsRealUpdateStep(t *testing.T) {
+	tests := []struct {
+		name     string
+		step     TestStepInfo
+		expected bool
+	}{
+		{
+			name: "real update step - step 1 with config and not import",
+			step: TestStepInfo{
+				StepNumber:  1,
+				HasConfig:   true,
+				ImportState: false,
+			},
+			expected: true,
+		},
+		{
+			name: "not update step - step 0",
+			step: TestStepInfo{
+				StepNumber:  0,
+				HasConfig:   true,
+				ImportState: false,
+			},
+			expected: false,
+		},
+		{
+			name: "not update step - import step",
+			step: TestStepInfo{
+				StepNumber:  1,
+				HasConfig:   true,
+				ImportState: true,
+			},
+			expected: false,
+		},
+		{
+			name: "not update step - no config",
+			step: TestStepInfo{
+				StepNumber:  1,
+				HasConfig:   false,
+				ImportState: false,
+			},
+			expected: false,
+		},
+		{
+			name: "real update step - step 2 with config",
+			step: TestStepInfo{
+				StepNumber:  2,
+				HasConfig:   true,
+				ImportState: false,
+			},
+			expected: true,
+		},
+		{
+			name: "not update step - import step even with config",
+			step: TestStepInfo{
+				StepNumber:  2,
+				HasConfig:   true,
+				ImportState: true,
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.step.IsRealUpdateStep()
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Test isAttributeUpdatable function (Phase 3.1)
+func TestIsAttributeUpdatable(t *testing.T) {
+	tests := []struct {
+		name     string
+		attr     AttributeInfo
+		expected bool
+	}{
+		{
+			name: "optional and updatable attribute",
+			attr: AttributeInfo{
+				Name:        "name",
+				Optional:    true,
+				IsUpdatable: true,
+			},
+			expected: true,
+		},
+		{
+			name: "required attribute - not optional, not updatable",
+			attr: AttributeInfo{
+				Name:        "id",
+				Required:    true,
+				Optional:    false,
+				IsUpdatable: true,
+			},
+			expected: false,
+		},
+		{
+			name: "computed-only attribute - not optional",
+			attr: AttributeInfo{
+				Name:        "created_at",
+				Computed:    true,
+				Optional:    false,
+				IsUpdatable: true,
+			},
+			expected: false,
+		},
+		{
+			name: "optional but has RequiresReplace",
+			attr: AttributeInfo{
+				Name:        "region",
+				Optional:    true,
+				IsUpdatable: false, // RequiresReplace found
+			},
+			expected: false,
+		},
+		{
+			name: "optional, computed, and updatable",
+			attr: AttributeInfo{
+				Name:        "description",
+				Optional:    true,
+				Computed:    true,
+				IsUpdatable: true,
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsAttributeUpdatable(tt.attr)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Test MatchesTestPattern function (Phase 4)
+func TestMatchesTestPattern(t *testing.T) {
+	tests := []struct {
+		name             string
+		funcName         string
+		testNamePatterns []string
+		expected         bool
+	}{
+		{
+			name:             "matches TestAcc prefix with default patterns",
+			funcName:         "TestAccWidget_basic",
+			testNamePatterns: nil,
+			expected:         true,
+		},
+		{
+			name:             "matches TestResource prefix with default patterns",
+			funcName:         "TestResourceWidget",
+			testNamePatterns: nil,
+			expected:         true,
+		},
+		{
+			name:             "matches TestDataSource prefix with default patterns",
+			funcName:         "TestDataSourceHTTP",
+			testNamePatterns: nil,
+			expected:         true,
+		},
+		{
+			name:             "matches Test*_ pattern with default patterns",
+			funcName:         "TestWidget_basic",
+			testNamePatterns: nil,
+			expected:         true,
+		},
+		{
+			name:             "rejects non-Test prefix",
+			funcName:         "testWidget",
+			testNamePatterns: nil,
+			expected:         false,
+		},
+		{
+			name:             "rejects lowercase test prefix",
+			funcName:         "testAcc",
+			testNamePatterns: nil,
+			expected:         false,
+		},
+		{
+			name:             "matches custom pattern with wildcard",
+			funcName:         "TestMyCustomWidget_basic",
+			testNamePatterns: []string{"TestMyCustom*"},
+			expected:         true,
+		},
+		{
+			name:             "matches exact custom pattern",
+			funcName:         "TestExactMatch",
+			testNamePatterns: []string{"TestExactMatch"},
+			expected:         true,
+		},
+		{
+			name:             "rejects when not matching custom patterns",
+			funcName:         "TestAccWidget_basic",
+			testNamePatterns: []string{"TestMyCustom*"},
+			expected:         false,
+		},
+		{
+			name:             "matches one of multiple custom patterns",
+			funcName:         "TestSecondPattern_test",
+			testNamePatterns: []string{"TestFirstPattern*", "TestSecondPattern*"},
+			expected:         true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := MatchesTestPattern(tt.funcName, tt.testNamePatterns)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

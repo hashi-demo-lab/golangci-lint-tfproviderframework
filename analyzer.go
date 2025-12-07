@@ -134,11 +134,11 @@ func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	// Check for resources with updatable attributes but no update tests
 	// Only check regular resources (not data sources)
 	for name, resource := range registry.GetAllResources() {
-		// Check if resource has updatable attributes
+		// Check if resource has updatable attributes using isAttributeUpdatable
 		hasUpdatable := false
 		var updatableAttrs []string
 		for _, attr := range resource.Attributes {
-			if attr.NeedsUpdateTest() {
+			if isAttributeUpdatable(attr) {
 				hasUpdatable = true
 				updatableAttrs = append(updatableAttrs, attr.Name)
 			}
@@ -149,25 +149,51 @@ func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 			continue
 		}
 
-		// Check if resource has test file with multi-step test
+		// Use registry.GetResourceTests to get all linked test functions
+		// This uses the new function-first linking approach
+		linkedTests := registry.GetResourceTests(name)
+
+		// Also check legacy testFiles for backward compatibility
 		testFile := registry.GetTestFile(name)
-		if testFile == nil {
-			// No test file at all - but this is covered by BasicTestAnalyzer
+
+		// Combine test functions from both sources
+		var allTestFuncs []*TestFunctionInfo
+		for _, fn := range linkedTests {
+			allTestFuncs = append(allTestFuncs, fn)
+		}
+		if testFile != nil {
+			for i := range testFile.TestFunctions {
+				// Avoid duplicates - check if already in linked tests
+				found := false
+				for _, linked := range linkedTests {
+					if linked.Name == testFile.TestFunctions[i].Name {
+						found = true
+						break
+					}
+				}
+				if !found {
+					allTestFuncs = append(allTestFuncs, &testFile.TestFunctions[i])
+				}
+			}
+		}
+
+		// No tests at all - covered by BasicTestAnalyzer
+		if len(allTestFuncs) == 0 {
 			continue
 		}
 
-		// Check if any test function has an actual update step
-		// An update step is when a subsequent step has a different config than the previous
+		// Check if any test function has a real update step
 		hasUpdateTest := false
-		for _, testFunc := range testFile.TestFunctions {
+		for _, testFunc := range allTestFuncs {
 			for _, step := range testFunc.TestSteps {
-				// Check for IsUpdateStep flag if available, otherwise fall back to step count
-				if step.IsUpdateStep() {
+				// Use IsRealUpdateStep to properly distinguish real updates
+				// from "Apply -> Import" patterns
+				if step.IsRealUpdateStep() {
 					hasUpdateTest = true
 					break
 				}
 			}
-			// Fallback: if we have multiple steps with configs, consider it an update test
+			// Fallback: if we have multiple config steps (excluding imports), consider it an update test
 			if !hasUpdateTest && len(testFunc.TestSteps) >= 2 {
 				configSteps := 0
 				for _, step := range testFunc.TestSteps {
@@ -197,6 +223,33 @@ func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	}
 
 	return nil, nil
+}
+
+// isAttributeUpdatable determines if an attribute needs an update test.
+// It returns false for:
+//   - Non-optional attributes (Computed-only attributes don't need update tests)
+//   - Attributes with RequiresReplace modifiers
+//
+// It defaults to true if unsure, to avoid false negatives.
+func isAttributeUpdatable(attr AttributeInfo) bool {
+	// Computed-only attributes don't need update tests
+	if !attr.Optional {
+		return false
+	}
+
+	// Attributes with RequiresReplace don't need update tests
+	// (the resource is recreated on change, not updated)
+	if !attr.IsUpdatable {
+		return false
+	}
+
+	// Default: assume it IS updatable if we aren't sure
+	return true
+}
+
+// IsAttributeUpdatable is the public API for checking if an attribute needs update tests.
+func IsAttributeUpdatable(attr AttributeInfo) bool {
+	return isAttributeUpdatable(attr)
 }
 
 func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {

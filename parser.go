@@ -357,8 +357,8 @@ func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
 			}
 		}
 
-		// Parse test file with custom and local helpers
-		testFileInfo := parseTestFileWithHelpersAndLocals(file, pass.Fset, filename, settings.CustomTestHelpers, localHelpers)
+		// Parse test file with custom and local helpers and test name patterns
+		testFileInfo := parseTestFileWithSettings(file, pass.Fset, filename, settings.CustomTestHelpers, localHelpers, settings.TestNamePatterns)
 		if testFileInfo == nil {
 			continue
 		}
@@ -383,6 +383,12 @@ func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
 
 // parseTestFileWithHelpersAndLocals parses a test file with both custom and local helpers.
 func parseTestFileWithHelpersAndLocals(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string, localHelpers []LocalHelper) *TestFileInfo {
+	return parseTestFileWithSettings(file, fset, filePath, customHelpers, localHelpers, nil)
+}
+
+// parseTestFileWithSettings parses a test file with full settings support.
+// This allows using custom test name patterns from settings.
+func parseTestFileWithSettings(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string, localHelpers []LocalHelper, testNamePatterns []string) *TestFileInfo {
 	packageName := ""
 	if file.Name != nil {
 		packageName = file.Name.Name
@@ -399,7 +405,9 @@ func parseTestFileWithHelpersAndLocals(file *ast.File, fset *token.FileSet, file
 		}
 
 		name := funcDecl.Name.Name
-		if !strings.HasPrefix(name, "Test") {
+
+		// Check if function name matches test patterns
+		if !matchesTestPattern(name, testNamePatterns) {
 			return true
 		}
 
@@ -443,6 +451,56 @@ func parseTestFileWithHelpersAndLocals(file *ast.File, fset *token.FileSet, file
 		IsDataSource:  isDataSource,
 		TestFunctions: testFuncs,
 	}
+}
+
+// matchesTestPattern checks if a function name matches the test patterns.
+// If testNamePatterns is empty, it uses default patterns (TestAcc*, TestResource*, etc.)
+func matchesTestPattern(funcName string, testNamePatterns []string) bool {
+	// Always require "Test" prefix (capital T for exported tests)
+	if !strings.HasPrefix(funcName, "Test") {
+		return false
+	}
+
+	// If custom patterns are provided, check against them
+	if len(testNamePatterns) > 0 {
+		for _, pattern := range testNamePatterns {
+			// Support glob-style patterns (* as wildcard)
+			if strings.HasSuffix(pattern, "*") {
+				prefix := strings.TrimSuffix(pattern, "*")
+				if strings.HasPrefix(funcName, prefix) {
+					return true
+				}
+			} else if funcName == pattern {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Default patterns: TestAcc*, TestResource*, TestDataSource*, Test*_
+	defaultPatterns := []string{
+		"TestAcc",
+		"TestResource",
+		"TestDataSource",
+	}
+
+	for _, pattern := range defaultPatterns {
+		if strings.HasPrefix(funcName, pattern) {
+			return true
+		}
+	}
+
+	// Also accept Test*_ pattern (e.g., TestWidget_basic)
+	if strings.Contains(funcName, "_") {
+		return true
+	}
+
+	return false
+}
+
+// MatchesTestPattern is the public API for checking test patterns.
+func MatchesTestPattern(funcName string, testNamePatterns []string) bool {
+	return matchesTestPattern(funcName, testNamePatterns)
 }
 
 // checkUsesResourceTest checks if a function body contains a call to resource.Test()

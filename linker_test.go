@@ -396,3 +396,119 @@ func TestMatchTypeString(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchResourceByName(t *testing.T) {
+	tests := []struct {
+		name          string
+		funcName      string
+		resourceNames map[string]bool
+		expectedMatch string
+		expectedFound bool
+	}{
+		{
+			name:          "basic TestAcc pattern",
+			funcName:      "TestAccWidget_basic",
+			resourceNames: map[string]bool{"widget": true},
+			expectedMatch: "widget",
+			expectedFound: true,
+		},
+		{
+			name:          "TestAccResource pattern",
+			funcName:      "TestAccResourceWidget_update",
+			resourceNames: map[string]bool{"widget": true},
+			expectedMatch: "widget",
+			expectedFound: true,
+		},
+		{
+			name:          "TestAccDataSource pattern",
+			funcName:      "TestAccDataSourceHTTP_basic",
+			resourceNames: map[string]bool{"http": true},
+			expectedMatch: "http",
+			expectedFound: true,
+		},
+		{
+			name:          "strips provider prefix",
+			funcName:      "TestAccAWSInstance_basic",
+			resourceNames: map[string]bool{"instance": true},
+			expectedMatch: "instance",
+			expectedFound: true,
+		},
+		{
+			name:          "matches with generated suffix",
+			funcName:      "TestAccBucket_generated",
+			resourceNames: map[string]bool{"bucket": true},
+			expectedMatch: "bucket",
+			expectedFound: true,
+		},
+		{
+			name:          "matches with complete suffix",
+			funcName:      "TestAccServer_complete",
+			resourceNames: map[string]bool{"server": true},
+			expectedMatch: "server",
+			expectedFound: true,
+		},
+		{
+			name:          "matches camelCase to snake_case",
+			funcName:      "TestAccAwsS3Bucket_basic",
+			resourceNames: map[string]bool{"aws_s3_bucket": true},
+			expectedMatch: "aws_s3_bucket",
+			expectedFound: true,
+		},
+		{
+			name:          "matches without provider prefix",
+			funcName:      "TestAccAwsS3Bucket_basic",
+			resourceNames: map[string]bool{"s3_bucket": true},
+			expectedMatch: "s3_bucket",
+			expectedFound: true,
+		},
+		{
+			name:          "no match returns empty",
+			funcName:      "TestAccWidget_basic",
+			resourceNames: map[string]bool{"gadget": true},
+			expectedMatch: "",
+			expectedFound: false,
+		},
+		{
+			name:          "TestResource pattern",
+			funcName:      "TestResourceWidget_basic",
+			resourceNames: map[string]bool{"widget": true},
+			expectedMatch: "widget",
+			expectedFound: true,
+		},
+		{
+			name:          "TestDataSource pattern",
+			funcName:      "TestDataSourceHTTP_complete",
+			resourceNames: map[string]bool{"http": true},
+			expectedMatch: "http",
+			expectedFound: true,
+		},
+		{
+			name:          "handles disappears suffix",
+			funcName:      "TestAccInstance_disappears",
+			resourceNames: map[string]bool{"instance": true},
+			expectedMatch: "instance",
+			expectedFound: true,
+		},
+		{
+			name:          "handles import suffix",
+			funcName:      "TestAccDatabase_import",
+			resourceNames: map[string]bool{"database": true},
+			expectedMatch: "database",
+			expectedFound: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			match, found := MatchResourceByName(tt.funcName, tt.resourceNames)
+			if match != tt.expectedMatch {
+				t.Errorf("MatchResourceByName(%q) match = %q, want %q",
+					tt.funcName, match, tt.expectedMatch)
+			}
+			if found != tt.expectedFound {
+				t.Errorf("MatchResourceByName(%q) found = %v, want %v",
+					tt.funcName, found, tt.expectedFound)
+			}
+		})
+	}
+}
