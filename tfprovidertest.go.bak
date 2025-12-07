@@ -231,7 +231,6 @@ type TestFunctionInfo struct {
 type TestStepInfo struct {
 	StepNumber        int
 	Config            string
-	HasConfig         bool // True if Config field exists (even if not a literal)
 	HasCheck          bool
 	CheckFunctions    []string
 	ImportState       bool
@@ -241,7 +240,7 @@ type TestStepInfo struct {
 
 // IsUpdateStep returns true if this is not the first step and has a config.
 func (t *TestStepInfo) IsUpdateStep() bool {
-	return t.StepNumber > 0 && t.HasConfig
+	return t.StepNumber > 0 && t.Config != ""
 }
 
 // IsValidImportStep returns true if this step properly tests ImportState.
@@ -337,25 +336,6 @@ func toSnakeCase(s string) string {
 		result.WriteRune(r)
 	}
 	return strings.ToLower(result.String())
-}
-
-// toTitleCase converts snake_case to TitleCase (e.g., "my_resource" -> "MyResource")
-func toTitleCase(s string) string {
-	var result strings.Builder
-	capitalizeNext := true
-	for _, r := range s {
-		if r == '_' {
-			capitalizeNext = true
-			continue
-		}
-		if capitalizeNext {
-			result.WriteRune(unicode.ToUpper(r))
-			capitalizeNext = false
-		} else {
-			result.WriteRune(r)
-		}
-	}
-	return result.String()
 }
 
 func extractAttributes(body *ast.BlockStmt) []AttributeInfo {

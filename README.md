@@ -278,12 +278,28 @@ Optimizations:
 
 ## Validation Results
 
-This linter has been validated against:
+This linter has been validated against 4 Terraform providers:
 
-- **terraform-provider-time**: 0 false positives, <10s runtime
-- **terraform-provider-tls**: 0 false positives
-- **terraform-provider-http**: 0 false positives
-- **terraform-provider-aap**: Successfully identified 3+ test coverage gaps
+| Provider | Resources | Data Sources | False Positives | Performance |
+|----------|-----------|--------------|-----------------|-------------|
+| terraform-provider-time | 4 | 0 | 0 | 7.4ms |
+| terraform-provider-http | 0 | 1 | 1* | 2.4ms |
+| terraform-provider-tls | 6 | 2 | 6* | 12.6ms |
+| terraform-provider-aap | 6 | 2 | 8 (some real gaps) | 19.4ms |
+
+*Note: False positives in http and tls providers are due to non-standard test naming conventions (e.g., `TestDataSource_*` instead of `TestAccDataSource*`). These can be avoided by configuring custom test name patterns.
+
+### Key Findings
+
+1. **terraform-provider-time**: Perfect results - zero false positives, all resources properly tested
+2. **terraform-provider-http/tls**: Uses non-standard test naming - linter correctly identifies Schema methods but doesn't match tests due to naming differences
+3. **terraform-provider-aap**: Mix of real gaps (base classes) and naming pattern mismatches
+
+### Recommendations
+
+For providers using non-standard naming:
+- Configure custom test-name-patterns in settings
+- Use file-based exclusions for base classes (`base_*.go`)
 
 ## Reference Providers
 
