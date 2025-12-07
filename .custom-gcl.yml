@@ -1,0 +1,5 @@
+version: v2.7.1
+plugins:
+  - module: 'github.com/example/tfprovidertest'
+    import: 'github.com/example/tfprovidertest'
+    version: v1.0.0

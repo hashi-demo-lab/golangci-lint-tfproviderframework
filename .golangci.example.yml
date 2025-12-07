@@ -1,0 +1,29 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - tfprovidertest
+  settings:
+    custom:
+      tfprovidertest:
+        type: module
+        description: Terraform provider test coverage linter
+        original-url: github.com/example/tfprovidertest
+        settings:
+          # Enable/disable specific linting rules
+          enable-basic-test: true      # Check for basic acceptance test coverage
+          enable-update-test: true     # Check for update test coverage on updatable resources
+          enable-import-test: true     # Check for import tests on resources with ImportState
+          enable-error-test: true      # Check for error case tests on validated resources
+          enable-state-check: true     # Validate test steps include state check functions
+
+          # Path patterns (glob syntax)
+          resource-path-pattern: "resource_*.go"         # Pattern for resource files
+          data-source-path-pattern: "data_source_*.go"   # Pattern for data source files
+          test-file-pattern: "*_test.go"                 # Pattern for test files
+
+          # Paths to exclude from analysis
+          exclude-paths:
+            - "vendor/"
+            - "**/*_generated.go"

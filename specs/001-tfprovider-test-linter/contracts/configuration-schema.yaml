@@ -1,0 +1,291 @@
+# Configuration Schema for tfprovidertest linter
+# This file documents the .golangci.yml configuration format
+
+# Example .golangci.yml configuration:
+#
+# version: "2"
+#
+# linters:
+#   default: none
+#   enable:
+#     - tfprovidertest
+#   settings:
+#     custom:
+#       tfprovidertest:
+#         type: module
+#         description: Terraform provider test coverage linter
+#         original-url: github.com/example/tfprovidertest
+#         settings:
+#           # Rule toggles (all default to true)
+#           enable-basic-test: true
+#           enable-update-test: true
+#           enable-import-test: true
+#           enable-error-test: true
+#           enable-state-check: true
+#
+#           # Path patterns (glob format)
+#           resource-path-pattern: "resource_*.go"
+#           data-source-path-pattern: "data_source_*.go"
+#           test-file-pattern: "*_test.go"
+#
+#           # Exclusions
+#           exclude-paths:
+#             - "vendor/"
+#             - "internal/provider/generated/"
+
+# Schema definition:
+settings:
+  type: object
+  properties:
+    # ==================== Rule Toggles ====================
+    enable-basic-test:
+      type: boolean
+      default: true
+      description: |
+        Enable checking for basic acceptance tests.
+        Ensures every resource/data source has at least one TestAccResource* function
+        using resource.Test().
+
+        Rule: tfprovider-resource-basic-test, tfprovider-datasource-basic-test
+
+    enable-update-test:
+      type: boolean
+      default: true
+      description: |
+        Enable checking for update test coverage.
+        Ensures resources with updatable attributes have multi-step tests that
+        modify configuration.
+
+        Rule: tfprovider-resource-update-test
+
+    enable-import-test:
+      type: boolean
+      default: true
+      description: |
+        Enable checking for import test coverage.
+        Ensures resources implementing ImportState have tests with
+        ImportState: true and ImportStateVerify: true.
+
+        Rule: tfprovider-resource-import-test
+
+    enable-error-test:
+      type: boolean
+      default: true
+      description: |
+        Enable checking for error case test coverage.
+        Ensures resources with validation rules have tests using ExpectError.
+
+        Rule: tfprovider-test-error-cases
+
+    enable-state-check:
+      type: boolean
+      default: true
+      description: |
+        Enable checking for state validation functions.
+        Ensures test steps include Check fields with functions like
+        resource.TestCheckResourceAttr.
+
+        Rule: tfprovider-test-check-functions
+
+    # ==================== Path Patterns ====================
+    resource-path-pattern:
+      type: string
+      default: "resource_*.go"
+      description: |
+        Glob pattern to match resource schema files.
+        Only files matching this pattern will be analyzed for resource definitions.
+
+        Examples:
+          - "resource_*.go" (default)
+          - "internal/provider/resource_*.go" (specific directory)
+          - "**/*_resource.go" (alternative naming)
+
+    data-source-path-pattern:
+      type: string
+      default: "data_source_*.go"
+      description: |
+        Glob pattern to match data source schema files.
+
+        Examples:
+          - "data_source_*.go" (default)
+          - "internal/provider/data_*.go" (abbreviated naming)
+
+    test-file-pattern:
+      type: string
+      default: "*_test.go"
+      description: |
+        Glob pattern to match test files.
+
+        Examples:
+          - "*_test.go" (default, all test files)
+          - "resource_*_test.go" (resource tests only)
+          - "acceptance/*_test.go" (tests in specific directory)
+
+    exclude-paths:
+      type: array
+      items:
+        type: string
+      default: []
+      description: |
+        List of paths to exclude from analysis.
+        Supports glob patterns.
+
+        Common exclusions:
+          - "vendor/" (vendored dependencies)
+          - "internal/provider/generated/" (generated code)
+          - "**/*_generated.go" (generated files)
+
+  required: []
+  additionalProperties: false
+
+# ==================== Validation Rules ====================
+validation:
+  at-least-one-rule-enabled:
+    description: At least one enable-* flag must be true
+    rule: |
+      enable-basic-test OR enable-update-test OR enable-import-test OR
+      enable-error-test OR enable-state-check
+
+  valid-glob-patterns:
+    description: Path patterns must be valid glob expressions
+    rule: |
+      resource-path-pattern matches glob syntax
+      data-source-path-pattern matches glob syntax
+      test-file-pattern matches glob syntax
+      exclude-paths[*] matches glob syntax
+
+# ==================== Example Configurations ====================
+examples:
+  # Minimal configuration (all defaults)
+  minimal:
+    linters:
+      enable:
+        - tfprovidertest
+
+  # Disable specific rules
+  selective-rules:
+    linters:
+      settings:
+        custom:
+          tfprovidertest:
+            settings:
+              enable-basic-test: true
+              enable-update-test: true
+              enable-import-test: false  # Disable import testing
+              enable-error-test: false   # Disable error testing
+              enable-state-check: true
+
+  # Custom path patterns for non-standard project structure
+  custom-paths:
+    linters:
+      settings:
+        custom:
+          tfprovidertest:
+            settings:
+              resource-path-pattern: "pkg/resources/*.go"
+              data-source-path-pattern: "pkg/datasources/*.go"
+              test-file-pattern: "tests/*_acceptance_test.go"
+              exclude-paths:
+                - "vendor/"
+                - "pkg/generated/"
+
+  # Development mode (only basic tests)
+  development:
+    linters:
+      settings:
+        custom:
+          tfprovidertest:
+            settings:
+              enable-basic-test: true
+              enable-update-test: false
+              enable-import-test: false
+              enable-error-test: false
+              enable-state-check: false
+
+  # Strict mode (all rules enabled, no exclusions)
+  strict:
+    linters:
+      settings:
+        custom:
+          tfprovidertest:
+            settings:
+              enable-basic-test: true
+              enable-update-test: true
+              enable-import-test: true
+              enable-error-test: true
+              enable-state-check: true
+              exclude-paths: []
+
+# ==================== .custom-gcl.yml Configuration ====================
+custom-gcl:
+  description: |
+    Configuration for local development with golangci-lint's custom plugin builder.
+    This file enables automatic plugin building when running golangci-lint.
+
+  example: |
+    version: v2.7.1
+    plugins:
+      - module: 'github.com/example/tfprovidertest'
+        import: 'github.com/example/tfprovidertest'
+        version: v1.0.0
+
+  fields:
+    version:
+      type: string
+      description: golangci-lint version to use
+      example: v2.7.1
+
+    plugins:
+      type: array
+      items:
+        module:
+          type: string
+          description: Go module path of the plugin
+          example: github.com/example/tfprovidertest
+
+        import:
+          type: string
+          description: Import path for the plugin package
+          example: github.com/example/tfprovidertest
+
+        version:
+          type: string
+          description: Plugin version or commit hash
+          example: v1.0.0
+
+# ==================== Diagnostic Message Format ====================
+diagnostics:
+  basic-test-missing:
+    message: "resource '{resource_name}' has no acceptance test file"
+    category: tfprovider-resource-basic-test
+    suggested-fix: "Create {resource_name}_test.go with TestAccResource{ResourceName}_basic function"
+
+  basic-test-function-missing:
+    message: "resource '{resource_name}' has no basic acceptance test function"
+    category: tfprovider-resource-basic-test
+    suggested-fix: "Add TestAccResource{ResourceName}_basic using resource.Test()"
+
+  data-source-test-missing:
+    message: "data source '{datasource_name}' has no acceptance test"
+    category: tfprovider-datasource-basic-test
+    suggested-fix: "Create data_source_{datasource_name}_test.go with TestAccDataSource{DataSourceName}_basic"
+
+  update-test-missing:
+    message: "resource '{resource_name}' has updatable attributes but no update test coverage"
+    category: tfprovider-resource-update-test
+    suggested-fix: "Add TestAccResource{ResourceName}_update with multi-step test modifying updatable attributes"
+
+  import-test-missing:
+    message: "resource '{resource_name}' implements ImportState but has no import test coverage"
+    category: tfprovider-resource-import-test
+    suggested-fix: "Add test step with ImportState: true and ImportStateVerify: true"
+
+  error-test-missing:
+    message: "resource '{resource_name}' has validation rules but no error case tests"
+    category: tfprovider-test-error-cases
+    suggested-fix: "Add test step with ExpectError: regexp.MustCompile(...) for invalid configurations"
+
+  state-check-missing:
+    message: "test step for resource '{resource_name}' has no state validation checks"
+    category: tfprovider-test-check-functions
+    suggested-fix: "Add Check: resource.ComposeTestCheckFunc(...) with validation functions"
