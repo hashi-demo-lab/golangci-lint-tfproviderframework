@@ -4,6 +4,8 @@ package tfprovidertest
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -49,7 +51,7 @@ func runBasicTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	settings := DefaultSettings()
 	registry := buildRegistry(pass, settings)
 
-	// Third pass: report untested resources with enhanced location information
+	// Report untested resources with enhanced location information
 	untested := registry.GetUntestedResources()
 	for _, resource := range untested {
 		resourceType := "resource"
@@ -64,15 +66,21 @@ func runBasicTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 		expectedTestPath := BuildExpectedTestPath(resource)
 		expectedTestFunc := BuildExpectedTestFunc(resource)
 
-		msg := fmt.Sprintf("%s '%s' has no acceptance test\n  %s: %s:%d\n  Expected test file: %s\n  Expected test function: %s",
+		// Enhanced message with suggestions
+		msg := fmt.Sprintf("%s '%s' has no acceptance test\n"+
+			"  %s: %s:%d\n"+
+			"  Expected test file: %s\n"+
+			"  Expected test function: %s\n"+
+			"  Suggestion: Create %s with function %s",
 			resourceType, resource.Name,
 			resourceTypeTitle, pos.Filename, pos.Line,
-			expectedTestPath, expectedTestFunc)
+			expectedTestPath, expectedTestFunc,
+			filepath.Base(expectedTestPath), expectedTestFunc)
 
 		pass.Reportf(resource.SchemaPos, "%s", msg)
 	}
 
-	// Also check for resources with test files but no TestAcc functions
+	// Check for resources with test files but no TestAcc functions
 	allResources := registry.GetAllResources()
 	allTestFiles := registry.GetAllTestFiles()
 	for name, resource := range allResources {
@@ -81,9 +89,14 @@ func runBasicTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 				pos := pass.Fset.Position(resource.SchemaPos)
 				expectedTestFunc := BuildExpectedTestFunc(resource)
 
-				msg := fmt.Sprintf("resource '%s' has test file but no TestAcc functions\n  Resource: %s:%d\n  Test file: %s\n  Expected test function: %s",
+				msg := fmt.Sprintf("resource '%s' has test file but no TestAcc functions\n"+
+					"  Resource: %s:%d\n"+
+					"  Test file: %s\n"+
+					"  Expected test function: %s\n"+
+					"  Suggestion: Add acceptance test function %s to %s",
 					name, pos.Filename, pos.Line,
-					testFile.FilePath, expectedTestFunc)
+					testFile.FilePath, expectedTestFunc,
+					expectedTestFunc, filepath.Base(testFile.FilePath))
 
 				pass.Reportf(resource.SchemaPos, "%s", msg)
 			}
@@ -97,9 +110,14 @@ func runBasicTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 				pos := pass.Fset.Position(dataSource.SchemaPos)
 				expectedTestFunc := BuildExpectedTestFunc(dataSource)
 
-				msg := fmt.Sprintf("data source '%s' has test file but no TestAcc functions\n  Data source: %s:%d\n  Test file: %s\n  Expected test function: %s",
+				msg := fmt.Sprintf("data source '%s' has test file but no TestAcc functions\n"+
+					"  Data source: %s:%d\n"+
+					"  Test file: %s\n"+
+					"  Expected test function: %s\n"+
+					"  Suggestion: Add acceptance test function %s to %s",
 					name, pos.Filename, pos.Line,
-					testFile.FilePath, expectedTestFunc)
+					testFile.FilePath, expectedTestFunc,
+					expectedTestFunc, filepath.Base(testFile.FilePath))
 
 				pass.Reportf(dataSource.SchemaPos, "%s", msg)
 			}
@@ -118,10 +136,11 @@ func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	for name, resource := range registry.GetAllResources() {
 		// Check if resource has updatable attributes
 		hasUpdatable := false
+		var updatableAttrs []string
 		for _, attr := range resource.Attributes {
 			if attr.NeedsUpdateTest() {
 				hasUpdatable = true
-				break
+				updatableAttrs = append(updatableAttrs, attr.Name)
 			}
 		}
 
@@ -137,18 +156,43 @@ func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 			continue
 		}
 
-		// Check if any test function has multiple steps
+		// Check if any test function has an actual update step
+		// An update step is when a subsequent step has a different config than the previous
 		hasUpdateTest := false
 		for _, testFunc := range testFile.TestFunctions {
-			if len(testFunc.TestSteps) >= 2 {
-				// Multi-step test found
-				hasUpdateTest = true
+			for _, step := range testFunc.TestSteps {
+				// Check for IsUpdateStep flag if available, otherwise fall back to step count
+				if step.IsUpdateStep() {
+					hasUpdateTest = true
+					break
+				}
+			}
+			// Fallback: if we have multiple steps with configs, consider it an update test
+			if !hasUpdateTest && len(testFunc.TestSteps) >= 2 {
+				configSteps := 0
+				for _, step := range testFunc.TestSteps {
+					if step.HasConfig && !step.ImportState {
+						configSteps++
+					}
+				}
+				if configSteps >= 2 {
+					hasUpdateTest = true
+				}
+			}
+			if hasUpdateTest {
 				break
 			}
 		}
 
 		if !hasUpdateTest {
-			pass.Reportf(resource.SchemaPos, "resource '%s' has updatable attributes but no update test coverage", name)
+			pos := pass.Fset.Position(resource.SchemaPos)
+			msg := fmt.Sprintf("resource '%s' has updatable attributes but no update test coverage\n"+
+				"  Resource: %s:%d\n"+
+				"  Updatable attributes: %s\n"+
+				"  Suggestion: Add a test step that modifies one of these attributes",
+				name, pos.Filename, pos.Line,
+				strings.Join(updatableAttrs, ", "))
+			pass.Reportf(resource.SchemaPos, "%s", msg)
 		}
 	}
 
@@ -174,7 +218,7 @@ func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 			continue
 		}
 
-		// Check if any test function has an import step
+		// Check if ANY test function has an import step
 		hasImportTest := false
 		for _, testFunc := range testFile.TestFunctions {
 			if testFunc.HasImportStep {
@@ -184,7 +228,12 @@ func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		if !hasImportTest {
-			pass.Reportf(resource.SchemaPos, "resource '%s' implements ImportState but has no import test coverage", name)
+			pos := pass.Fset.Position(resource.SchemaPos)
+			msg := fmt.Sprintf("resource '%s' implements ImportState but has no import test coverage\n"+
+				"  Resource: %s:%d\n"+
+				"  Suggestion: Add a test step with ImportState: true, ImportStateVerify: true",
+				name, pos.Filename, pos.Line)
+			pass.Reportf(resource.SchemaPos, "%s", msg)
 		}
 	}
 
@@ -199,10 +248,11 @@ func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	for name, resource := range registry.GetAllResources() {
 		// Check if resource has validation rules
 		hasValidation := false
+		var validatedAttrs []string
 		for _, attr := range resource.Attributes {
 			if attr.NeedsValidationTest() {
 				hasValidation = true
-				break
+				validatedAttrs = append(validatedAttrs, attr.Name)
 			}
 		}
 
@@ -218,7 +268,7 @@ func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 			continue
 		}
 
-		// Check if any test function has an error case
+		// Check if ANY test function has an error case
 		hasErrorTest := false
 		for _, testFunc := range testFile.TestFunctions {
 			if testFunc.HasErrorCase {
@@ -228,7 +278,14 @@ func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 		}
 
 		if !hasErrorTest {
-			pass.Reportf(resource.SchemaPos, "resource '%s' has validation rules but no error case tests", name)
+			pos := pass.Fset.Position(resource.SchemaPos)
+			msg := fmt.Sprintf("resource '%s' has validation rules but no error case tests\n"+
+				"  Resource: %s:%d\n"+
+				"  Validated attributes: %s\n"+
+				"  Suggestion: Add a test step with ExpectError to verify validation",
+				name, pos.Filename, pos.Line,
+				strings.Join(validatedAttrs, ", "))
+			pass.Reportf(resource.SchemaPos, "%s", msg)
 		}
 	}
 
@@ -240,6 +297,7 @@ func runStateCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	registry := buildRegistry(pass, settings)
 
 	// Check for test steps without Check fields
+	// Iterate through all test files and their functions
 	for _, testFile := range registry.GetAllTestFiles() {
 		for _, testFunc := range testFile.TestFunctions {
 			for _, step := range testFunc.TestSteps {
@@ -248,13 +306,29 @@ func runStateCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
 					continue
 				}
 
-				// Regular test steps should have Check fields
-				if !step.HasCheck {
+				// Regular test steps with Config should have Check fields
+				if !step.HasCheck && step.HasConfig {
 					// Find the resource to get its name for the error message
 					resourceName := testFile.ResourceName
-					if resource := registry.GetResource(resourceName); resource != nil {
-						pass.Reportf(resource.SchemaPos, "test step for resource '%s' has no state validation checks", resourceName)
+
+					// Build resource context for the message
+					resourceContext := ""
+					if resourceName != "" {
+						resourceContext = fmt.Sprintf(" (testing %s)", resourceName)
 					}
+
+					// Use step position if available, otherwise use function position
+					pos := step.StepPos
+					if pos == 0 {
+						pos = testFunc.FunctionPos
+					}
+
+					msg := fmt.Sprintf("test step in %s%s has no state validation checks\n"+
+						"  Suggestion: Add Check: resource.ComposeTestCheckFunc(...) to verify state",
+						testFunc.Name, resourceContext)
+
+					// Report at the step position
+					pass.Reportf(pos, "%s", msg)
 				}
 			}
 		}

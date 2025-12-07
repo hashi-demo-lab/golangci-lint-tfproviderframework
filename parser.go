@@ -3,7 +3,10 @@
 package tfprovidertest
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"go/ast"
+	"go/printer"
 	"go/token"
 	"path/filepath"
 	"strings"
@@ -11,25 +14,65 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-// parseResources extracts all resources and data sources from a Go source file
-// by analyzing Schema() method implementations.
+// LocalHelper represents a discovered local test helper function.
+type LocalHelper struct {
+	Name     string
+	FilePath string
+	FuncDecl *ast.FuncDecl
+}
+
+// ExclusionResult tracks why a file was excluded from analysis.
+type ExclusionResult struct {
+	FilePath       string
+	Excluded       bool
+	Reason         string
+	MatchedPattern string
+}
+
+// ExclusionDiagnostics collects information about all excluded files.
+type ExclusionDiagnostics struct {
+	ExcludedFiles []ExclusionResult
+	TotalExcluded int
+}
+
+// hashConfigExpr generates a hash of a config expression for comparison.
+// This normalizes the AST representation to detect equivalent configs.
+func hashConfigExpr(expr ast.Expr) string {
+	if expr == nil {
+		return ""
+	}
+
+	var buf strings.Builder
+	fset := token.NewFileSet()
+
+	// Print the AST node to a string for hashing
+	if err := printer.Fprint(&buf, fset, expr); err != nil {
+		return ""
+	}
+
+	// Normalize whitespace
+	normalized := strings.Join(strings.Fields(buf.String()), " ")
+
+	// Generate hash
+	hash := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(hash[:8]) // First 8 bytes for brevity
+}
+
+// parseResources extracts all resources and data sources from a Go source file.
 func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*ResourceInfo {
 	var resources []*ResourceInfo
 
 	ast.Inspect(file, func(n ast.Node) bool {
-		// Look for Schema() method implementations
 		funcDecl, ok := n.(*ast.FuncDecl)
 		if !ok || funcDecl.Recv == nil || funcDecl.Name.Name != "Schema" {
 			return true
 		}
 
-		// Extract receiver type name (e.g., *WidgetResource -> WidgetResource)
 		recvType := getReceiverTypeName(funcDecl.Recv)
 		if recvType == "" {
 			return true
 		}
 
-		// Check if it's a framework resource or data source
 		isDataSource := strings.HasSuffix(recvType, "DataSource")
 		isResource := strings.HasSuffix(recvType, "Resource")
 
@@ -37,7 +80,6 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 			return true
 		}
 
-		// Extract resource name from type name
 		name := extractResourceName(recvType)
 		if name == "" {
 			return true
@@ -55,7 +97,6 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 		return true
 	})
 
-	// Check for ImportState method
 	for _, resource := range resources {
 		if !resource.IsDataSource {
 			resource.HasImportState = hasImportStateMethod(file, resource.Name)
@@ -65,25 +106,19 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 	return resources
 }
 
-// parseTestFile parses a test file and extracts test function information using
-// FILE-BASED MATCHING strategy. This implementation follows the recommendation to
-// trust file naming conventions (resource_widget.go -> resource_widget_test.go)
-// rather than complex function name parsing.
+// parseTestFile parses a test file and extracts test function information.
 func parseTestFile(file *ast.File, fset *token.FileSet, filePath string) *TestFileInfo {
 	return parseTestFileWithHelpers(file, fset, filePath, nil)
 }
 
 // parseTestFileWithHelpers parses a test file with support for custom test helpers.
-// Uses file-based matching: If this is resource_widget_test.go, all Test* functions
-// are considered tests for the widget resource, regardless of function naming.
 func parseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string) *TestFileInfo {
-	// SIMPLIFIED APPROACH: Extract resource name from filename (reliable)
-	// e.g., resource_widget_test.go -> widget, data_source_http_test.go -> http
-	resourceName, isDataSource := extractResourceNameFromFilePath(filePath)
-	if resourceName == "" {
-		// Not a standard test file naming pattern
-		return nil
+	packageName := ""
+	if file.Name != nil {
+		packageName = file.Name.Name
 	}
+
+	resourceName, isDataSource := extractResourceNameFromFilePath(filePath)
 
 	var testFuncs []TestFunctionInfo
 
@@ -94,13 +129,10 @@ func parseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath stri
 		}
 
 		name := funcDecl.Name.Name
-
-		// Check if this is a test function (any Test* function)
 		if !strings.HasPrefix(name, "Test") {
 			return true
 		}
 
-		// Check if test uses resource.Test() or custom test helpers
 		usesResourceTest := checkUsesResourceTestWithHelpers(funcDecl.Body, customHelpers)
 		if !usesResourceTest {
 			return true
@@ -108,12 +140,12 @@ func parseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath stri
 
 		testFunc := TestFunctionInfo{
 			Name:             funcDecl.Name.Name,
+			FilePath:         filePath,
 			FunctionPos:      funcDecl.Pos(),
 			UsesResourceTest: true,
 			TestSteps:        extractTestSteps(funcDecl.Body),
 		}
 
-		// Check for error cases and import steps
 		for _, step := range testFunc.TestSteps {
 			if step.ExpectError {
 				testFunc.HasErrorCase = true
@@ -133,18 +165,14 @@ func parseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath stri
 
 	return &TestFileInfo{
 		FilePath:      filePath,
+		PackageName:   packageName,
 		ResourceName:  resourceName,
 		IsDataSource:  isDataSource,
 		TestFunctions: testFuncs,
 	}
 }
 
-// extractResourceNameFromFilePath extracts resource name from file path using Go conventions.
-// Returns (resourceName, isDataSource).
-// Examples:
-//   - resource_widget_test.go -> ("widget", false)
-//   - data_source_http_test.go -> ("http", true)
-//   - group_resource_test.go -> ("group", false)
+// extractResourceNameFromFilePath extracts resource name from file path.
 func extractResourceNameFromFilePath(filePath string) (string, bool) {
 	baseName := filepath.Base(filePath)
 	if !strings.HasSuffix(baseName, "_test.go") {
@@ -153,56 +181,137 @@ func extractResourceNameFromFilePath(filePath string) (string, bool) {
 
 	nameWithoutTest := strings.TrimSuffix(baseName, "_test.go")
 
-	// Standard HashiCorp patterns
 	if strings.HasPrefix(nameWithoutTest, "resource_") {
-		resourceName := strings.TrimPrefix(nameWithoutTest, "resource_")
-		return resourceName, false
+		return strings.TrimPrefix(nameWithoutTest, "resource_"), false
 	}
 	if strings.HasPrefix(nameWithoutTest, "data_source_") {
-		resourceName := strings.TrimPrefix(nameWithoutTest, "data_source_")
-		return resourceName, true
+		return strings.TrimPrefix(nameWithoutTest, "data_source_"), true
 	}
 	if strings.HasPrefix(nameWithoutTest, "ephemeral_") {
-		resourceName := strings.TrimPrefix(nameWithoutTest, "ephemeral_")
-		return resourceName, false
+		return strings.TrimPrefix(nameWithoutTest, "ephemeral_"), false
 	}
-
-	// Reversed naming patterns
 	if strings.HasSuffix(nameWithoutTest, "_resource") {
-		resourceName := strings.TrimSuffix(nameWithoutTest, "_resource")
-		return resourceName, false
+		return strings.TrimSuffix(nameWithoutTest, "_resource"), false
 	}
 	if strings.HasSuffix(nameWithoutTest, "_data_source") {
-		resourceName := strings.TrimSuffix(nameWithoutTest, "_data_source")
-		return resourceName, true
+		return strings.TrimSuffix(nameWithoutTest, "_data_source"), true
 	}
 	if strings.HasSuffix(nameWithoutTest, "_datasource") {
-		resourceName := strings.TrimSuffix(nameWithoutTest, "_datasource")
-		return resourceName, true
+		return strings.TrimSuffix(nameWithoutTest, "_datasource"), true
 	}
 
 	return "", false
 }
 
-// buildRegistry constructs a resource registry by scanning all files in the analysis pass.
-// This implements the "File-First" association logic recommended in the spec:
-// 1. Scan for Resources (AST-based): Find structs with Schema() methods
-// 2. Scan for Test Files (File-based): Find *_test.go files
-// 3. Associate (Path-based): resource_widget.go -> resource_widget_test.go
-// 4. Verify (Content): Check for TestAcc* functions
-func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
-	reg := NewResourceRegistry()
+// findLocalTestHelpers discovers functions that wrap resource.Test().
+func findLocalTestHelpers(files []*ast.File, fset *token.FileSet) []LocalHelper {
+	var helpers []LocalHelper
 
-	// 1. Scan for Resources (Type-based discovery via AST)
-	for _, file := range pass.Files {
-		filename := pass.Fset.Position(file.Pos()).Filename
+	for _, file := range files {
+		filePath := fset.Position(file.Pos()).Filename
 
-		// Skip test files
-		if strings.HasSuffix(filename, "_test.go") {
+		if !strings.HasSuffix(filePath, "_test.go") {
 			continue
 		}
 
-		// Apply exclusion rules
+		ast.Inspect(file, func(n ast.Node) bool {
+			funcDecl, ok := n.(*ast.FuncDecl)
+			if !ok || funcDecl.Body == nil {
+				return true
+			}
+
+			name := funcDecl.Name.Name
+			if strings.HasPrefix(name, "Test") {
+				return true
+			}
+			if len(name) == 0 || (name[0] >= 'a' && name[0] <= 'z') {
+				return true
+			}
+			if !acceptsTestingT(funcDecl) {
+				return true
+			}
+			if !checkUsesResourceTest(funcDecl.Body) {
+				return true
+			}
+
+			helpers = append(helpers, LocalHelper{
+				Name:     name,
+				FilePath: filePath,
+				FuncDecl: funcDecl,
+			})
+
+			return true
+		})
+	}
+
+	return helpers
+}
+
+// acceptsTestingT checks if a function has *testing.T as a parameter.
+func acceptsTestingT(funcDecl *ast.FuncDecl) bool {
+	if funcDecl == nil || funcDecl.Type == nil || funcDecl.Type.Params == nil {
+		return false
+	}
+
+	for _, param := range funcDecl.Type.Params.List {
+		if starExpr, ok := param.Type.(*ast.StarExpr); ok {
+			if selExpr, ok := starExpr.X.(*ast.SelectorExpr); ok {
+				if ident, ok := selExpr.X.(*ast.Ident); ok {
+					if ident.Name == "testing" && selExpr.Sel.Name == "T" {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// matchesExcludePattern checks if a file should be excluded.
+func matchesExcludePattern(filePath string, patterns []string) ExclusionResult {
+	baseName := filepath.Base(filePath)
+
+	for _, pattern := range patterns {
+		if matched, _ := filepath.Match(pattern, baseName); matched {
+			return ExclusionResult{
+				FilePath:       filePath,
+				Excluded:       true,
+				Reason:         "matched exclusion pattern",
+				MatchedPattern: pattern,
+			}
+		}
+		if matched, _ := filepath.Match(pattern, filePath); matched {
+			return ExclusionResult{
+				FilePath:       filePath,
+				Excluded:       true,
+				Reason:         "matched exclusion pattern (full path)",
+				MatchedPattern: pattern,
+			}
+		}
+	}
+
+	return ExclusionResult{FilePath: filePath, Excluded: false}
+}
+
+// buildRegistry constructs a resource registry by scanning all files.
+// It uses a three-phase approach:
+//   1. Scan for Resources (Type-based discovery via AST)
+//   2. Scan ALL Test Files (unconditionally, to support function-first matching)
+//   3. Link tests to resources using the Linker (function name, file proximity, fuzzy)
+func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
+	reg := NewResourceRegistry()
+
+	// Discover local test helpers first
+	localHelpers := findLocalTestHelpers(pass.Files, pass.Fset)
+
+	// PHASE 1: Scan for Resources (Type-based discovery via AST)
+	for _, file := range pass.Files {
+		filename := pass.Fset.Position(file.Pos()).Filename
+
+		if strings.HasSuffix(filename, "_test.go") {
+			continue
+		}
 		if settings.ExcludeBaseClasses && isBaseClassFile(filename) {
 			continue
 		}
@@ -215,15 +324,20 @@ func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
 		if shouldExcludeFile(filename, settings.ExcludePaths) {
 			continue
 		}
+		// Check custom exclude patterns
+		if len(settings.ExcludePatterns) > 0 {
+			if result := matchesExcludePattern(filename, settings.ExcludePatterns); result.Excluded {
+				continue
+			}
+		}
 
-		// Parse resources from this file
 		resources := parseResources(file, pass.Fset, filename)
 		for _, resource := range resources {
 			reg.RegisterResource(resource)
 		}
 	}
 
-	// 2. Scan for Test Files (File-based discovery)
+	// PHASE 2: Scan ALL Test Files (unconditionally)
 	for _, file := range pass.Files {
 		filename := pass.Fset.Position(file.Pos()).Filename
 
@@ -231,30 +345,104 @@ func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
 			continue
 		}
 
-		// Parse test file
-		testFileInfo := parseTestFileWithHelpers(file, pass.Fset, filename, settings.CustomTestHelpers)
+		// Skip sweeper test files
+		if settings.ExcludeSweeperFiles && IsSweeperFile(filename) {
+			continue
+		}
+
+		// Check custom exclude patterns
+		if len(settings.ExcludePatterns) > 0 {
+			if result := matchesExcludePattern(filename, settings.ExcludePatterns); result.Excluded {
+				continue
+			}
+		}
+
+		// Parse test file with custom and local helpers
+		testFileInfo := parseTestFileWithHelpersAndLocals(file, pass.Fset, filename, settings.CustomTestHelpers, localHelpers)
 		if testFileInfo == nil {
 			continue
 		}
 
-		// 3. Associate with resource using file-based matching
-		// The parseTestFile already extracted the resource name from filename
-		// Now verify that this resource exists in our registry
-		var resource *ResourceInfo
-		if testFileInfo.IsDataSource {
-			resource = reg.GetDataSource(testFileInfo.ResourceName)
-		} else {
-			resource = reg.GetResource(testFileInfo.ResourceName)
-		}
+		// Register test file by path (not resource name)
+		reg.RegisterTestFile(testFileInfo)
 
-		// Only register if we found a matching resource
-		// This ensures we don't create false positives for helper test files
-		if resource != nil {
-			reg.RegisterTestFile(testFileInfo)
+		// Register each test function in global index
+		for i := range testFileInfo.TestFunctions {
+			fn := &testFileInfo.TestFunctions[i]
+			fn.FilePath = filename
+			reg.RegisterTestFunction(fn)
 		}
 	}
 
+	// PHASE 3: Link tests to resources using the Linker
+	linker := NewLinker(reg, settings)
+	linker.LinkTestsToResources()
+
 	return reg
+}
+
+// parseTestFileWithHelpersAndLocals parses a test file with both custom and local helpers.
+func parseTestFileWithHelpersAndLocals(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string, localHelpers []LocalHelper) *TestFileInfo {
+	packageName := ""
+	if file.Name != nil {
+		packageName = file.Name.Name
+	}
+
+	resourceName, isDataSource := extractResourceNameFromFilePath(filePath)
+
+	var testFuncs []TestFunctionInfo
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		funcDecl, ok := n.(*ast.FuncDecl)
+		if !ok {
+			return true
+		}
+
+		name := funcDecl.Name.Name
+		if !strings.HasPrefix(name, "Test") {
+			return true
+		}
+
+		usesResourceTest := checkUsesResourceTestWithLocalHelpers(funcDecl.Body, customHelpers, localHelpers)
+		if !usesResourceTest {
+			return true
+		}
+
+		testFunc := TestFunctionInfo{
+			Name:             funcDecl.Name.Name,
+			FilePath:         filePath,
+			FunctionPos:      funcDecl.Pos(),
+			UsesResourceTest: true,
+			TestSteps:        extractTestSteps(funcDecl.Body),
+			HelperUsed:       detectHelperUsed(funcDecl.Body, localHelpers),
+		}
+
+		for _, step := range testFunc.TestSteps {
+			if step.ExpectError {
+				testFunc.HasErrorCase = true
+			}
+			if step.ImportState {
+				testFunc.HasImportStep = true
+			}
+		}
+
+		testFuncs = append(testFuncs, testFunc)
+		return true
+	})
+
+	// Return TestFileInfo even if no resource name extracted from filename
+	// Resource association now happens via the Linker in Phase 3
+	if len(testFuncs) == 0 {
+		return nil
+	}
+
+	return &TestFileInfo{
+		FilePath:      filePath,
+		PackageName:   packageName,
+		ResourceName:  resourceName,
+		IsDataSource:  isDataSource,
+		TestFunctions: testFuncs,
+	}
 }
 
 // checkUsesResourceTest checks if a function body contains a call to resource.Test()
@@ -263,11 +451,23 @@ func checkUsesResourceTest(body *ast.BlockStmt) bool {
 }
 
 // checkUsesResourceTestWithHelpers checks if a function body contains a call to resource.Test()
-// or any of the custom test helper functions specified in customHelpers.
+// or any of the custom test helper functions.
 func checkUsesResourceTestWithHelpers(body *ast.BlockStmt, customHelpers []string) bool {
+	return checkUsesResourceTestWithLocalHelpers(body, customHelpers, nil)
+}
+
+// checkUsesResourceTestWithLocalHelpers checks if a function body contains a call to resource.Test(),
+// custom helpers, or local helpers.
+func checkUsesResourceTestWithLocalHelpers(body *ast.BlockStmt, customHelpers []string, localHelpers []LocalHelper) bool {
 	if body == nil {
 		return false
 	}
+
+	localHelperNames := make(map[string]bool)
+	for _, h := range localHelpers {
+		localHelperNames[h.Name] = true
+	}
+
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -275,16 +475,13 @@ func checkUsesResourceTestWithHelpers(body *ast.BlockStmt, customHelpers []strin
 			return true
 		}
 
-		// Check for resource.Test() call
 		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
 			if ident, ok := sel.X.(*ast.Ident); ok {
-				// Check standard resource.Test() or resource.ParallelTest()
 				if ident.Name == "resource" && (sel.Sel.Name == "Test" || sel.Sel.Name == "ParallelTest") {
 					found = true
 					return false
 				}
 
-				// Check custom test helpers
 				for _, helper := range customHelpers {
 					parts := strings.SplitN(helper, ".", 2)
 					if len(parts) == 2 {
@@ -296,9 +493,57 @@ func checkUsesResourceTestWithHelpers(body *ast.BlockStmt, customHelpers []strin
 				}
 			}
 		}
+
+		if ident, ok := call.Fun.(*ast.Ident); ok {
+			if localHelperNames[ident.Name] {
+				found = true
+				return false
+			}
+		}
+
 		return true
 	})
 	return found
+}
+
+// detectHelperUsed determines which helper function is used in a test function body.
+func detectHelperUsed(body *ast.BlockStmt, localHelpers []LocalHelper) string {
+	if body == nil {
+		return ""
+	}
+
+	localHelperNames := make(map[string]bool)
+	for _, h := range localHelpers {
+		localHelperNames[h.Name] = true
+	}
+
+	var helperUsed string
+	ast.Inspect(body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			if ident, ok := sel.X.(*ast.Ident); ok {
+				if ident.Name == "resource" && (sel.Sel.Name == "Test" || sel.Sel.Name == "ParallelTest") {
+					helperUsed = "resource." + sel.Sel.Name
+					return false
+				}
+			}
+		}
+
+		if ident, ok := call.Fun.(*ast.Ident); ok {
+			if localHelperNames[ident.Name] {
+				helperUsed = ident.Name
+				return false
+			}
+		}
+
+		return true
+	})
+
+	return helperUsed
 }
 
 // extractTestSteps extracts test step information from a test function body
@@ -309,24 +554,19 @@ func extractTestSteps(body *ast.BlockStmt) []TestStepInfo {
 	}
 	stepNumber := 0
 
-	// Find resource.Test() call and extract Steps
 	ast.Inspect(body, func(n ast.Node) bool {
-		// Look for resource.Test() call
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
 
-		// Check if it's resource.Test or resource.ParallelTest
 		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
 			if ident, ok := sel.X.(*ast.Ident); ok {
 				if ident.Name == "resource" && (sel.Sel.Name == "Test" || sel.Sel.Name == "ParallelTest") {
-					// Found resource.Test() call, now extract TestCase argument
 					if len(call.Args) >= 2 {
-						// Second argument should be the TestCase
 						steps = extractStepsFromTestCase(call.Args[1], &stepNumber)
 					}
-					return false // Stop searching after finding resource.Test
+					return false
 				}
 			}
 		}
@@ -340,13 +580,11 @@ func extractTestSteps(body *ast.BlockStmt) []TestStepInfo {
 func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int) []TestStepInfo {
 	var steps []TestStepInfo
 
-	// Look for CompositeLit representing resource.TestCase{}
 	compLit, ok := testCaseExpr.(*ast.CompositeLit)
 	if !ok {
 		return steps
 	}
 
-	// Find the Steps field
 	for _, elt := range compLit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
 		if !ok {
@@ -358,25 +596,37 @@ func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int) []TestStep
 			continue
 		}
 
-		// Steps should be a slice literal
 		stepsLit, ok := kv.Value.(*ast.CompositeLit)
 		if !ok {
 			continue
 		}
 
-		// Parse each step
+		// Parse each step with hash
 		for _, stepExpr := range stepsLit.Elts {
-			step := parseTestStep(stepExpr, *stepNumber)
+			step := parseTestStepWithHash(stepExpr, *stepNumber)
 			steps = append(steps, step)
 			*stepNumber++
+		}
+	}
+
+	// Second pass: Determine update steps
+	for i := range steps {
+		if i > 0 {
+			steps[i].PreviousConfigHash = steps[i-1].ConfigHash
+			steps[i].IsUpdateStepFlag = steps[i].DetermineIfUpdateStep(&steps[i-1])
 		}
 	}
 
 	return steps
 }
 
-// parseTestStep parses a single TestStep composite literal
+// parseTestStep parses a single TestStep composite literal (backward compatible)
 func parseTestStep(stepExpr ast.Expr, stepNum int) TestStepInfo {
+	return parseTestStepWithHash(stepExpr, stepNum)
+}
+
+// parseTestStepWithHash parses a single TestStep composite literal and computes its config hash.
+func parseTestStepWithHash(stepExpr ast.Expr, stepNum int) TestStepInfo {
 	step := TestStepInfo{
 		StepNumber: stepNum,
 	}
@@ -390,7 +640,6 @@ func parseTestStep(stepExpr ast.Expr, stepNum int) TestStepInfo {
 		step.StepPos = stepLit.Elts[0].Pos()
 	}
 
-	// Parse step fields
 	for _, elt := range stepLit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
 		if !ok {
@@ -405,6 +654,7 @@ func parseTestStep(stepExpr ast.Expr, stepNum int) TestStepInfo {
 		switch key.Name {
 		case "Config":
 			step.HasConfig = true
+			step.ConfigHash = hashConfigExpr(kv.Value)
 		case "Check":
 			step.HasCheck = true
 			step.CheckFunctions = extractCheckFunctions(kv.Value)
@@ -434,7 +684,6 @@ func extractCheckFunctions(checkExpr ast.Expr) []string {
 			return true
 		}
 
-		// Look for function calls in Check
 		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
 			functions = append(functions, sel.Sel.Name)
 		}
@@ -445,7 +694,7 @@ func extractCheckFunctions(checkExpr ast.Expr) []string {
 	return functions
 }
 
-// Public API functions for compatibility
+// Public API functions
 
 // ParseResources is the public API for parsing resources from a file.
 func ParseResources(file *ast.File, fset *token.FileSet, filePath string) []*ResourceInfo {
@@ -460,4 +709,34 @@ func ParseTestFile(file *ast.File, fset *token.FileSet, filePath string) *TestFi
 // ParseTestFileWithHelpers is the public API for parsing test files with custom helpers.
 func ParseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string) *TestFileInfo {
 	return parseTestFileWithHelpers(file, fset, filePath, customHelpers)
+}
+
+// FindLocalTestHelpers is the public API for discovering local test helpers.
+func FindLocalTestHelpers(files []*ast.File, fset *token.FileSet) []LocalHelper {
+	return findLocalTestHelpers(files, fset)
+}
+
+// AcceptsTestingT is the public API for checking if a function accepts *testing.T.
+func AcceptsTestingT(funcDecl *ast.FuncDecl) bool {
+	return acceptsTestingT(funcDecl)
+}
+
+// MatchesExcludePattern is the public API for checking if a file should be excluded.
+func MatchesExcludePattern(filePath string, patterns []string) ExclusionResult {
+	return matchesExcludePattern(filePath, patterns)
+}
+
+// CheckUsesResourceTestWithLocalHelpers is the public API for checking helper usage.
+func CheckUsesResourceTestWithLocalHelpers(body *ast.BlockStmt, customHelpers []string, localHelpers []LocalHelper) bool {
+	return checkUsesResourceTestWithLocalHelpers(body, customHelpers, localHelpers)
+}
+
+// DetectHelperUsed is the public API for detecting helper function usage.
+func DetectHelperUsed(body *ast.BlockStmt, localHelpers []LocalHelper) string {
+	return detectHelperUsed(body, localHelpers)
+}
+
+// HashConfigExpr is the public API for hashing config expressions.
+func HashConfigExpr(expr ast.Expr) string {
+	return hashConfigExpr(expr)
 }

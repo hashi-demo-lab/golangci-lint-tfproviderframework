@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/ast"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -48,6 +49,80 @@ func toTitleCase(s string) string {
 		}
 	}
 	return result.String()
+}
+
+// testFuncPatterns matches various test function naming conventions.
+// These patterns are used to extract resource names from test function names.
+//
+// Examples:
+//   - TestAccAWSInstance_basic -> provider=AWS, resource=Instance
+//   - TestAccWidget_basic -> provider="", resource=Widget
+//   - TestAccDataSourceHTTP_basic -> resource=HTTP
+//   - TestAccResourceWidget_basic -> resource=Widget
+var testFuncPatterns = []*regexp.Regexp{
+	// Pattern 1: TestAcc{Provider}{Resource}_{suffix} (e.g., TestAccAWSInstance_basic)
+	// Provider is optional uppercase letters followed by resource name
+	regexp.MustCompile(`^TestAcc([A-Z][a-z]+)?([A-Z][a-zA-Z0-9]+)_`),
+	// Pattern 2: TestAccDataSource{Resource}_{suffix}
+	regexp.MustCompile(`^TestAccDataSource([A-Z][a-zA-Z0-9]+)_`),
+	// Pattern 3: TestAccResource{Resource}_{suffix}
+	regexp.MustCompile(`^TestAccResource([A-Z][a-zA-Z0-9]+)_`),
+	// Pattern 4: TestAcc{Resource}_{suffix} (no provider prefix, simple pattern)
+	regexp.MustCompile(`^TestAcc([A-Z][a-zA-Z0-9]+)_`),
+}
+
+// ExtractResourceFromFuncName attempts to extract a resource name from a test function name.
+// Returns the resource name in snake_case and whether a match was found.
+//
+// Examples:
+//
+//	TestAccAWSInstance_basic -> "instance", true
+//	TestAccWidget_basic -> "widget", true
+//	TestAccDataSourceHTTP_basic -> "http", true
+//	TestAccResourceWidget_basic -> "widget", true
+//	TestHelper -> "", false
+func ExtractResourceFromFuncName(funcName string) (string, bool) {
+	// Try data source pattern first (more specific)
+	if matches := testFuncPatterns[1].FindStringSubmatch(funcName); len(matches) > 1 {
+		return toSnakeCase(matches[1]), true
+	}
+
+	// Try resource pattern
+	if matches := testFuncPatterns[2].FindStringSubmatch(funcName); len(matches) > 1 {
+		return toSnakeCase(matches[1]), true
+	}
+
+	// Try provider+resource pattern
+	if matches := testFuncPatterns[0].FindStringSubmatch(funcName); len(matches) > 2 {
+		// matches[1] = provider (optional), matches[2] = resource
+		if matches[2] != "" {
+			return toSnakeCase(matches[2]), true
+		}
+	}
+
+	// Try simple pattern (no provider prefix)
+	if matches := testFuncPatterns[3].FindStringSubmatch(funcName); len(matches) > 1 {
+		return toSnakeCase(matches[1]), true
+	}
+
+	return "", false
+}
+
+// ExtractProviderFromFuncName extracts the provider prefix from a test function name.
+// Returns empty string if no provider prefix found.
+//
+// Examples:
+//
+//	TestAccAWSInstance_basic -> "aws"
+//	TestAccGoogleComputeInstance_update -> "google"
+//	TestAccWidget_basic -> ""
+func ExtractProviderFromFuncName(funcName string) string {
+	if matches := testFuncPatterns[0].FindStringSubmatch(funcName); len(matches) > 1 {
+		if matches[1] != "" {
+			return strings.ToLower(matches[1])
+		}
+	}
+	return ""
 }
 
 // isBaseClassFile checks if a file is a base class file that should be excluded
@@ -326,4 +401,126 @@ func parseAttributesMap(mapLit *ast.CompositeLit) []AttributeInfo {
 	}
 
 	return attributes
+}
+
+// standardRequiresReplaceModifiers maps known plan modifier names that indicate RequiresReplace.
+// These are the standard modifiers from terraform-plugin-framework.
+var standardRequiresReplaceModifiers = map[string]bool{
+	"RequiresReplace":              true,
+	"RequiresReplaceIf":            true,
+	"RequiresReplaceIfConfigured":  true,
+	"UseStateForUnknown":           false, // Not a replace modifier
+	"RequiresReplaceIfFuncReturns": true,
+}
+
+// RequiresReplaceResult holds the result of checking for RequiresReplace modifiers.
+type RequiresReplaceResult struct {
+	Found        bool    // Whether RequiresReplace was found
+	Confidence   float64 // 0.0-1.0 confidence score
+	ModifierName string  // Name of the modifier found
+}
+
+// hasRequiresReplaceWithConfidence checks if a node contains RequiresReplace plan modifier
+// and returns detailed information about the finding including confidence level.
+func hasRequiresReplaceWithConfidence(node ast.Node) RequiresReplaceResult {
+	result := RequiresReplaceResult{
+		Found:      false,
+		Confidence: 0.0,
+	}
+
+	// Handle nil node
+	if node == nil {
+		return result
+	}
+
+	ast.Inspect(node, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		// Check for function calls like stringplanmodifier.RequiresReplace()
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			modifierName := sel.Sel.Name
+
+			// Check against standard modifiers
+			if isReplace, known := standardRequiresReplaceModifiers[modifierName]; known {
+				if isReplace {
+					result.Found = true
+					result.ModifierName = modifierName
+					result.Confidence = 1.0 // High confidence for known modifiers
+					return false
+				}
+			} else if strings.Contains(modifierName, "RequiresReplace") {
+				// Unknown modifier containing "RequiresReplace" - lower confidence
+				result.Found = true
+				result.ModifierName = modifierName
+				result.Confidence = 0.8 // Lower confidence for unknown patterns
+				return false
+			}
+		}
+
+		return true
+	})
+
+	return result
+}
+
+// HasRequiresReplaceWithConfidence is the public API for checking RequiresReplace with confidence.
+func HasRequiresReplaceWithConfidence(node ast.Node) RequiresReplaceResult {
+	return hasRequiresReplaceWithConfidence(node)
+}
+
+// suppressionPatterns defines patterns for lint suppression comments.
+var suppressionPatterns = []*regexp.Regexp{
+	// nolint:checkname format (golangci-lint style)
+	regexp.MustCompile(`//\s*nolint:\s*([a-zA-Z0-9_,\-]+)`),
+	// lint:ignore checkname format
+	regexp.MustCompile(`//\s*lint:ignore\s+([a-zA-Z0-9_,\-]+)`),
+	// tfprovidertest:disable checkname format (our custom format)
+	regexp.MustCompile(`//\s*tfprovidertest:disable\s+([a-zA-Z0-9_,\-]+)`),
+}
+
+// CheckSuppressionComment checks if a specific check is suppressed in comments.
+// Returns true if the checkName is found in any suppression comment.
+func CheckSuppressionComment(comments []*ast.CommentGroup, checkName string) bool {
+	suppressed := GetSuppressedChecks(comments)
+	for _, s := range suppressed {
+		if s == checkName || s == "all" {
+			return true
+		}
+	}
+	return false
+}
+
+// GetSuppressedChecks extracts all suppressed check names from comments.
+// Returns a slice of check names that are suppressed.
+func GetSuppressedChecks(comments []*ast.CommentGroup) []string {
+	var suppressed []string
+
+	for _, group := range comments {
+		if group == nil {
+			continue
+		}
+
+		for _, comment := range group.List {
+			text := comment.Text
+
+			for _, pattern := range suppressionPatterns {
+				matches := pattern.FindStringSubmatch(text)
+				if len(matches) > 1 {
+					// Split by comma for multiple checks
+					checks := strings.Split(matches[1], ",")
+					for _, check := range checks {
+						check = strings.TrimSpace(check)
+						if check != "" {
+							suppressed = append(suppressed, check)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return suppressed
 }
