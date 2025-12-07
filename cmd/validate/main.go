@@ -74,23 +74,14 @@ func main() {
 	settings.ProviderPrefix = *providerPrefix
 
 	// Configure matching strategy
+	// Note: Function name matching and file-based matching always run (not configurable)
 	switch *matchStrategy {
-	case "function":
-		settings.EnableFunctionMatching = true
-		settings.EnableFileBasedMatching = false
-		settings.EnableFuzzyMatching = false
-	case "file":
-		settings.EnableFunctionMatching = false
-		settings.EnableFileBasedMatching = true
+	case "function", "file", "all":
+		// Function and file matching always run
 		settings.EnableFuzzyMatching = false
 	case "fuzzy":
-		settings.EnableFunctionMatching = true
-		settings.EnableFileBasedMatching = true
+		// Enable fuzzy matching in addition to function and file matching
 		settings.EnableFuzzyMatching = true
-	case "all":
-		settings.EnableFunctionMatching = true
-		settings.EnableFileBasedMatching = true
-		settings.EnableFuzzyMatching = false // Still disabled by default in "all" mode
 	default:
 		fmt.Printf("Error: Invalid match-strategy '%s'. Must be one of: function, file, fuzzy, all\n", *matchStrategy)
 		os.Exit(1)
@@ -195,11 +186,7 @@ func validateSettings(settings tfprovidertest.Settings) error {
 		return fmt.Errorf("confidence-threshold must be between 0.0 and 1.0, got %f", settings.FuzzyMatchThreshold)
 	}
 
-	// Validate that at least one matching strategy is enabled
-	if !settings.EnableFunctionMatching && !settings.EnableFileBasedMatching && !settings.EnableFuzzyMatching {
-		return fmt.Errorf("at least one matching strategy must be enabled")
-	}
-
+	// Function name matching and file-based matching always run (no validation needed)
 	return nil
 }
 
@@ -297,20 +284,18 @@ func outputMatches(matches []MatchInfo, format string) {
 func runAnalyzers(fset *token.FileSet, files []*ast.File, settings tfprovidertest.Settings) {
 	// Create plugin with settings map
 	settingsMap := map[string]interface{}{
-		"Verbose":                 settings.Verbose,
-		"EnableBasicTest":         settings.EnableBasicTest,
-		"EnableUpdateTest":        settings.EnableUpdateTest,
-		"EnableImportTest":        settings.EnableImportTest,
-		"EnableErrorTest":         settings.EnableErrorTest,
-		"EnableStateCheck":        settings.EnableStateCheck,
-		"EnableFunctionMatching":  settings.EnableFunctionMatching,
-		"EnableFileBasedMatching": settings.EnableFileBasedMatching,
-		"EnableFuzzyMatching":     settings.EnableFuzzyMatching,
-		"FuzzyMatchThreshold":     settings.FuzzyMatchThreshold,
-		"ProviderPrefix":          settings.ProviderPrefix,
-		"ShowMatchConfidence":     settings.ShowMatchConfidence,
-		"ShowUnmatchedTests":      settings.ShowUnmatchedTests,
-		"ShowOrphanedResources":   settings.ShowOrphanedResources,
+		"Verbose":               settings.Verbose,
+		"EnableBasicTest":       settings.EnableBasicTest,
+		"EnableUpdateTest":      settings.EnableUpdateTest,
+		"EnableImportTest":      settings.EnableImportTest,
+		"EnableErrorTest":       settings.EnableErrorTest,
+		"EnableStateCheck":      settings.EnableStateCheck,
+		"EnableFuzzyMatching":   settings.EnableFuzzyMatching,
+		"FuzzyMatchThreshold":   settings.FuzzyMatchThreshold,
+		"ProviderPrefix":        settings.ProviderPrefix,
+		"ShowMatchConfidence":   settings.ShowMatchConfidence,
+		"ShowUnmatchedTests":    settings.ShowUnmatchedTests,
+		"ShowOrphanedResources": settings.ShowOrphanedResources,
 	}
 
 	plugin, err := tfprovidertest.New(settingsMap)

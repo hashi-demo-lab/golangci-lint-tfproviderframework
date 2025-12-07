@@ -58,12 +58,6 @@ func TestDefaultSettings(t *testing.T) {
 	}
 
 	// Test matching strategies
-	if !settings.EnableFunctionMatching {
-		t.Error("EnableFunctionMatching should be true by default")
-	}
-	if !settings.EnableFileBasedMatching {
-		t.Error("EnableFileBasedMatching should be true by default")
-	}
 	if settings.EnableFuzzyMatching {
 		t.Error("EnableFuzzyMatching should be false by default")
 	}
@@ -177,48 +171,24 @@ func TestSettingsValidate_ValidRegex(t *testing.T) {
 	}
 }
 
-func TestSettingsValidate_NoMatchingStrategy(t *testing.T) {
-	settings := DefaultSettings()
-	settings.EnableFunctionMatching = false
-	settings.EnableFileBasedMatching = false
-	settings.EnableFuzzyMatching = false
-
-	err := settings.Validate()
-	if err == nil {
-		t.Error("Validate() should return error when no matching strategy is enabled")
-	}
-}
-
-func TestSettingsValidate_AtLeastOneMatchingStrategy(t *testing.T) {
+// TestSettingsValidate_FuzzyMatchingOptional verifies that fuzzy matching is optional.
+// Function name matching and file-based matching always run (not configurable).
+func TestSettingsValidate_FuzzyMatchingOptional(t *testing.T) {
 	tests := []struct {
-		name        string
-		function    bool
-		fileBased   bool
-		fuzzy       bool
-		shouldError bool
+		name                string
+		enableFuzzyMatching bool
 	}{
-		{"only function matching", true, false, false, false},
-		{"only file-based matching", false, true, false, false},
-		{"only fuzzy matching", false, false, true, false},
-		{"function and file-based", true, true, false, false},
-		{"function and fuzzy", true, false, true, false},
-		{"file-based and fuzzy", false, true, true, false},
-		{"all strategies enabled", true, true, true, false},
-		{"no strategies enabled", false, false, false, true},
+		{"fuzzy matching enabled", true},
+		{"fuzzy matching disabled", false},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			settings := DefaultSettings()
-			settings.EnableFunctionMatching = tc.function
-			settings.EnableFileBasedMatching = tc.fileBased
-			settings.EnableFuzzyMatching = tc.fuzzy
+			settings.EnableFuzzyMatching = tc.enableFuzzyMatching
 
 			err := settings.Validate()
-			if tc.shouldError && err == nil {
-				t.Error("Validate() should return error when no matching strategy is enabled")
-			}
-			if !tc.shouldError && err != nil {
+			if err != nil {
 				t.Errorf("Validate() returned unexpected error: %v", err)
 			}
 		})

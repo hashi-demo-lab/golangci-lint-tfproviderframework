@@ -49,9 +49,9 @@ func TestExtractResourceFromFuncName(t *testing.T) {
 		{"TestWidgetBasic", "", false},     // missing underscore
 
 		// Edge cases
-		{"TestAcc_basic", "", false},       // no resource name
-		{"TestAccA_basic", "", false},      // single uppercase - doesn't match pattern
-		{"TestAccAB_basic", "ab", true},    // two chars get extracted as full name
+		{"TestAcc_basic", "", false},    // no resource name
+		{"TestAccA_basic", "", false},   // single uppercase - doesn't match pattern
+		{"TestAccAB_basic", "ab", true}, // two chars get extracted as full name
 	}
 
 	for _, tt := range tests {
@@ -73,18 +73,18 @@ func TestExtractProviderFromFuncName(t *testing.T) {
 		wantProvider string
 	}{
 		// Provider prefixes - the regex looks for uppercase letter followed by lowercase
-		{"TestAccAWSInstance_basic", ""},      // AWS is all uppercase - doesn't match provider pattern
+		{"TestAccAWSInstance_basic", ""}, // AWS is all uppercase - doesn't match provider pattern
 		{"TestAccGoogleComputeInstance_update", "google"},
 		{"TestAccAzureRMVirtualMachine_disappears", "azure"},
 
 		// No provider prefix
 		{"TestAccWidget_basic", ""},
-		{"TestAccDataSourceHTTP_basic", "data"}, // "Data" matches provider pattern
+		{"TestAccDataSourceHTTP_basic", "data"},     // "Data" matches provider pattern
 		{"TestAccResourceWidget_basic", "resource"}, // "Resource" matches provider pattern
 
 		// Short provider prefixes - pattern requires uppercase + lowercase
-		{"TestAccS3Bucket_basic", ""},       // "S" alone doesn't match
-		{"TestAccEC2Instance_basic", ""},    // "EC" doesn't match
+		{"TestAccS3Bucket_basic", ""},    // "S" alone doesn't match
+		{"TestAccEC2Instance_basic", ""}, // "EC" doesn't match
 
 		// Edge cases
 		{"TestHelper", ""},
@@ -298,6 +298,137 @@ func TestExtractResourceName(t *testing.T) {
 			got := extractResourceName(tt.typeName)
 			if got != tt.expected {
 				t.Errorf("extractResourceName(%q) = %q, want %q", tt.typeName, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractResourceNameFromPath(t *testing.T) {
+	tests := []struct {
+		name             string
+		filePath         string
+		wantResourceName string
+		wantIsDataSource bool
+	}{
+		// Prefix patterns
+		{
+			name:             "resource_ prefix",
+			filePath:         "/path/to/resource_widget_test.go",
+			wantResourceName: "widget",
+			wantIsDataSource: false,
+		},
+		{
+			name:             "data_source_ prefix",
+			filePath:         "/path/to/data_source_http_test.go",
+			wantResourceName: "http",
+			wantIsDataSource: true,
+		},
+		{
+			name:             "ephemeral_ prefix",
+			filePath:         "/path/to/ephemeral_session_test.go",
+			wantResourceName: "session",
+			wantIsDataSource: false,
+		},
+
+		// Suffix patterns
+		{
+			name:             "_resource suffix",
+			filePath:         "/path/to/widget_resource_test.go",
+			wantResourceName: "widget",
+			wantIsDataSource: false,
+		},
+		{
+			name:             "_data_source suffix",
+			filePath:         "/path/to/http_data_source_test.go",
+			wantResourceName: "http",
+			wantIsDataSource: true,
+		},
+		{
+			name:             "_datasource suffix",
+			filePath:         "/path/to/http_datasource_test.go",
+			wantResourceName: "http",
+			wantIsDataSource: true,
+		},
+
+		// Multi-part names
+		{
+			name:             "resource with underscores",
+			filePath:         "/path/to/resource_compute_instance_test.go",
+			wantResourceName: "compute_instance",
+			wantIsDataSource: false,
+		},
+		{
+			name:             "data source with underscores",
+			filePath:         "/path/to/data_source_s3_bucket_test.go",
+			wantResourceName: "s3_bucket",
+			wantIsDataSource: true,
+		},
+
+		// Edge cases
+		{
+			name:             "not a test file",
+			filePath:         "/path/to/resource_widget.go",
+			wantResourceName: "",
+			wantIsDataSource: false,
+		},
+		{
+			name:             "no matching pattern",
+			filePath:         "/path/to/helper_test.go",
+			wantResourceName: "",
+			wantIsDataSource: false,
+		},
+		{
+			name:             "just _test.go",
+			filePath:         "/path/to/_test.go",
+			wantResourceName: "",
+			wantIsDataSource: false,
+		},
+		{
+			name:             "empty resource name after prefix",
+			filePath:         "/path/to/resource__test.go",
+			wantResourceName: "",
+			wantIsDataSource: false,
+		},
+
+		// Full path variations
+		{
+			name:             "absolute path with prefix",
+			filePath:         "/home/user/project/internal/provider/resource_bucket_test.go",
+			wantResourceName: "bucket",
+			wantIsDataSource: false,
+		},
+		{
+			name:             "relative path with suffix",
+			filePath:         "provider/http_datasource_test.go",
+			wantResourceName: "http",
+			wantIsDataSource: true,
+		},
+		{
+			name:             "basename only",
+			filePath:         "data_source_ami_test.go",
+			wantResourceName: "ami",
+			wantIsDataSource: true,
+		},
+
+		// Priority - prefix patterns should take precedence
+		{
+			name:             "both prefix and suffix patterns present",
+			filePath:         "/path/to/resource_widget_resource_test.go",
+			wantResourceName: "widget_resource",
+			wantIsDataSource: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotResourceName, gotIsDataSource := ExtractResourceNameFromPath(tt.filePath)
+			if gotResourceName != tt.wantResourceName {
+				t.Errorf("ExtractResourceNameFromPath(%q) resourceName = %q, want %q",
+					tt.filePath, gotResourceName, tt.wantResourceName)
+			}
+			if gotIsDataSource != tt.wantIsDataSource {
+				t.Errorf("ExtractResourceNameFromPath(%q) isDataSource = %v, want %v",
+					tt.filePath, gotIsDataSource, tt.wantIsDataSource)
 			}
 		})
 	}

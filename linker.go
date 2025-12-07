@@ -68,32 +68,31 @@ func (l *Linker) findResourceMatches(fn *TestFunctionInfo, resourceNames map[str
 	var matches []ResourceMatch
 
 	// Strategy 1: Function name extraction (highest confidence)
-	if l.settings.EnableFunctionMatching {
-		if resourceName, found := ExtractResourceFromFuncName(fn.Name); found {
-			if resourceNames[resourceName] {
-				matches = append(matches, ResourceMatch{
-					ResourceName: resourceName,
-					Confidence:   1.0,
-					MatchType:    MatchTypeFunctionName,
-				})
-				return matches // High confidence match, no need to continue
-			}
+	// Always enabled as it's fast and accurate
+	if resourceName, found := ExtractResourceFromFuncName(fn.Name); found {
+		if resourceNames[resourceName] {
+			matches = append(matches, ResourceMatch{
+				ResourceName: resourceName,
+				Confidence:   1.0,
+				MatchType:    MatchTypeFunctionName,
+			})
+			return matches // High confidence match, no need to continue
 		}
 	}
 
 	// Strategy 2: File proximity (medium confidence)
-	if l.settings.EnableFileBasedMatching {
-		if resourceName := l.matchByFileProximity(fn.FilePath, resourceNames); resourceName != "" {
-			matches = append(matches, ResourceMatch{
-				ResourceName: resourceName,
-				Confidence:   0.8,
-				MatchType:    MatchTypeFileProximity,
-			})
-			return matches
-		}
+	// Always enabled as it's fast and accurate
+	if resourceName := l.matchByFileProximity(fn.FilePath, resourceNames); resourceName != "" {
+		matches = append(matches, ResourceMatch{
+			ResourceName: resourceName,
+			Confidence:   0.8,
+			MatchType:    MatchTypeFileProximity,
+		})
+		return matches
 	}
 
-	// Strategy 3: Fuzzy matching (low confidence, disabled by default)
+	// Strategy 3: Fuzzy matching (low confidence, optional)
+	// Only runs if enabled (disabled by default due to performance cost and false positives)
 	if l.settings.EnableFuzzyMatching {
 		fuzzyMatches := l.findFuzzyMatches(fn.Name, resourceNames)
 		for _, fm := range fuzzyMatches {
@@ -107,48 +106,29 @@ func (l *Linker) findResourceMatches(fn *TestFunctionInfo, resourceNames map[str
 }
 
 // matchByFileProximity tries to match based on file naming convention.
-// It looks for patterns like:
+// It uses ExtractResourceNameFromPath to handle all standard patterns:
 // - resource_widget_test.go -> widget
 // - data_source_widget_test.go -> widget
+// - ephemeral_widget_test.go -> widget
 // - widget_resource_test.go -> widget
 // - widget_data_source_test.go -> widget
+// - widget_datasource_test.go -> widget
 func (l *Linker) matchByFileProximity(testFilePath string, resourceNames map[string]bool) string {
+	// Use the centralized utility function to extract resource name
+	resourceName, _ := ExtractResourceNameFromPath(testFilePath)
+
+	// Check if the extracted name matches a known resource
+	if resourceName != "" && resourceNames[resourceName] {
+		return resourceName
+	}
+
+	// Also try the raw name without prefix/suffix as fallback
 	baseName := filepath.Base(testFilePath)
-
-	// Remove _test.go suffix
-	if !strings.HasSuffix(baseName, "_test.go") {
-		return ""
-	}
-	nameWithoutTest := strings.TrimSuffix(baseName, "_test.go")
-
-	// Try standard patterns
-	patterns := []struct {
-		prefix string
-		suffix string
-	}{
-		{"resource_", ""},
-		{"data_source_", ""},
-		{"", "_resource"},
-		{"", "_data_source"},
-	}
-
-	for _, p := range patterns {
-		resourceName := nameWithoutTest
-		if p.prefix != "" && strings.HasPrefix(resourceName, p.prefix) {
-			resourceName = strings.TrimPrefix(resourceName, p.prefix)
+	if strings.HasSuffix(baseName, "_test.go") {
+		nameWithoutTest := strings.TrimSuffix(baseName, "_test.go")
+		if resourceNames[nameWithoutTest] {
+			return nameWithoutTest
 		}
-		if p.suffix != "" && strings.HasSuffix(resourceName, p.suffix) {
-			resourceName = strings.TrimSuffix(resourceName, p.suffix)
-		}
-
-		if resourceNames[resourceName] {
-			return resourceName
-		}
-	}
-
-	// Also try the raw name without prefix/suffix
-	if resourceNames[nameWithoutTest] {
-		return nameWithoutTest
 	}
 
 	return ""
@@ -251,31 +231,6 @@ func minInt(nums ...int) int {
 	return m
 }
 
-// testFunctionPrefixes are the common prefixes used in test function names.
-// These are stripped when matching test functions to resources.
-var testFunctionPrefixes = []string{
-	"TestAccDataSource",
-	"TestAccResource",
-	"TestAcc",
-	"TestDataSource",
-	"TestResource",
-	"Test",
-}
-
-// testFunctionSuffixes are the common suffixes used in test function names.
-// These are stripped when matching test functions to resources.
-var testFunctionSuffixes = []string{
-	"_basic",
-	"_generated",
-	"_complete",
-	"_update",
-	"_import",
-	"_disappears",
-	"_migrate",
-	"_full",
-	"_minimal",
-}
-
 // matchResourceByName attempts to match a test function name to a resource name
 // by stripping known prefixes and suffixes and converting to snake_case.
 //
@@ -288,7 +243,7 @@ var testFunctionSuffixes = []string{
 func matchResourceByName(funcName string, resourceNames map[string]bool) (string, bool) {
 	// Strip prefix
 	name := funcName
-	for _, prefix := range testFunctionPrefixes {
+	for _, prefix := range TestFunctionPrefixes {
 		if strings.HasPrefix(name, prefix) {
 			name = strings.TrimPrefix(name, prefix)
 			break
@@ -304,7 +259,7 @@ func matchResourceByName(funcName string, resourceNames map[string]bool) (string
 	resourcePart := parts[0]
 
 	// Also try stripping known suffixes from the full name
-	for _, suffix := range testFunctionSuffixes {
+	for _, suffix := range TestFunctionSuffixes {
 		if strings.HasSuffix(name, suffix) {
 			// Get the part before the suffix
 			withoutSuffix := strings.TrimSuffix(name, suffix)

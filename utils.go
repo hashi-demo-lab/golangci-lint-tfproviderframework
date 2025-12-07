@@ -13,6 +13,32 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
+// TestFunctionPrefixes are the common prefixes used in test function names.
+// These are stripped when matching test functions to resources.
+// The order matters - more specific patterns should come first.
+var TestFunctionPrefixes = []string{
+	"TestAccDataSource",
+	"TestAccResource",
+	"TestAcc",
+	"TestDataSource",
+	"TestResource",
+	"Test",
+}
+
+// TestFunctionSuffixes are the common suffixes used in test function names.
+// These are stripped when matching test functions to resources.
+var TestFunctionSuffixes = []string{
+	"_basic",
+	"_generated",
+	"_complete",
+	"_update",
+	"_import",
+	"_disappears",
+	"_migrate",
+	"_full",
+	"_minimal",
+}
+
 // toSnakeCase converts CamelCase to snake_case (e.g., "MyResource" -> "my_resource")
 func toSnakeCase(s string) string {
 	var result strings.Builder
@@ -523,4 +549,50 @@ func GetSuppressedChecks(comments []*ast.CommentGroup) []string {
 	}
 
 	return suppressed
+}
+
+// ExtractResourceNameFromPath extracts a resource name from a file path.
+// It handles various naming patterns commonly used in Terraform provider test files:
+//   - resource_<name>_test.go -> (<name>, false)
+//   - data_source_<name>_test.go -> (<name>, true)
+//   - ephemeral_<name>_test.go -> (<name>, false)
+//   - <name>_resource_test.go -> (<name>, false)
+//   - <name>_data_source_test.go -> (<name>, true)
+//   - <name>_datasource_test.go -> (<name>, true)
+//
+// Returns the extracted resource name and a boolean indicating if it's a data source.
+// If no pattern matches, returns ("", false).
+func ExtractResourceNameFromPath(filePath string) (string, bool) {
+	baseName := filepath.Base(filePath)
+
+	// Must be a test file
+	if !strings.HasSuffix(baseName, "_test.go") {
+		return "", false
+	}
+
+	nameWithoutTest := strings.TrimSuffix(baseName, "_test.go")
+
+	// Check prefix patterns
+	if strings.HasPrefix(nameWithoutTest, "resource_") {
+		return strings.TrimPrefix(nameWithoutTest, "resource_"), false
+	}
+	if strings.HasPrefix(nameWithoutTest, "data_source_") {
+		return strings.TrimPrefix(nameWithoutTest, "data_source_"), true
+	}
+	if strings.HasPrefix(nameWithoutTest, "ephemeral_") {
+		return strings.TrimPrefix(nameWithoutTest, "ephemeral_"), false
+	}
+
+	// Check suffix patterns
+	if strings.HasSuffix(nameWithoutTest, "_resource") {
+		return strings.TrimSuffix(nameWithoutTest, "_resource"), false
+	}
+	if strings.HasSuffix(nameWithoutTest, "_data_source") {
+		return strings.TrimSuffix(nameWithoutTest, "_data_source"), true
+	}
+	if strings.HasSuffix(nameWithoutTest, "_datasource") {
+		return strings.TrimSuffix(nameWithoutTest, "_datasource"), true
+	}
+
+	return "", false
 }

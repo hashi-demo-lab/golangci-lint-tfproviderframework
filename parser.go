@@ -21,6 +21,24 @@ type LocalHelper struct {
 	FuncDecl *ast.FuncDecl
 }
 
+// ParserConfig holds all configuration options for parsing test files.
+// This struct consolidates the various parameters that were previously
+// spread across multiple parseTestFile* functions.
+type ParserConfig struct {
+	CustomHelpers    []string      // Custom test helper functions (e.g., "mypackage.AccTest")
+	LocalHelpers     []LocalHelper // Local test helper functions discovered in the codebase
+	TestNamePatterns []string      // Custom test name patterns (e.g., "TestAcc*", "TestResource*")
+}
+
+// DefaultParserConfig returns a ParserConfig with default/empty values.
+func DefaultParserConfig() ParserConfig {
+	return ParserConfig{
+		CustomHelpers:    nil,
+		LocalHelpers:     nil,
+		TestNamePatterns: nil,
+	}
+}
+
 // ExclusionResult tracks why a file was excluded from analysis.
 type ExclusionResult struct {
 	FilePath       string
@@ -106,13 +124,9 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 	return resources
 }
 
-// parseTestFile parses a test file and extracts test function information.
-func parseTestFile(file *ast.File, fset *token.FileSet, filePath string) *TestFileInfo {
-	return parseTestFileWithHelpers(file, fset, filePath, nil)
-}
-
-// parseTestFileWithHelpers parses a test file with support for custom test helpers.
-func parseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string) *TestFileInfo {
+// ParseTestFileWithConfig parses a test file with full configuration support.
+// This is the main parsing function that all other parse functions delegate to.
+func ParseTestFileWithConfig(file *ast.File, fset *token.FileSet, filePath string, config ParserConfig) *TestFileInfo {
 	packageName := ""
 	if file.Name != nil {
 		packageName = file.Name.Name
@@ -129,11 +143,13 @@ func parseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath stri
 		}
 
 		name := funcDecl.Name.Name
-		if !strings.HasPrefix(name, "Test") {
+
+		// Check if function name matches test patterns
+		if !matchesTestPattern(name, config.TestNamePatterns) {
 			return true
 		}
 
-		usesResourceTest := checkUsesResourceTestWithHelpers(funcDecl.Body, customHelpers)
+		usesResourceTest := checkUsesResourceTestWithLocalHelpers(funcDecl.Body, config.CustomHelpers, config.LocalHelpers)
 		if !usesResourceTest {
 			return true
 		}
@@ -144,6 +160,7 @@ func parseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath stri
 			FunctionPos:      funcDecl.Pos(),
 			UsesResourceTest: true,
 			TestSteps:        extractTestSteps(funcDecl.Body),
+			HelperUsed:       detectHelperUsed(funcDecl.Body, config.LocalHelpers),
 		}
 
 		for _, step := range testFunc.TestSteps {
@@ -159,6 +176,8 @@ func parseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath stri
 		return true
 	})
 
+	// Return TestFileInfo even if no resource name extracted from filename
+	// Resource association now happens via the Linker in Phase 3
 	if len(testFuncs) == 0 {
 		return nil
 	}
@@ -172,35 +191,25 @@ func parseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath stri
 	}
 }
 
+// parseTestFile parses a test file and extracts test function information.
+// Deprecated: Use ParseTestFileWithConfig with DefaultParserConfig() instead.
+func parseTestFile(file *ast.File, fset *token.FileSet, filePath string) *TestFileInfo {
+	return ParseTestFileWithConfig(file, fset, filePath, DefaultParserConfig())
+}
+
+// parseTestFileWithHelpers parses a test file with support for custom test helpers.
+// Deprecated: Use ParseTestFileWithConfig instead.
+func parseTestFileWithHelpers(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string) *TestFileInfo {
+	config := ParserConfig{
+		CustomHelpers: customHelpers,
+	}
+	return ParseTestFileWithConfig(file, fset, filePath, config)
+}
+
 // extractResourceNameFromFilePath extracts resource name from file path.
+// This function delegates to ExtractResourceNameFromPath for the actual extraction logic.
 func extractResourceNameFromFilePath(filePath string) (string, bool) {
-	baseName := filepath.Base(filePath)
-	if !strings.HasSuffix(baseName, "_test.go") {
-		return "", false
-	}
-
-	nameWithoutTest := strings.TrimSuffix(baseName, "_test.go")
-
-	if strings.HasPrefix(nameWithoutTest, "resource_") {
-		return strings.TrimPrefix(nameWithoutTest, "resource_"), false
-	}
-	if strings.HasPrefix(nameWithoutTest, "data_source_") {
-		return strings.TrimPrefix(nameWithoutTest, "data_source_"), true
-	}
-	if strings.HasPrefix(nameWithoutTest, "ephemeral_") {
-		return strings.TrimPrefix(nameWithoutTest, "ephemeral_"), false
-	}
-	if strings.HasSuffix(nameWithoutTest, "_resource") {
-		return strings.TrimSuffix(nameWithoutTest, "_resource"), false
-	}
-	if strings.HasSuffix(nameWithoutTest, "_data_source") {
-		return strings.TrimSuffix(nameWithoutTest, "_data_source"), true
-	}
-	if strings.HasSuffix(nameWithoutTest, "_datasource") {
-		return strings.TrimSuffix(nameWithoutTest, "_datasource"), true
-	}
-
-	return "", false
+	return ExtractResourceNameFromPath(filePath)
 }
 
 // findLocalTestHelpers discovers functions that wrap resource.Test().
@@ -296,9 +305,9 @@ func matchesExcludePattern(filePath string, patterns []string) ExclusionResult {
 
 // buildRegistry constructs a resource registry by scanning all files.
 // It uses a three-phase approach:
-//   1. Scan for Resources (Type-based discovery via AST)
-//   2. Scan ALL Test Files (unconditionally, to support function-first matching)
-//   3. Link tests to resources using the Linker (function name, file proximity, fuzzy)
+//  1. Scan for Resources (Type-based discovery via AST)
+//  2. Scan ALL Test Files (unconditionally, to support function-first matching)
+//  3. Link tests to resources using the Linker (function name, file proximity, fuzzy)
 func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
 	reg := NewResourceRegistry()
 
@@ -358,13 +367,15 @@ func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
 		}
 
 		// Parse test file with custom and local helpers and test name patterns
-		testFileInfo := parseTestFileWithSettings(file, pass.Fset, filename, settings.CustomTestHelpers, localHelpers, settings.TestNamePatterns)
+		config := ParserConfig{
+			CustomHelpers:    settings.CustomTestHelpers,
+			LocalHelpers:     localHelpers,
+			TestNamePatterns: settings.TestNamePatterns,
+		}
+		testFileInfo := ParseTestFileWithConfig(file, pass.Fset, filename, config)
 		if testFileInfo == nil {
 			continue
 		}
-
-		// Register test file by path (not resource name)
-		reg.RegisterTestFile(testFileInfo)
 
 		// Register each test function in global index
 		for i := range testFileInfo.TestFunctions {
@@ -382,75 +393,24 @@ func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
 }
 
 // parseTestFileWithHelpersAndLocals parses a test file with both custom and local helpers.
+// Deprecated: Use ParseTestFileWithConfig instead.
 func parseTestFileWithHelpersAndLocals(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string, localHelpers []LocalHelper) *TestFileInfo {
-	return parseTestFileWithSettings(file, fset, filePath, customHelpers, localHelpers, nil)
+	config := ParserConfig{
+		CustomHelpers: customHelpers,
+		LocalHelpers:  localHelpers,
+	}
+	return ParseTestFileWithConfig(file, fset, filePath, config)
 }
 
 // parseTestFileWithSettings parses a test file with full settings support.
-// This allows using custom test name patterns from settings.
+// Deprecated: Use ParseTestFileWithConfig instead. This function is kept for backward compatibility.
 func parseTestFileWithSettings(file *ast.File, fset *token.FileSet, filePath string, customHelpers []string, localHelpers []LocalHelper, testNamePatterns []string) *TestFileInfo {
-	packageName := ""
-	if file.Name != nil {
-		packageName = file.Name.Name
+	config := ParserConfig{
+		CustomHelpers:    customHelpers,
+		LocalHelpers:     localHelpers,
+		TestNamePatterns: testNamePatterns,
 	}
-
-	resourceName, isDataSource := extractResourceNameFromFilePath(filePath)
-
-	var testFuncs []TestFunctionInfo
-
-	ast.Inspect(file, func(n ast.Node) bool {
-		funcDecl, ok := n.(*ast.FuncDecl)
-		if !ok {
-			return true
-		}
-
-		name := funcDecl.Name.Name
-
-		// Check if function name matches test patterns
-		if !matchesTestPattern(name, testNamePatterns) {
-			return true
-		}
-
-		usesResourceTest := checkUsesResourceTestWithLocalHelpers(funcDecl.Body, customHelpers, localHelpers)
-		if !usesResourceTest {
-			return true
-		}
-
-		testFunc := TestFunctionInfo{
-			Name:             funcDecl.Name.Name,
-			FilePath:         filePath,
-			FunctionPos:      funcDecl.Pos(),
-			UsesResourceTest: true,
-			TestSteps:        extractTestSteps(funcDecl.Body),
-			HelperUsed:       detectHelperUsed(funcDecl.Body, localHelpers),
-		}
-
-		for _, step := range testFunc.TestSteps {
-			if step.ExpectError {
-				testFunc.HasErrorCase = true
-			}
-			if step.ImportState {
-				testFunc.HasImportStep = true
-			}
-		}
-
-		testFuncs = append(testFuncs, testFunc)
-		return true
-	})
-
-	// Return TestFileInfo even if no resource name extracted from filename
-	// Resource association now happens via the Linker in Phase 3
-	if len(testFuncs) == 0 {
-		return nil
-	}
-
-	return &TestFileInfo{
-		FilePath:      filePath,
-		PackageName:   packageName,
-		ResourceName:  resourceName,
-		IsDataSource:  isDataSource,
-		TestFunctions: testFuncs,
-	}
+	return ParseTestFileWithConfig(file, fset, filePath, config)
 }
 
 // matchesTestPattern checks if a function name matches the test patterns.

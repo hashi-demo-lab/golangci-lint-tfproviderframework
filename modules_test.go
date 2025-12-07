@@ -27,7 +27,6 @@ func TestSettings_Module(t *testing.T) {
 		assert.True(t, settings.ExcludeBaseClasses, "Should exclude base classes by default")
 		assert.True(t, settings.ExcludeSweeperFiles, "Should exclude sweeper files by default")
 		assert.True(t, settings.ExcludeMigrationFiles, "Should exclude migration files by default")
-		assert.True(t, settings.EnableFileBasedMatching, "File-based matching should be enabled")
 
 		assert.False(t, settings.Verbose, "Verbose should be disabled by default")
 		assert.Empty(t, settings.ExcludePaths, "ExcludePaths should be empty by default")
@@ -43,7 +42,7 @@ func TestRegistry_Module(t *testing.T) {
 		assert.NotNil(t, reg)
 		assert.Empty(t, reg.GetAllResources())
 		assert.Empty(t, reg.GetAllDataSources())
-		assert.Empty(t, reg.GetAllTestFiles())
+		assert.Empty(t, reg.GetAllTestFunctions())
 	})
 
 	t.Run("RegisterResource adds resource to registry", func(t *testing.T) {
@@ -225,24 +224,19 @@ func TestIntegration_FileBasedMatching(t *testing.T) {
 		}
 		reg.RegisterResource(resource)
 
-		// Simulate finding a test file
-		testFile := &TestFileInfo{
-			FilePath:     "/provider/internal/resource_widget_test.go",
-			ResourceName: "widget",
-			IsDataSource: false,
-			TestFunctions: []TestFunctionInfo{
-				{
-					Name:             "TestAccWidget_basic",
-					UsesResourceTest: true,
-				},
-			},
+		// Register test function
+		testFunc := &TestFunctionInfo{
+			Name:             "TestAccWidget_basic",
+			FilePath:         "/provider/internal/resource_widget_test.go",
+			UsesResourceTest: true,
 		}
-		reg.RegisterTestFile(testFile)
+		reg.RegisterTestFunction(testFunc)
+		reg.LinkTestToResource("widget", testFunc)
 
 		// Verify association
-		foundTest := reg.GetTestFile("widget")
-		assert.NotNil(t, foundTest)
-		assert.Len(t, foundTest.TestFunctions, 1)
+		linkedTests := reg.GetResourceTests("widget")
+		assert.Len(t, linkedTests, 1)
+		assert.Equal(t, "TestAccWidget_basic", linkedTests[0].Name)
 
 		// Verify no untested resources
 		untested := reg.GetUntestedResources()
@@ -425,22 +419,26 @@ func TestGetUntestedResources_WithResourceTests(t *testing.T) {
 		assert.Equal(t, "untested", untested[0].Name)
 	})
 
-	t.Run("should also check legacy testFiles for backward compatibility", func(t *testing.T) {
+	t.Run("should handle multiple test functions per resource", func(t *testing.T) {
 		reg := NewResourceRegistry()
 
 		// Register two resources
-		reg.RegisterResource(&ResourceInfo{Name: "tested_legacy"})
+		reg.RegisterResource(&ResourceInfo{Name: "tested_multi"})
 		reg.RegisterResource(&ResourceInfo{Name: "untested"})
 
-		// Register test via legacy method
-		testFile := &TestFileInfo{
-			FilePath:     "/path/to/resource_tested_legacy_test.go",
-			ResourceName: "tested_legacy",
-			TestFunctions: []TestFunctionInfo{
-				{Name: "TestAccTestedLegacy_basic"},
-			},
+		// Register multiple test functions for the same resource
+		testFunc1 := &TestFunctionInfo{
+			Name:     "TestAccTestedMulti_basic",
+			FilePath: "/path/to/resource_tested_multi_test.go",
 		}
-		reg.RegisterTestFile(testFile)
+		testFunc2 := &TestFunctionInfo{
+			Name:     "TestAccTestedMulti_advanced",
+			FilePath: "/path/to/resource_tested_multi_test.go",
+		}
+		reg.RegisterTestFunction(testFunc1)
+		reg.RegisterTestFunction(testFunc2)
+		reg.LinkTestToResource("tested_multi", testFunc1)
+		reg.LinkTestToResource("tested_multi", testFunc2)
 
 		untested := reg.GetUntestedResources()
 		assert.Len(t, untested, 1)
