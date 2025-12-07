@@ -9,10 +9,15 @@ import (
 	"go/printer"
 	"go/token"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
+
+// Regex to find 'resource "example_widget" "name" {'
+// Captures the resource type (e.g., "example_widget")
+var resourceTypeRegex = regexp.MustCompile(`resource\s+"([^"]+)"\s+"[^"]+"\s+\{`)
 
 // LocalHelper represents a discovered local test helper function.
 type LocalHelper struct {
@@ -154,15 +159,16 @@ func ParseTestFileWithConfig(file *ast.File, fset *token.FileSet, filePath strin
 			return true
 		}
 
-		steps, hasCheckDestroy := extractTestSteps(funcDecl.Body)
+		steps, hasCheckDestroy, inferred := extractTestSteps(funcDecl.Body)
 		testFunc := TestFunctionInfo{
-			Name:             funcDecl.Name.Name,
-			FilePath:         filePath,
-			FunctionPos:      funcDecl.Pos(),
-			UsesResourceTest: true,
-			TestSteps:        steps,
-			HelperUsed:       detectHelperUsed(funcDecl.Body, config.LocalHelpers),
-			HasCheckDestroy:  hasCheckDestroy,
+			Name:              funcDecl.Name.Name,
+			FilePath:          filePath,
+			FunctionPos:       funcDecl.Pos(),
+			UsesResourceTest:  true,
+			TestSteps:         steps,
+			HelperUsed:        detectHelperUsed(funcDecl.Body, config.LocalHelpers),
+			HasCheckDestroy:   hasCheckDestroy,
+			InferredResources: inferred,
 		}
 
 		for _, step := range testFunc.TestSteps {
@@ -567,12 +573,14 @@ func detectHelperUsed(body *ast.BlockStmt, localHelpers []LocalHelper) string {
 }
 
 // extractTestSteps extracts test step information from a test function body.
-// Returns the list of test steps and a boolean indicating whether CheckDestroy was found.
-func extractTestSteps(body *ast.BlockStmt) ([]TestStepInfo, bool) {
+// Returns the list of test steps, a boolean indicating whether CheckDestroy was found,
+// and a slice of inferred resource names extracted from Config strings.
+func extractTestSteps(body *ast.BlockStmt) ([]TestStepInfo, bool, []string) {
 	var steps []TestStepInfo
 	hasCheckDestroy := false
+	uniqueInferred := make(map[string]bool)
 	if body == nil {
-		return steps, hasCheckDestroy
+		return steps, hasCheckDestroy, nil
 	}
 	stepNumber := 0
 
@@ -586,7 +594,7 @@ func extractTestSteps(body *ast.BlockStmt) ([]TestStepInfo, bool) {
 			if ident, ok := sel.X.(*ast.Ident); ok {
 				if ident.Name == "resource" && (sel.Sel.Name == "Test" || sel.Sel.Name == "ParallelTest") {
 					if len(call.Args) >= 2 {
-						steps, hasCheckDestroy = extractStepsFromTestCase(call.Args[1], &stepNumber)
+						steps, hasCheckDestroy = extractStepsFromTestCase(call.Args[1], &stepNumber, uniqueInferred)
 					}
 					return false
 				}
@@ -595,12 +603,19 @@ func extractTestSteps(body *ast.BlockStmt) ([]TestStepInfo, bool) {
 		return true
 	})
 
-	return steps, hasCheckDestroy
+	// Convert uniqueInferred map keys to slice
+	var inferredResources []string
+	for resourceName := range uniqueInferred {
+		inferredResources = append(inferredResources, resourceName)
+	}
+
+	return steps, hasCheckDestroy, inferredResources
 }
 
 // extractStepsFromTestCase extracts steps from a resource.TestCase composite literal.
 // Returns the list of test steps and a boolean indicating whether CheckDestroy was found.
-func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int) ([]TestStepInfo, bool) {
+// The inferred map is populated with resource names extracted from Config strings.
+func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int, inferred map[string]bool) ([]TestStepInfo, bool) {
 	var steps []TestStepInfo
 	hasCheckDestroy := false
 
@@ -631,7 +646,7 @@ func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int) ([]TestSte
 
 			// Parse each step with hash
 			for _, stepExpr := range stepsLit.Elts {
-				step := parseTestStepWithHash(stepExpr, *stepNumber)
+				step := parseTestStepWithHash(stepExpr, *stepNumber, inferred)
 				steps = append(steps, step)
 				*stepNumber++
 			}
@@ -651,11 +666,12 @@ func extractStepsFromTestCase(testCaseExpr ast.Expr, stepNumber *int) ([]TestSte
 
 // parseTestStep parses a single TestStep composite literal (backward compatible)
 func parseTestStep(stepExpr ast.Expr, stepNum int) TestStepInfo {
-	return parseTestStepWithHash(stepExpr, stepNum)
+	return parseTestStepWithHash(stepExpr, stepNum, nil)
 }
 
 // parseTestStepWithHash parses a single TestStep composite literal and computes its config hash.
-func parseTestStepWithHash(stepExpr ast.Expr, stepNum int) TestStepInfo {
+// If inferred is non-nil, resource names extracted from Config strings are added to it.
+func parseTestStepWithHash(stepExpr ast.Expr, stepNum int, inferred map[string]bool) TestStepInfo {
 	step := TestStepInfo{
 		StepNumber: stepNum,
 	}
@@ -684,6 +700,21 @@ func parseTestStepWithHash(stepExpr ast.Expr, stepNum int) TestStepInfo {
 		case "Config":
 			step.HasConfig = true
 			step.ConfigHash = hashConfigExpr(kv.Value)
+
+			// Extract resource name from Config string
+			if inferred != nil {
+				if basicLit, ok := kv.Value.(*ast.BasicLit); ok && basicLit.Kind == token.STRING {
+					// Remove backticks or quotes
+					configContent := strings.Trim(basicLit.Value, "`\"")
+					matches := resourceTypeRegex.FindAllStringSubmatch(configContent, -1)
+					for _, match := range matches {
+						if len(match) > 1 {
+							inferred[match[1]] = true
+						}
+					}
+				}
+				// Note: We intentionally skip dynamic configs (fmt.Sprintf) for now
+			}
 		case "Check":
 			step.HasCheck = true
 			step.CheckFunctions = extractCheckFunctions(kv.Value)

@@ -1033,3 +1033,109 @@ func TestAccWidget_basic(t *testing.T) {
 		t.Errorf("function names differ: old=%q, new=%q", oldResult.TestFunctions[0].Name, newResult.TestFunctions[0].Name)
 	}
 }
+
+func TestResourceTypeRegex(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []string
+	}{
+		{
+			name:     "single resource block",
+			input:    `resource "example_widget" "test" {`,
+			expected: []string{"example_widget"},
+		},
+		{
+			name:     "multiple resource blocks",
+			input:    `resource "example_widget" "test" { } resource "example_gadget" "other" {`,
+			expected: []string{"example_widget", "example_gadget"},
+		},
+		{
+			name: "resource block with newlines",
+			input: `
+resource "aws_instance" "example" {
+  ami = "ami-12345"
+}
+`,
+			expected: []string{"aws_instance"},
+		},
+		{
+			name:     "resource with underscores",
+			input:    `resource "aws_s3_bucket" "my_bucket" {`,
+			expected: []string{"aws_s3_bucket"},
+		},
+		{
+			name:     "resource with extra whitespace",
+			input:    `resource   "example_widget"   "test"   {`,
+			expected: []string{"example_widget"},
+		},
+		{
+			name:     "no resource block - data source only",
+			input:    `data "example_widget" "test" {`,
+			expected: []string{},
+		},
+		{
+			name:     "no resource block - empty string",
+			input:    ``,
+			expected: []string{},
+		},
+		{
+			name:     "no resource block - plain text",
+			input:    `some random text without resource blocks`,
+			expected: []string{},
+		},
+		{
+			name:     "invalid pattern - missing quotes",
+			input:    `resource example_widget "test" {`,
+			expected: []string{},
+		},
+		{
+			name:     "invalid pattern - missing opening brace",
+			input:    `resource "example_widget" "test"`,
+			expected: []string{},
+		},
+		{
+			name: "multiple resources in HCL config",
+			input: `
+provider "example" {}
+
+resource "example_widget" "first" {
+  name = "widget1"
+}
+
+resource "example_gadget" "second" {
+  name = "gadget1"
+}
+
+resource "example_thing" "third" {
+  depends_on = [example_widget.first]
+}
+`,
+			expected: []string{"example_widget", "example_gadget", "example_thing"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matches := resourceTypeRegex.FindAllStringSubmatch(tt.input, -1)
+			var extracted []string
+			for _, match := range matches {
+				if len(match) > 1 {
+					extracted = append(extracted, match[1])
+				}
+			}
+
+			if len(extracted) != len(tt.expected) {
+				t.Errorf("expected %d matches, got %d", len(tt.expected), len(extracted))
+				t.Errorf("extracted: %v, expected: %v", extracted, tt.expected)
+				return
+			}
+
+			for i, exp := range tt.expected {
+				if extracted[i] != exp {
+					t.Errorf("match[%d]: expected %q, got %q", i, exp, extracted[i])
+				}
+			}
+		})
+	}
+}

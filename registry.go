@@ -16,6 +16,9 @@ type MatchType int
 const (
 	// MatchTypeNone indicates no match was found.
 	MatchTypeNone MatchType = iota
+	// MatchTypeInferred indicates the match was found by parsing the HCL config (Highest Priority).
+	// This is the most reliable match type as it extracts resource names directly from test configurations.
+	MatchTypeInferred
 	// MatchTypeFunctionName indicates the match was extracted from the test function name.
 	MatchTypeFunctionName
 	// MatchTypeFileProximity indicates the match was based on file naming convention.
@@ -27,6 +30,8 @@ const (
 // String returns the string representation of a MatchType.
 func (m MatchType) String() string {
 	switch m {
+	case MatchTypeInferred:
+		return "inferred_from_config"
 	case MatchTypeFunctionName:
 		return "function_name"
 	case MatchTypeFileProximity:

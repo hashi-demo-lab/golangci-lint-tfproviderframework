@@ -9,7 +9,8 @@ import (
 
 // Linker associates test functions with resources using multiple strategies.
 // It implements a prioritized matching approach:
-// 1. Function name extraction (highest confidence)
+// 0. Inferred content matching (highest priority - from Config string parsing)
+// 1. Function name extraction (high confidence)
 // 2. File proximity matching (medium confidence)
 // 3. Fuzzy matching (lowest confidence, optional)
 type Linker struct {
@@ -64,7 +65,23 @@ func (l *Linker) LinkTestsToResources() {
 func (l *Linker) findResourceMatches(fn *TestFunctionInfo, resourceNames map[string]bool) []ResourceMatch {
 	var matches []ResourceMatch
 
-	// Strategy 1: Function name extraction (highest confidence)
+	// Strategy 0: Inferred Content Matching (highest priority)
+	// Check if the test explicitly configures a known resource in its Config strings.
+	// This is the most reliable strategy as it comes from parsing the actual HCL configuration
+	// that the test uses. If a test's Config string contains a resource block, we know
+	// definitively which resource it's testing.
+	for _, inferredName := range fn.InferredResources {
+		if resourceNames[inferredName] {
+			matches = append(matches, ResourceMatch{
+				ResourceName: inferredName,
+				Confidence:   1.0,
+				MatchType:    MatchTypeInferred,
+			})
+			return matches // High confidence match from config parsing
+		}
+	}
+
+	// Strategy 1: Function name extraction (high confidence)
 	// Always enabled as it's fast and accurate
 	if resourceName, found := ExtractResourceFromFuncName(fn.Name); found {
 		if resourceNames[resourceName] {
