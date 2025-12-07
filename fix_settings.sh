@@ -1,3 +1,7 @@
+#!/bin/bash
+# Script to fix the settings propagation issue in tfprovidertest.go
+
+cat > /workspace/tfprovidertest_fixed.go << 'EOFFILE'
 // Package tfprovidertest implements a golangci-lint plugin that identifies test coverage gaps
 // in Terraform providers built with terraform-plugin-framework.
 //
@@ -16,7 +20,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/golangci/plugin-module-register/register"
 	"golang.org/x/tools/go/analysis"
@@ -36,23 +39,9 @@ type Settings struct {
 	ExcludePaths          []string `yaml:"exclude-paths"`
 	// ExcludeBaseClasses excludes files named base_*.go which are typically abstract base classes
 	ExcludeBaseClasses bool `yaml:"exclude-base-classes"`
-	// ExcludeSweeperFiles excludes files named *_sweeper.go which are test infrastructure
-	// for cleaning up resources after acceptance tests, not production resources
-	ExcludeSweeperFiles bool `yaml:"exclude-sweeper-files"`
-	// ExcludeMigrationFiles excludes files named *_migrate.go, *_migration*.go, and
-	// *_state_upgrader.go which are state migration utilities, not production resources
-	ExcludeMigrationFiles bool `yaml:"exclude-migration-files"`
 	// TestNamePatterns defines additional patterns to match test function names beyond TestAcc*
 	// Defaults include: TestAcc*, TestResource*, TestDataSource*, Test*_
 	TestNamePatterns []string `yaml:"test-name-patterns"`
-	// Verbose enables detailed diagnostic output explaining why issues were flagged.
-	// When enabled, diagnostic messages include test files searched, functions found,
-	// why they didn't match, and suggested fixes.
-	Verbose bool `yaml:"verbose"`
-	// EnableFileBasedMatching enables fallback matching where a resource is considered
-	// tested if a corresponding test file exists with any Test* functions, even if
-	// the function names don't follow the standard naming conventions.
-	EnableFileBasedMatching bool `yaml:"enable-file-based-matching"`
 }
 
 // DefaultSettings returns the default configuration with all analyzers enabled.
@@ -67,12 +56,8 @@ func DefaultSettings() Settings {
 		DataSourcePathPattern: "data_source_*.go",
 		TestFilePattern:       "*_test.go",
 		ExcludePaths:          []string{},
-		ExcludeBaseClasses:    true,  // Exclude base_*.go by default
-		ExcludeSweeperFiles:   true,  // Exclude *_sweeper.go by default (test infrastructure)
-		ExcludeMigrationFiles: true,  // Exclude *_migrate.go, *_migration*.go, *_state_upgrader.go by default
-		TestNamePatterns:        []string{}, // Empty means use all default patterns
-		Verbose:                 false, // Verbose mode disabled by default
-		EnableFileBasedMatching: true,  // Enable file-based matching by default
+		ExcludeBaseClasses:    true, // Exclude base_*.go by default
+		TestNamePatterns:      []string{}, // Empty means use all default patterns
 	}
 }
 
@@ -85,7 +70,7 @@ var defaultTestPatterns = []string{
 
 // isTestFunction checks if a function name matches any of the test naming patterns
 func isTestFunction(funcName string, customPatterns []string) bool {
-	// Always require "Test" prefix (capital T for exported tests)
+	// Always require "Test" prefix
 	if !strings.HasPrefix(funcName, "Test") {
 		return false
 	}
@@ -108,38 +93,7 @@ func isTestFunction(funcName string, customPatterns []string) bool {
 		return true
 	}
 
-	// Match any Test function that starts with uppercase after Test
-	// This handles patterns like TestPrivateKeyRSA, TestWidgetSomething
-	if len(funcName) > 4 && unicode.IsUpper(rune(funcName[4])) {
-		return true
-	}
-
 	return false
-}
-
-// IsTestFunctionExported is an exported version of isTestFunction for testing
-func IsTestFunctionExported(funcName string, customPatterns []string) bool {
-	return isTestFunction(funcName, customPatterns)
-}
-
-// CamelCaseToSnakeCaseExported is an exported version of toSnakeCase for testing
-func CamelCaseToSnakeCaseExported(s string) string {
-	return toSnakeCase(s)
-}
-
-// ExtractResourceNameFromTestFunc is an exported version of extractResourceNameFromTestFunc for testing
-func ExtractResourceNameFromTestFunc(funcName string) string {
-	return extractResourceNameFromTestFunc(funcName)
-}
-
-// HasMatchingTestFile checks if a resource has a matching test file with Test* functions.
-// This provides file-based test matching fallback for providers with non-standard naming.
-func HasMatchingTestFile(resourceName string, isDataSource bool, registry *ResourceRegistry) bool {
-	testFile := registry.GetTestFile(resourceName)
-	if testFile == nil {
-		return false
-	}
-	return len(testFile.TestFunctions) > 0
 }
 
 // isBaseClassFile checks if a file is a base class file that should be excluded
@@ -148,59 +102,21 @@ func isBaseClassFile(filePath string) bool {
 	return strings.HasPrefix(base, "base_") || strings.HasPrefix(base, "base.")
 }
 
-// IsSweeperFile checks if a file is a sweeper file that should be excluded.
-// Sweeper files are test infrastructure files for cleaning up resources after
-// acceptance tests. They follow the naming pattern *_sweeper.go.
-func IsSweeperFile(filePath string) bool {
-	base := filepath.Base(filePath)
-	return strings.HasSuffix(base, "_sweeper.go")
-}
-
-// IsMigrationFile checks if a file is a state migration file that should be excluded.
-// Migration files are state migration utilities, not production resources. They follow
-// naming patterns: *_migrate.go, *_migration*.go, *_state_upgrader.go
-func IsMigrationFile(filePath string) bool {
-	base := filepath.Base(filePath)
-	return strings.HasSuffix(base, "_migrate.go") ||
-		strings.Contains(base, "_migration") ||
-		strings.HasSuffix(base, "_state_upgrader.go")
-}
-
-// BuildExpectedTestPath constructs the expected test file path for a given resource.
-// For example, /path/to/resource_widget.go -> /path/to/resource_widget_test.go
-func BuildExpectedTestPath(resource *ResourceInfo) string {
-	filePath := resource.FilePath
-	if strings.HasSuffix(filePath, ".go") {
-		return strings.TrimSuffix(filePath, ".go") + "_test.go"
-	}
-	return filePath + "_test.go"
-}
-
-// BuildExpectedTestFunc constructs the expected test function name for a given resource.
-// For example, widget -> TestAccWidget_basic, http (data source) -> TestAccDataSourceHttp_basic
-func BuildExpectedTestFunc(resource *ResourceInfo) string {
-	titleName := toTitleCase(resource.Name)
-	if resource.IsDataSource {
-		return fmt.Sprintf("TestAccDataSource%s_basic", titleName)
-	}
-	return fmt.Sprintf("TestAcc%s_basic", titleName)
-}
-
 // ResourceRegistry maintains thread-safe mappings of resources, data sources,
 // and their associated test files discovered during AST analysis.
 type ResourceRegistry struct {
 	mu          sync.RWMutex
-	resources   map[string]*ResourceInfo
-	dataSources map[string]*ResourceInfo
-	testFiles   map[string]*TestFileInfo
+	Resources   map[string]*ResourceInfo
+	DataSources map[string]*ResourceInfo
+	TestFiles   map[string]*TestFileInfo
 }
 
 // NewResourceRegistry creates a new empty resource registry.
 func NewResourceRegistry() *ResourceRegistry {
 	return &ResourceRegistry{
-		resources:   make(map[string]*ResourceInfo),
-		dataSources: make(map[string]*ResourceInfo),
-		testFiles:   make(map[string]*TestFileInfo),
+		Resources:   make(map[string]*ResourceInfo),
+		DataSources: make(map[string]*ResourceInfo),
+		TestFiles:   make(map[string]*TestFileInfo),
 	}
 }
 
@@ -209,9 +125,9 @@ func (r *ResourceRegistry) RegisterResource(info *ResourceInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if info.IsDataSource {
-		r.dataSources[info.Name] = info
+		r.DataSources[info.Name] = info
 	} else {
-		r.resources[info.Name] = info
+		r.Resources[info.Name] = info
 	}
 }
 
@@ -219,28 +135,28 @@ func (r *ResourceRegistry) RegisterResource(info *ResourceInfo) {
 func (r *ResourceRegistry) RegisterTestFile(info *TestFileInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.testFiles[info.ResourceName] = info
+	r.TestFiles[info.ResourceName] = info
 }
 
 // GetResource retrieves a resource by name from the registry.
 func (r *ResourceRegistry) GetResource(name string) *ResourceInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.resources[name]
+	return r.Resources[name]
 }
 
 // GetDataSource retrieves a data source by name from the registry.
 func (r *ResourceRegistry) GetDataSource(name string) *ResourceInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.dataSources[name]
+	return r.DataSources[name]
 }
 
 // GetTestFile retrieves test file information for a given resource name.
 func (r *ResourceRegistry) GetTestFile(resourceName string) *TestFileInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.testFiles[resourceName]
+	return r.TestFiles[resourceName]
 }
 
 // GetUntestedResources returns all resources and data sources that lack test coverage.
@@ -249,50 +165,17 @@ func (r *ResourceRegistry) GetUntestedResources() []*ResourceInfo {
 	defer r.mu.RUnlock()
 
 	var untested []*ResourceInfo
-	for name, resource := range r.resources {
-		if _, hasTest := r.testFiles[name]; !hasTest {
+	for name, resource := range r.Resources {
+		if _, hasTest := r.TestFiles[name]; !hasTest {
 			untested = append(untested, resource)
 		}
 	}
-	for name, dataSource := range r.dataSources {
-		if _, hasTest := r.testFiles[name]; !hasTest {
+	for name, dataSource := range r.DataSources {
+		if _, hasTest := r.TestFiles[name]; !hasTest {
 			untested = append(untested, dataSource)
 		}
 	}
 	return untested
-}
-
-// GetAllResources returns a copy of all resources (thread-safe).
-func (r *ResourceRegistry) GetAllResources() map[string]*ResourceInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	copy := make(map[string]*ResourceInfo, len(r.resources))
-	for k, v := range r.resources {
-		copy[k] = v
-	}
-	return copy
-}
-
-// GetAllDataSources returns a copy of all data sources (thread-safe).
-func (r *ResourceRegistry) GetAllDataSources() map[string]*ResourceInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	copy := make(map[string]*ResourceInfo, len(r.dataSources))
-	for k, v := range r.dataSources {
-		copy[k] = v
-	}
-	return copy
-}
-
-// GetAllTestFiles returns a copy of all test files (thread-safe).
-func (r *ResourceRegistry) GetAllTestFiles() map[string]*TestFileInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	copy := make(map[string]*TestFileInfo, len(r.testFiles))
-	for k, v := range r.testFiles {
-		copy[k] = v
-	}
-	return copy
 }
 
 // ResourceInfo holds metadata about a Terraform resource or data source
@@ -350,9 +233,7 @@ type TestFunctionInfo struct {
 // TestStepInfo represents a single step within a resource.TestCase.
 type TestStepInfo struct {
 	StepNumber        int
-	StepPos           token.Pos // Position of this step in the source code
 	Config            string
-	HasConfig         bool // True if Config field exists (even if not a literal)
 	HasCheck          bool
 	CheckFunctions    []string
 	ImportState       bool
@@ -362,210 +243,12 @@ type TestStepInfo struct {
 
 // IsUpdateStep returns true if this is not the first step and has a config.
 func (t *TestStepInfo) IsUpdateStep() bool {
-	return t.StepNumber > 0 && t.HasConfig
+	return t.StepNumber > 0 && t.Config != ""
 }
 
 // IsValidImportStep returns true if this step properly tests ImportState.
 func (t *TestStepInfo) IsValidImportStep() bool {
 	return t.ImportState && t.ImportStateVerify
-}
-
-// TestFileSearchResult represents a test file that was searched for a resource.
-type TestFileSearchResult struct {
-	FilePath string
-	Found    bool
-}
-
-// TestFunctionMatchInfo represents a test function found during analysis with its match status.
-type TestFunctionMatchInfo struct {
-	Name        string
-	Line        int
-	MatchStatus string // "matched" or "not_matched"
-	MatchReason string // Why it didn't match (empty if matched)
-}
-
-// VerboseDiagnosticInfo holds detailed diagnostic information for verbose output.
-type VerboseDiagnosticInfo struct {
-	ResourceName       string
-	ResourceType       string // "resource" or "data source"
-	ResourceFile       string
-	ResourceLine       int
-	TestFilesSearched  []TestFileSearchResult
-	TestFunctionsFound []TestFunctionMatchInfo
-	ExpectedPatterns   []string
-	FoundPattern       string
-	SuggestedFixes     []string
-}
-
-// ClassifyTestFunctionMatch determines if a test function matches a resource and provides
-// a reason if it doesn't match.
-func ClassifyTestFunctionMatch(funcName string, resourceName string) (status string, reason string) {
-	titleName := toTitleCase(resourceName)
-
-	// Check for exact match patterns
-	matchPatterns := []string{
-		"TestAcc" + titleName,
-		"TestAccResource" + titleName,
-		"TestAccDataSource" + titleName,
-		"TestResource" + titleName,
-		"TestDataSource" + titleName,
-	}
-
-	for _, pattern := range matchPatterns {
-		if strings.HasPrefix(funcName, pattern) {
-			return "matched", ""
-		}
-	}
-
-	// Check if it has TestAcc prefix but wrong resource name
-	if strings.HasPrefix(funcName, "TestAcc") {
-		return "not_matched", "does not match resource '" + resourceName + "'"
-	}
-
-	// Check if it has Test prefix but missing Acc
-	if strings.HasPrefix(funcName, "Test") && !strings.HasPrefix(funcName, "TestAcc") {
-		// Check if it looks like it's for this resource
-		lowerFunc := strings.ToLower(funcName)
-		lowerResource := strings.ReplaceAll(resourceName, "_", "")
-		if strings.Contains(lowerFunc, lowerResource) {
-			return "not_matched", "missing 'Acc' prefix"
-		}
-		return "not_matched", "does not match resource '" + resourceName + "'"
-	}
-
-	return "not_matched", "does not follow test naming convention"
-}
-
-// BuildVerboseDiagnosticInfo creates a VerboseDiagnosticInfo for a resource.
-func BuildVerboseDiagnosticInfo(resource *ResourceInfo, registry *ResourceRegistry) VerboseDiagnosticInfo {
-	resourceType := "resource"
-	if resource.IsDataSource {
-		resourceType = "data source"
-	}
-
-	info := VerboseDiagnosticInfo{
-		ResourceName: resource.Name,
-		ResourceType: resourceType,
-		ResourceFile: resource.FilePath,
-		ResourceLine: 0, // Will be set by caller with actual position
-	}
-
-	// Build expected test file path
-	expectedTestPath := BuildExpectedTestPath(resource)
-
-	// Check if test file exists in registry
-	testFile := registry.GetTestFile(resource.Name)
-	if testFile != nil {
-		info.TestFilesSearched = []TestFileSearchResult{
-			{FilePath: testFile.FilePath, Found: true},
-		}
-
-		// Analyze test functions
-		for _, testFunc := range testFile.TestFunctions {
-			status, reason := ClassifyTestFunctionMatch(testFunc.Name, resource.Name)
-			info.TestFunctionsFound = append(info.TestFunctionsFound, TestFunctionMatchInfo{
-				Name:        testFunc.Name,
-				Line:        0, // Line info not available in TestFunctionInfo currently
-				MatchStatus: status,
-				MatchReason: reason,
-			})
-		}
-	} else {
-		info.TestFilesSearched = []TestFileSearchResult{
-			{FilePath: expectedTestPath, Found: false},
-		}
-	}
-
-	// Build expected patterns
-	titleName := toTitleCase(resource.Name)
-	if resource.IsDataSource {
-		info.ExpectedPatterns = []string{
-			"TestAccDataSource" + titleName + "*",
-			"TestDataSource" + titleName + "*",
-		}
-	} else {
-		info.ExpectedPatterns = []string{
-			"TestAcc" + titleName + "*",
-			"TestAccResource" + titleName + "*",
-			"TestResource" + titleName + "*",
-		}
-	}
-
-	// Build suggested fixes
-	info.SuggestedFixes = buildSuggestedFixes(resource, testFile)
-
-	return info
-}
-
-// buildSuggestedFixes creates suggested fix messages for a resource missing tests.
-func buildSuggestedFixes(resource *ResourceInfo, testFile *TestFileInfo) []string {
-	var fixes []string
-	expectedFunc := BuildExpectedTestFunc(resource)
-
-	if testFile == nil {
-		// No test file exists
-		expectedPath := BuildExpectedTestPath(resource)
-		fixes = append(fixes, fmt.Sprintf("Create test file %s with function %s", filepath.Base(expectedPath), expectedFunc))
-	} else if len(testFile.TestFunctions) == 0 {
-		// Test file exists but no test functions
-		fixes = append(fixes, fmt.Sprintf("Add acceptance test function %s to %s", expectedFunc, filepath.Base(testFile.FilePath)))
-	} else {
-		// Test functions exist but don't match naming convention
-		fixes = append(fixes, fmt.Sprintf("Option 1: Rename tests to follow convention (%s)", expectedFunc))
-		fixes = append(fixes, "Option 2: Configure custom test patterns in .golangci.yml:\n      test-name-patterns:\n        - \"Test"+toTitleCase(resource.Name)+"\"")
-	}
-
-	return fixes
-}
-
-// FormatVerboseDiagnostic formats a VerboseDiagnosticInfo into a human-readable string.
-func FormatVerboseDiagnostic(info VerboseDiagnosticInfo) string {
-	var sb strings.Builder
-
-	// Resource Location section
-	sb.WriteString("\n  Resource Location:\n")
-	sb.WriteString(fmt.Sprintf("    %s: %s:%d\n", info.ResourceType, info.ResourceFile, info.ResourceLine))
-
-	// Test Files Searched section
-	sb.WriteString("\n  Test Files Searched:\n")
-	for _, tf := range info.TestFilesSearched {
-		status := "not found"
-		if tf.Found {
-			status = "found"
-		}
-		sb.WriteString(fmt.Sprintf("    - %s (%s)\n", filepath.Base(tf.FilePath), status))
-	}
-
-	// Test Functions Found section (only if there are any)
-	if len(info.TestFunctionsFound) > 0 {
-		sb.WriteString("\n  Test Functions Found:\n")
-		for _, tf := range info.TestFunctionsFound {
-			matchStatus := "MATCHED"
-			if tf.MatchStatus == "not_matched" {
-				matchStatus = fmt.Sprintf("NOT MATCHED (%s)", tf.MatchReason)
-			}
-			sb.WriteString(fmt.Sprintf("    - %s (line %d) - %s\n", tf.Name, tf.Line, matchStatus))
-		}
-	}
-
-	// Why Not Matched section (only if there are expected patterns)
-	if len(info.ExpectedPatterns) > 0 {
-		sb.WriteString("\n  Why Not Matched:\n")
-		sb.WriteString(fmt.Sprintf("    Expected pattern: %s\n", strings.Join(info.ExpectedPatterns, " or ")))
-		if info.FoundPattern != "" {
-			sb.WriteString(fmt.Sprintf("    Found pattern: %s\n", info.FoundPattern))
-		}
-	}
-
-	// Suggested Fix section
-	if len(info.SuggestedFixes) > 0 {
-		sb.WriteString("\n  Suggested Fix:\n")
-		for _, fix := range info.SuggestedFixes {
-			sb.WriteString(fmt.Sprintf("    %s\n", fix))
-		}
-	}
-
-	return sb.String()
 }
 
 // parseResources extracts all resources and data sources from a Go source file
@@ -649,46 +332,13 @@ func extractResourceName(typeName string) string {
 
 func toSnakeCase(s string) string {
 	var result strings.Builder
-	runes := []rune(s)
-	for i, r := range runes {
-		if i > 0 && unicode.IsUpper(r) {
-			// Add underscore before uppercase if:
-			// 1. Previous char is lowercase, OR
-			// 2. Next char exists and is lowercase (handles acronyms like "HTTPServer" -> "http_server")
-			prev := runes[i-1]
-			if unicode.IsLower(prev) || (i+1 < len(runes) && unicode.IsLower(runes[i+1])) {
-				result.WriteRune('_')
-			}
+	for i, r := range s {
+		if i > 0 && 'A' <= r && r <= 'Z' {
+			result.WriteRune('_')
 		}
-		result.WriteRune(unicode.ToLower(r))
+		result.WriteRune(r)
 	}
-	return result.String()
-}
-
-// toTitleCase converts snake_case to TitleCase (e.g., "my_resource" -> "MyResource")
-func toTitleCase(s string) string {
-	var result strings.Builder
-	capitalizeNext := true
-	for _, r := range s {
-		if r == '_' {
-			capitalizeNext = true
-			continue
-		}
-		if capitalizeNext {
-			result.WriteRune(unicode.ToUpper(r))
-			capitalizeNext = false
-		} else {
-			result.WriteRune(r)
-		}
-	}
-	return result.String()
-}
-
-// formatResourceLocation formats the resource location for enhanced issue reporting.
-// Returns a string like "Resource: /path/to/file.go:45"
-func formatResourceLocation(pass *analysis.Pass, resource *ResourceInfo) string {
-	pos := pass.Fset.Position(resource.SchemaPos)
-	return fmt.Sprintf("Resource: %s:%d", pos.Filename, pos.Line)
+	return strings.ToLower(result.String())
 }
 
 func extractAttributes(body *ast.BlockStmt) []AttributeInfo {
@@ -840,9 +490,7 @@ func hasImportStateMethod(file *ast.File, resourceName string) bool {
 
 		if funcDecl.Recv != nil {
 			recvType := getReceiverTypeName(funcDecl.Recv)
-			// Use toTitleCase instead of deprecated strings.Title
-			// toTitleCase properly converts snake_case to TitleCase
-			expectedType := toTitleCase(resourceName) + "Resource"
+			expectedType := strings.Title(resourceName) + "Resource"
 			if recvType == expectedType || recvType == "*"+expectedType {
 				found = true
 				return false
@@ -940,77 +588,31 @@ func parseTestFile(file *ast.File, fset *token.FileSet, filePath string) *TestFi
 
 // extractResourceNameFromTestFunc extracts the resource name from various test function naming patterns
 func extractResourceNameFromTestFunc(funcName string) string {
-	// Try various patterns in order of specificity
+	// Try various patterns
 	patterns := []struct {
 		prefix string
+		suffix string
 	}{
-		{"TestAccDataSource"},
-		{"TestAccResource"},
-		{"TestAcc"},
-		{"TestDataSource"},
-		{"TestResource"},
-		{"Test"},
+		{"TestAccDataSource", ""},
+		{"TestAccResource", ""},
+		{"TestAcc", ""},
+		{"TestDataSource", ""},
+		{"TestResource", ""},
+		{"Test", ""},
 	}
 
 	for _, p := range patterns {
 		if strings.HasPrefix(funcName, p.prefix) {
 			name := strings.TrimPrefix(funcName, p.prefix)
-			if name == "" {
-				continue
-			}
-
-			// Split on underscore to get just the resource name part
+			// Split on underscore to get just the resource name
 			parts := strings.SplitN(name, "_", 2)
 			if len(parts) > 0 && parts[0] != "" {
-				resourcePart := parts[0]
-
-				// Handle patterns like "PrivateKeyRSA" -> extract "PrivateKey"
-				// We need to split CamelCase and take just the first meaningful part
-				extracted := extractResourceFromCamelCase(resourcePart)
-				if extracted != "" {
-					return toSnakeCase(extracted)
-				}
+				return toSnakeCase(parts[0])
 			}
 		}
 	}
 
 	return ""
-}
-
-// extractResourceFromCamelCase extracts the resource name from a CamelCase string,
-// removing known suffixes like RSA, ECDSA, ED25519, etc.
-func extractResourceFromCamelCase(s string) string {
-	if s == "" {
-		return ""
-	}
-
-	// Known algorithm/type suffixes to strip
-	suffixes := []string{
-		"RSA",
-		"ECDSA",
-		"ED25519",
-		"SHA256",
-		"SHA384",
-		"SHA512",
-		"V1",
-		"V2",
-		"V3",
-	}
-
-	result := s
-	for _, suffix := range suffixes {
-		if strings.HasSuffix(result, suffix) {
-			result = strings.TrimSuffix(result, suffix)
-			break
-		}
-	}
-
-	// If we stripped everything or nothing remains, return original
-	if result == "" {
-		return s
-	}
-
-	return result
 }
 
 func checkUsesResourceTest(body *ast.BlockStmt) bool {
@@ -1105,7 +707,6 @@ func parseTestCase(testCase *ast.CompositeLit, stepNumber *int) []TestStepInfo {
 func parseTestStep(stepLit *ast.CompositeLit, stepNumber int) TestStepInfo {
 	step := TestStepInfo{
 		StepNumber: stepNumber,
-		StepPos:    stepLit.Pos(),
 	}
 
 	for _, elt := range stepLit.Elts {
@@ -1121,9 +722,7 @@ func parseTestStep(stepLit *ast.CompositeLit, stepNumber int) TestStepInfo {
 
 		switch fieldName {
 		case "Config":
-			// Set HasConfig regardless of whether value is a literal or function call
-			step.HasConfig = true
-			// Extract config string if it's a literal
+			// Extract config string
 			if lit, ok := kv.Value.(*ast.BasicLit); ok {
 				step.Config = strings.Trim(lit.Value, "`\"")
 			}
@@ -1193,19 +792,19 @@ func (p *Plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	var analyzers []*analysis.Analyzer
 
 	if p.settings.EnableBasicTest {
-		analyzers = append(analyzers, BasicTestAnalyzer)
+		analyzers = append(analyzers, p.createBasicTestAnalyzer())
 	}
 	if p.settings.EnableUpdateTest {
-		analyzers = append(analyzers, UpdateTestAnalyzer)
+		analyzers = append(analyzers, p.createUpdateTestAnalyzer())
 	}
 	if p.settings.EnableImportTest {
-		analyzers = append(analyzers, ImportTestAnalyzer)
+		analyzers = append(analyzers, p.createImportTestAnalyzer())
 	}
 	if p.settings.EnableErrorTest {
-		analyzers = append(analyzers, ErrorTestAnalyzer)
+		analyzers = append(analyzers, p.createErrorTestAnalyzer())
 	}
 	if p.settings.EnableStateCheck {
-		analyzers = append(analyzers, StateCheckAnalyzer)
+		analyzers = append(analyzers, p.createStateCheckAnalyzer())
 	}
 
 	return analyzers, nil
@@ -1220,44 +819,64 @@ func init() {
 	register.Plugin("tfprovidertest", New)
 }
 
-// BasicTestAnalyzer detects resources and data sources lacking acceptance tests.
-var BasicTestAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-resource-basic-test",
-	Doc:  "Checks that every resource and data source has at least one acceptance test.",
-	Run:  runBasicTestAnalyzer,
+// createBasicTestAnalyzer creates an analyzer that captures plugin settings via closure
+func (p *Plugin) createBasicTestAnalyzer() *analysis.Analyzer {
+	return &analysis.Analyzer{
+		Name: "tfprovider-resource-basic-test",
+		Doc:  "Checks that every resource and data source has at least one acceptance test.",
+		Run: func(pass *analysis.Pass) (interface{}, error) {
+			return runBasicTestAnalyzerWithSettings(pass, p.settings)
+		},
+	}
 }
 
-// UpdateTestAnalyzer validates that resources with updatable attributes have multi-step tests.
-var UpdateTestAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-resource-update-test",
-	Doc:  "Checks that resources with updatable attributes have multi-step update tests.",
-	Run:  runUpdateTestAnalyzer,
+// createUpdateTestAnalyzer creates an analyzer that captures plugin settings via closure
+func (p *Plugin) createUpdateTestAnalyzer() *analysis.Analyzer {
+	return &analysis.Analyzer{
+		Name: "tfprovider-resource-update-test",
+		Doc:  "Checks that resources with updatable attributes have multi-step update tests.",
+		Run: func(pass *analysis.Pass) (interface{}, error) {
+			return runUpdateTestAnalyzerWithSettings(pass, p.settings)
+		},
+	}
 }
 
-// ImportTestAnalyzer ensures resources with ImportState methods have import tests.
-var ImportTestAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-resource-import-test",
-	Doc:  "Checks that resources implementing ImportState have import tests.",
-	Run:  runImportTestAnalyzer,
+// createImportTestAnalyzer creates an analyzer that captures plugin settings via closure
+func (p *Plugin) createImportTestAnalyzer() *analysis.Analyzer {
+	return &analysis.Analyzer{
+		Name: "tfprovider-resource-import-test",
+		Doc:  "Checks that resources implementing ImportState have import tests.",
+		Run: func(pass *analysis.Pass) (interface{}, error) {
+			return runImportTestAnalyzerWithSettings(pass, p.settings)
+		},
+	}
 }
 
-// ErrorTestAnalyzer checks that resources with validators have error case tests.
-var ErrorTestAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-test-error-cases",
-	Doc:  "Checks that resources with validation rules have error case tests.",
-	Run:  runErrorTestAnalyzer,
+// createErrorTestAnalyzer creates an analyzer that captures plugin settings via closure
+func (p *Plugin) createErrorTestAnalyzer() *analysis.Analyzer {
+	return &analysis.Analyzer{
+		Name: "tfprovider-test-error-cases",
+		Doc:  "Checks that resources with validation rules have error case tests.",
+		Run: func(pass *analysis.Pass) (interface{}, error) {
+			return runErrorTestAnalyzerWithSettings(pass, p.settings)
+		},
+	}
 }
 
-// StateCheckAnalyzer validates that test steps include state validation check functions.
-var StateCheckAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-test-check-functions",
-	Doc:  "Checks that test steps include state validation check functions.",
-	Run:  runStateCheckAnalyzer,
+// createStateCheckAnalyzer creates an analyzer that captures plugin settings via closure
+func (p *Plugin) createStateCheckAnalyzer() *analysis.Analyzer {
+	return &analysis.Analyzer{
+		Name: "tfprovider-test-check-functions",
+		Doc:  "Checks that test steps include state validation check functions.",
+		Run: func(pass *analysis.Pass) (interface{}, error) {
+			return runStateCheckAnalyzerWithSettings(pass, p.settings)
+		},
+	}
 }
 
-// buildRegistry creates a ResourceRegistry populated with all resources and test files
-// from the analysis pass. This helper reduces code duplication across analyzers.
-func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
+// runBasicTestAnalyzerWithSettings implements User Story 1: Basic Test Coverage
+// Detects resources and data sources that lack basic acceptance tests
+func runBasicTestAnalyzerWithSettings(pass *analysis.Pass, settings Settings) (interface{}, error) {
 	registry := NewResourceRegistry()
 
 	// First pass: collect all resources and data sources
@@ -1271,16 +890,6 @@ func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
 
 		// Skip base class files if configured
 		if settings.ExcludeBaseClasses && isBaseClassFile(filePath) {
-			continue
-		}
-
-		// Skip sweeper files if configured (test infrastructure for cleanup)
-		if settings.ExcludeSweeperFiles && IsSweeperFile(filePath) {
-			continue
-		}
-
-		// Skip migration files if configured (state migration utilities)
-		if settings.ExcludeMigrationFiles && IsMigrationFile(filePath) {
 			continue
 		}
 
@@ -1307,68 +916,30 @@ func buildRegistry(pass *analysis.Pass, settings Settings) *ResourceRegistry {
 		}
 	}
 
-	return registry
-}
-
-// runBasicTestAnalyzer implements User Story 1: Basic Test Coverage
-// Detects resources and data sources that lack basic acceptance tests
-func runBasicTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	settings := DefaultSettings()
-	registry := buildRegistry(pass, settings)
-
-	// Third pass: report untested resources with enhanced location information
+	// Third pass: report untested resources
 	untested := registry.GetUntestedResources()
 	for _, resource := range untested {
 		resourceType := "resource"
-		resourceTypeTitle := "Resource"
 		if resource.IsDataSource {
 			resourceType = "data source"
-			resourceTypeTitle = "Data source"
 		}
 
-		// Build enhanced message with location details
-		pos := pass.Fset.Position(resource.SchemaPos)
-		expectedTestPath := BuildExpectedTestPath(resource)
-		expectedTestFunc := BuildExpectedTestFunc(resource)
-
-		msg := fmt.Sprintf("%s '%s' has no acceptance test\n  %s: %s:%d\n  Expected test file: %s\n  Expected test function: %s",
-			resourceType, resource.Name,
-			resourceTypeTitle, pos.Filename, pos.Line,
-			expectedTestPath, expectedTestFunc)
-
-		pass.Reportf(resource.SchemaPos, "%s", msg)
+		pass.Reportf(resource.SchemaPos, "%s '%s' has no acceptance test file", resourceType, resource.Name)
 	}
 
 	// Also check for resources with test files but no TestAcc functions
-	allResources := registry.GetAllResources()
-	allTestFiles := registry.GetAllTestFiles()
-	for name, resource := range allResources {
-		if testFile, exists := allTestFiles[name]; exists {
+	for name, resource := range registry.Resources {
+		if testFile, exists := registry.TestFiles[name]; exists {
 			if len(testFile.TestFunctions) == 0 {
-				pos := pass.Fset.Position(resource.SchemaPos)
-				expectedTestFunc := BuildExpectedTestFunc(resource)
-
-				msg := fmt.Sprintf("resource '%s' has test file but no TestAcc functions\n  Resource: %s:%d\n  Test file: %s\n  Expected test function: %s",
-					name, pos.Filename, pos.Line,
-					testFile.FilePath, expectedTestFunc)
-
-				pass.Reportf(resource.SchemaPos, "%s", msg)
+				pass.Reportf(resource.SchemaPos, "resource '%s' has test file but no TestAcc functions", name)
 			}
 		}
 	}
 
-	allDataSources := registry.GetAllDataSources()
-	for name, dataSource := range allDataSources {
-		if testFile, exists := allTestFiles[name]; exists {
+	for name, dataSource := range registry.DataSources {
+		if testFile, exists := registry.TestFiles[name]; exists {
 			if len(testFile.TestFunctions) == 0 {
-				pos := pass.Fset.Position(dataSource.SchemaPos)
-				expectedTestFunc := BuildExpectedTestFunc(dataSource)
-
-				msg := fmt.Sprintf("data source '%s' has test file but no TestAcc functions\n  Data source: %s:%d\n  Test file: %s\n  Expected test function: %s",
-					name, pos.Filename, pos.Line,
-					testFile.FilePath, expectedTestFunc)
-
-				pass.Reportf(dataSource.SchemaPos, "%s", msg)
+				pass.Reportf(dataSource.SchemaPos, "data source '%s' has test file but no TestAcc functions", name)
 			}
 		}
 	}
@@ -1376,13 +947,44 @@ func runBasicTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	settings := DefaultSettings()
-	registry := buildRegistry(pass, settings)
+func runUpdateTestAnalyzerWithSettings(pass *analysis.Pass, settings Settings) (interface{}, error) {
+	registry := NewResourceRegistry()
 
-	// Check for resources with updatable attributes but no update tests
+	// First pass: collect all resources and data sources
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Skip test files
+		if strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse resources from this file
+		resources := parseResources(file, pass.Fset, filePath)
+		for _, res := range resources {
+			registry.RegisterResource(res)
+		}
+	}
+
+	// Second pass: collect all test files
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Only process test files
+		if !strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse test file
+		testFile := parseTestFile(file, pass.Fset, filePath)
+		if testFile != nil && testFile.ResourceName != "" {
+			registry.RegisterTestFile(testFile)
+		}
+	}
+
+	// Third pass: check for resources with updatable attributes but no update tests
 	// Only check regular resources (not data sources)
-	for name, resource := range registry.GetAllResources() {
+	for name, resource := range registry.Resources {
 		// Check if resource has updatable attributes
 		hasUpdatable := false
 		for _, attr := range resource.Attributes {
@@ -1422,13 +1024,44 @@ func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	settings := DefaultSettings()
-	registry := buildRegistry(pass, settings)
+func runImportTestAnalyzerWithSettings(pass *analysis.Pass, settings Settings) (interface{}, error) {
+	registry := NewResourceRegistry()
 
-	// Check for resources with ImportState but no import tests
+	// First pass: collect all resources and data sources
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Skip test files
+		if strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse resources from this file
+		resources := parseResources(file, pass.Fset, filePath)
+		for _, res := range resources {
+			registry.RegisterResource(res)
+		}
+	}
+
+	// Second pass: collect all test files
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Only process test files
+		if !strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse test file
+		testFile := parseTestFile(file, pass.Fset, filePath)
+		if testFile != nil && testFile.ResourceName != "" {
+			registry.RegisterTestFile(testFile)
+		}
+	}
+
+	// Third pass: check for resources with ImportState but no import tests
 	// Only check regular resources (not data sources)
-	for name, resource := range registry.GetAllResources() {
+	for name, resource := range registry.Resources {
 		// Only check resources that implement ImportState
 		if !resource.HasImportState {
 			continue
@@ -1458,12 +1091,43 @@ func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	settings := DefaultSettings()
-	registry := buildRegistry(pass, settings)
+func runErrorTestAnalyzerWithSettings(pass *analysis.Pass, settings Settings) (interface{}, error) {
+	registry := NewResourceRegistry()
 
-	// Check for resources with validation rules but no error tests
-	for name, resource := range registry.GetAllResources() {
+	// First pass: collect all resources and data sources
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Skip test files
+		if strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse resources from this file
+		resources := parseResources(file, pass.Fset, filePath)
+		for _, res := range resources {
+			registry.RegisterResource(res)
+		}
+	}
+
+	// Second pass: collect all test files
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Only process test files
+		if !strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse test file
+		testFile := parseTestFile(file, pass.Fset, filePath)
+		if testFile != nil && testFile.ResourceName != "" {
+			registry.RegisterTestFile(testFile)
+		}
+	}
+
+	// Third pass: check for resources with validation rules but no error tests
+	for name, resource := range registry.Resources {
 		// Check if resource has validation rules
 		hasValidation := false
 		for _, attr := range resource.Attributes {
@@ -1502,12 +1166,43 @@ func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func runStateCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	settings := DefaultSettings()
-	registry := buildRegistry(pass, settings)
+func runStateCheckAnalyzerWithSettings(pass *analysis.Pass, settings Settings) (interface{}, error) {
+	registry := NewResourceRegistry()
 
-	// Check for test steps without Check fields
-	for _, testFile := range registry.GetAllTestFiles() {
+	// First pass: collect all resources and data sources
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Skip test files
+		if strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse resources from this file
+		resources := parseResources(file, pass.Fset, filePath)
+		for _, res := range resources {
+			registry.RegisterResource(res)
+		}
+	}
+
+	// Second pass: collect all test files
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Only process test files
+		if !strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse test file
+		testFile := parseTestFile(file, pass.Fset, filePath)
+		if testFile != nil && testFile.ResourceName != "" {
+			registry.RegisterTestFile(testFile)
+		}
+	}
+
+	// Third pass: check for test steps without Check fields
+	for _, testFile := range registry.TestFiles {
 		for _, testFunc := range testFile.TestFunctions {
 			for _, step := range testFunc.TestSteps {
 				// Skip import and error test steps - they don't require Check
@@ -1529,3 +1224,13 @@ func runStateCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
 
 	return nil, nil
 }
+
+// Helper function to check if file path matches pattern
+func matchesPattern(filePath, pattern string) bool {
+	matched, _ := filepath.Match(pattern, filepath.Base(filePath))
+	return matched
+}
+EOFFILE
+
+# Move the fixed file into place
+mv /workspace/tfprovidertest_fixed.go /workspace/tfprovidertest.go

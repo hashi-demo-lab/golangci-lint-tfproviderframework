@@ -52,12 +52,12 @@ func main() {
 }
 
 type ValidationResults struct {
-	Resources             []string
-	DataSources           []string
-	TestFiles             []string
-	Issues                []Issue
-	ResourcesWithTests    int
-	DataSourcesWithTests  int
+	Resources            []string
+	DataSources          []string
+	TestFiles            []string
+	Issues               []Issue
+	ResourcesWithTests   int
+	DataSourcesWithTests int
 }
 
 type Issue struct {
@@ -70,11 +70,31 @@ type Issue struct {
 func validateProvider(providerPath string) ValidationResults {
 	results := ValidationResults{}
 
-	// Find internal/provider directory
-	internalProvider := filepath.Join(providerPath, "internal", "provider")
-	if _, err := os.Stat(internalProvider); os.IsNotExist(err) {
-		// Try just "internal"
-		internalProvider = filepath.Join(providerPath, "internal")
+	// Find provider code directory - try multiple common patterns
+	var internalProvider string
+	possiblePaths := []string{
+		filepath.Join(providerPath, "internal", "provider"),
+		filepath.Join(providerPath, "internal"),
+		filepath.Join(providerPath, filepath.Base(providerPath)),
+	}
+
+	// For providers named terraform-provider-X, also try just X
+	baseName := filepath.Base(providerPath)
+	if strings.HasPrefix(baseName, "terraform-provider-") {
+		shortName := strings.TrimPrefix(baseName, "terraform-provider-")
+		possiblePaths = append(possiblePaths, filepath.Join(providerPath, shortName))
+	}
+
+	for _, path := range possiblePaths {
+		if stat, err := os.Stat(path); err == nil && stat.IsDir() {
+			internalProvider = path
+			break
+		}
+	}
+
+	if internalProvider == "" {
+		fmt.Printf("Warning: Could not find provider code directory in %s\n", providerPath)
+		return results
 	}
 
 	// Parse all Go files
@@ -113,7 +133,43 @@ func validateProvider(providerPath string) ValidationResults {
 			continue
 		}
 
-		// Look for Schema methods that indicate resources/data sources
+		baseName := filepath.Base(path)
+
+		// Try file naming convention first (Plugin Framework pattern)
+		if strings.HasPrefix(baseName, "resource_") && strings.HasSuffix(baseName, ".go") {
+			// Skip helper/utility files that aren't actual resources
+			if strings.Contains(baseName, "stateupgrader") ||
+			   strings.Contains(baseName, "migrate") ||
+			   strings.Contains(baseName, "helper") {
+				continue
+			}
+			// Extract resource name from filename: resource_helm_release.go -> helm_release
+			name := strings.TrimPrefix(baseName, "resource_")
+			name = strings.TrimSuffix(name, ".go")
+			results.Resources = append(results.Resources, name)
+			resourceMap[name] = path
+			continue
+		}
+
+		if strings.HasPrefix(baseName, "data_source_") && strings.HasSuffix(baseName, ".go") {
+			// Extract data source name from filename: data_source_helm_template.go -> helm_template
+			name := strings.TrimPrefix(baseName, "data_source_")
+			name = strings.TrimSuffix(name, ".go")
+			results.DataSources = append(results.DataSources, name)
+			dataSourceMap[name] = path
+			continue
+		}
+
+		if strings.HasPrefix(baseName, "data_") && strings.HasSuffix(baseName, ".go") {
+			// Extract data source name from filename: data_helm_template.go -> helm_template
+			name := strings.TrimPrefix(baseName, "data_")
+			name = strings.TrimSuffix(name, ".go")
+			results.DataSources = append(results.DataSources, name)
+			dataSourceMap[name] = path
+			continue
+		}
+
+		// Fallback: Look for Schema methods that indicate resources/data sources (SDKv2 pattern)
 		ast.Inspect(file, func(n ast.Node) bool {
 			funcDecl, ok := n.(*ast.FuncDecl)
 			if !ok || funcDecl.Recv == nil || funcDecl.Name.Name != "Schema" {
@@ -153,14 +209,33 @@ func validateProvider(providerPath string) ValidationResults {
 
 			// Extract resource name from test function
 			testName := funcDecl.Name.Name
+
+			// Try multiple patterns for test function names:
+			// 1. TestAccDataSourceHelmTemplate_* -> helm_template
+			// 2. TestAccDataTemplate_* -> helm_template (abbreviated pattern)
+			// 3. TestAccHelmRelease_* -> helm_release
+			// 4. TestAccResourceHelmRelease_* -> helm_release
+
 			if strings.HasPrefix(testName, "TestAccDataSource") {
-				// Data source test
+				// Data source test: TestAccDataSourceHelmTemplate_* -> helm_template
 				parts := strings.SplitN(strings.TrimPrefix(testName, "TestAccDataSource"), "_", 2)
 				if len(parts) > 0 {
 					resourceTests[toSnakeCase(parts[0])] = true
 				}
+			} else if strings.HasPrefix(testName, "TestAccData") {
+				// Abbreviated data source test: TestAccDataTemplate_* -> helm_template
+				parts := strings.SplitN(strings.TrimPrefix(testName, "TestAccData"), "_", 2)
+				if len(parts) > 0 {
+					resourceTests[toSnakeCase(parts[0])] = true
+				}
+			} else if strings.HasPrefix(testName, "TestAccResource") {
+				// Resource test: TestAccResourceHelmRelease_* -> helm_release
+				parts := strings.SplitN(strings.TrimPrefix(testName, "TestAccResource"), "_", 2)
+				if len(parts) > 0 {
+					resourceTests[toSnakeCase(parts[0])] = true
+				}
 			} else if strings.HasPrefix(testName, "TestAcc") {
-				// Resource test - try various patterns
+				// Generic resource test: TestAccHelmRelease_* -> helm_release
 				name := strings.TrimPrefix(testName, "TestAcc")
 				parts := strings.SplitN(name, "_", 2)
 				if len(parts) > 0 {
@@ -173,7 +248,19 @@ func validateProvider(providerPath string) ValidationResults {
 
 	// Check for untested resources
 	for name, file := range resourceMap {
-		if resourceTests[name] {
+		// Check both exact match and partial match (e.g., helm_release matches both "helm_release" and "release")
+		hasTest := resourceTests[name]
+		if !hasTest {
+			// Try partial match by removing common prefixes
+			parts := strings.Split(name, "_")
+			if len(parts) > 1 {
+				// Try without first part: helm_release -> release
+				shortName := strings.Join(parts[1:], "_")
+				hasTest = resourceTests[shortName]
+			}
+		}
+
+		if hasTest {
 			results.ResourcesWithTests++
 		} else {
 			results.Issues = append(results.Issues, Issue{
@@ -185,7 +272,19 @@ func validateProvider(providerPath string) ValidationResults {
 	}
 
 	for name, file := range dataSourceMap {
-		if resourceTests[name] {
+		// Check both exact match and partial match (e.g., helm_template matches both "helm_template" and "template")
+		hasTest := resourceTests[name]
+		if !hasTest {
+			// Try partial match by removing common prefixes
+			parts := strings.Split(name, "_")
+			if len(parts) > 1 {
+				// Try without first part: helm_template -> template
+				shortName := strings.Join(parts[1:], "_")
+				hasTest = resourceTests[shortName]
+			}
+		}
+
+		if hasTest {
 			results.DataSourcesWithTests++
 		} else {
 			results.Issues = append(results.Issues, Issue{
