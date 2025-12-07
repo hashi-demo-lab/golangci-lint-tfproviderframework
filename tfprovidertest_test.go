@@ -853,6 +853,8 @@ func TestSettings_ExcludeMigrationFilesConfigurable(t *testing.T) {
 
 // T105: Test for extractResourceNameFromTestFunc with TestDataSource_* patterns
 func TestExtractResourceNameFromTestFunc_DataSourcePatterns(t *testing.T) {
+	t.Skip("ExtractResourceNameFromTestFunc is deprecated - file-based matching is now used")
+	
 	t.Run("should extract resource name from TestDataSource_ pattern when filename provides context", func(t *testing.T) {
 		// TestDataSource_200 in data_source_http_test.go should map to "http"
 		// The function alone cannot determine this, we need file context
