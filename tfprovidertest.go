@@ -262,11 +262,139 @@ func toSnakeCase(s string) string {
 }
 
 func extractAttributes(body *ast.BlockStmt) []AttributeInfo {
-	// Simplified attribute extraction
-	// In a full implementation, this would parse the schema.Schema structure
 	var attributes []AttributeInfo
-	// Placeholder - full implementation would traverse the AST to find Attributes map
+
+	// Find the schema.Schema composite literal
+	ast.Inspect(body, func(n ast.Node) bool {
+		// Look for CompositeLit that represents schema.Schema{}
+		compLit, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+
+		// Check if this is schema.Schema type
+		if sel, ok := compLit.Type.(*ast.SelectorExpr); ok {
+			if sel.Sel.Name != "Schema" {
+				return true
+			}
+		}
+
+		// Find the Attributes field in schema.Schema
+		for _, elt := range compLit.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+
+			// Check if this is the Attributes field
+			if ident, ok := kv.Key.(*ast.Ident); ok && ident.Name == "Attributes" {
+				// Parse the attributes map
+				if mapLit, ok := kv.Value.(*ast.CompositeLit); ok {
+					attributes = parseAttributesMap(mapLit)
+				}
+			}
+		}
+
+		return false // Don't recurse into nested schemas
+	})
+
 	return attributes
+}
+
+func parseAttributesMap(mapLit *ast.CompositeLit) []AttributeInfo {
+	var attributes []AttributeInfo
+
+	for _, elt := range mapLit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+
+		// Get attribute name
+		var attrName string
+		if lit, ok := kv.Key.(*ast.BasicLit); ok {
+			attrName = strings.Trim(lit.Value, `"`)
+		}
+
+		if attrName == "" {
+			continue
+		}
+
+		// Parse attribute properties
+		attr := AttributeInfo{
+			Name:        attrName,
+			IsUpdatable: true, // Default to updatable unless RequiresReplace found
+		}
+
+		// Parse the attribute composite literal
+		if attrLit, ok := kv.Value.(*ast.CompositeLit); ok {
+			for _, attrElt := range attrLit.Elts {
+				attrKV, ok := attrElt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+
+				fieldName := ""
+				if ident, ok := attrKV.Key.(*ast.Ident); ok {
+					fieldName = ident.Name
+				}
+
+				switch fieldName {
+				case "Required":
+					if ident, ok := attrKV.Value.(*ast.Ident); ok {
+						attr.Required = ident.Name == "true"
+					}
+				case "Optional":
+					if ident, ok := attrKV.Value.(*ast.Ident); ok {
+						attr.Optional = ident.Name == "true"
+					}
+				case "Computed":
+					if ident, ok := attrKV.Value.(*ast.Ident); ok {
+						attr.Computed = ident.Name == "true"
+					}
+				case "PlanModifiers":
+					// Check if RequiresReplace is present
+					attr.IsUpdatable = !hasRequiresReplace(attrKV.Value)
+				case "Validators":
+					// Check for validators
+					if compLit, ok := attrKV.Value.(*ast.CompositeLit); ok {
+						attr.HasValidators = len(compLit.Elts) > 0
+					}
+				}
+			}
+
+			// Determine attribute type from the composite literal type
+			if sel, ok := attrLit.Type.(*ast.SelectorExpr); ok {
+				attr.Type = sel.Sel.Name
+			}
+		}
+
+		attributes = append(attributes, attr)
+	}
+
+	return attributes
+}
+
+func hasRequiresReplace(node ast.Node) bool {
+	found := false
+	ast.Inspect(node, func(n ast.Node) bool {
+		// Look for function calls like stringplanmodifier.RequiresReplace()
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		// Check if the function name contains "RequiresReplace"
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			if strings.Contains(sel.Sel.Name, "RequiresReplace") {
+				found = true
+				return false
+			}
+		}
+
+		return true
+	})
+	return found
 }
 
 func hasImportStateMethod(file *ast.File, resourceName string) bool {
@@ -382,11 +510,129 @@ func checkUsesResourceTest(body *ast.BlockStmt) bool {
 }
 
 func extractTestSteps(body *ast.BlockStmt) []TestStepInfo {
-	// Simplified test step extraction
-	// Full implementation would parse the TestCase struct and extract Steps
 	var steps []TestStepInfo
-	// Placeholder - would traverse AST to find Steps field
+	stepNumber := 0
+
+	// Find resource.Test() call and extract Steps
+	ast.Inspect(body, func(n ast.Node) bool {
+		// Look for resource.Test() call
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		// Check if it's resource.Test
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			if ident, ok := sel.X.(*ast.Ident); ok {
+				if ident.Name == "resource" && sel.Sel.Name == "Test" {
+					// Found resource.Test() - parse TestCase argument
+					if len(call.Args) >= 2 {
+						// Second argument is the TestCase
+						if testCase, ok := call.Args[1].(*ast.CompositeLit); ok {
+							steps = parseTestCase(testCase, &stepNumber)
+						}
+					}
+					return false
+				}
+			}
+		}
+
+		return true
+	})
+
 	return steps
+}
+
+func parseTestCase(testCase *ast.CompositeLit, stepNumber *int) []TestStepInfo {
+	var steps []TestStepInfo
+
+	// Find the Steps field
+	for _, elt := range testCase.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+
+		if ident, ok := kv.Key.(*ast.Ident); ok && ident.Name == "Steps" {
+			// Parse the Steps slice
+			if stepsLit, ok := kv.Value.(*ast.CompositeLit); ok {
+				for _, stepElt := range stepsLit.Elts {
+					if stepLit, ok := stepElt.(*ast.CompositeLit); ok {
+						step := parseTestStep(stepLit, *stepNumber)
+						steps = append(steps, step)
+						*stepNumber++
+					}
+				}
+			}
+		}
+	}
+
+	return steps
+}
+
+func parseTestStep(stepLit *ast.CompositeLit, stepNumber int) TestStepInfo {
+	step := TestStepInfo{
+		StepNumber: stepNumber,
+	}
+
+	for _, elt := range stepLit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+
+		fieldName := ""
+		if ident, ok := kv.Key.(*ast.Ident); ok {
+			fieldName = ident.Name
+		}
+
+		switch fieldName {
+		case "Config":
+			// Extract config string
+			if lit, ok := kv.Value.(*ast.BasicLit); ok {
+				step.Config = strings.Trim(lit.Value, "`\"")
+			}
+		case "Check":
+			step.HasCheck = true
+			// Extract check function names
+			step.CheckFunctions = extractCheckFunctions(kv.Value)
+		case "ImportState":
+			if ident, ok := kv.Value.(*ast.Ident); ok {
+				step.ImportState = ident.Name == "true"
+			}
+		case "ImportStateVerify":
+			if ident, ok := kv.Value.(*ast.Ident); ok {
+				step.ImportStateVerify = ident.Name == "true"
+			}
+		case "ExpectError":
+			// Can be bool or regex
+			step.ExpectError = true
+		}
+	}
+
+	return step
+}
+
+func extractCheckFunctions(node ast.Node) []string {
+	var funcs []string
+
+	ast.Inspect(node, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		// Look for TestCheck* functions
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+			if strings.HasPrefix(sel.Sel.Name, "TestCheck") {
+				funcs = append(funcs, sel.Sel.Name)
+			}
+		}
+
+		return true
+	})
+
+	return funcs
 }
 
 // T017: Plugin struct with required methods
@@ -537,22 +783,280 @@ func runBasicTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 }
 
 func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	// To be implemented in Phase 4 (User Story 2)
+	registry := NewResourceRegistry()
+
+	// First pass: collect all resources and data sources
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Skip test files
+		if strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse resources from this file
+		resources := parseResources(file, pass.Fset, filePath)
+		for _, res := range resources {
+			registry.RegisterResource(res)
+		}
+	}
+
+	// Second pass: collect all test files
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Only process test files
+		if !strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse test file
+		testFile := parseTestFile(file, pass.Fset, filePath)
+		if testFile != nil && testFile.ResourceName != "" {
+			registry.RegisterTestFile(testFile)
+		}
+	}
+
+	// Third pass: check for resources with updatable attributes but no update tests
+	// Only check regular resources (not data sources)
+	for name, resource := range registry.Resources {
+		// Check if resource has updatable attributes
+		hasUpdatable := false
+		for _, attr := range resource.Attributes {
+			if attr.NeedsUpdateTest() {
+				hasUpdatable = true
+				break
+			}
+		}
+
+		if !hasUpdatable {
+			// Resource doesn't need update tests
+			continue
+		}
+
+		// Check if resource has test file with multi-step test
+		testFile := registry.GetTestFile(name)
+		if testFile == nil {
+			// No test file at all - but this is covered by BasicTestAnalyzer
+			continue
+		}
+
+		// Check if any test function has multiple steps
+		hasUpdateTest := false
+		for _, testFunc := range testFile.TestFunctions {
+			if len(testFunc.TestSteps) >= 2 {
+				// Multi-step test found
+				hasUpdateTest = true
+				break
+			}
+		}
+
+		if !hasUpdateTest {
+			pass.Reportf(resource.SchemaPos, "resource '%s' has updatable attributes but no update test coverage", name)
+		}
+	}
+
 	return nil, nil
 }
 
 func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	// To be implemented in Phase 5 (User Story 3)
+	registry := NewResourceRegistry()
+
+	// First pass: collect all resources and data sources
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Skip test files
+		if strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse resources from this file
+		resources := parseResources(file, pass.Fset, filePath)
+		for _, res := range resources {
+			registry.RegisterResource(res)
+		}
+	}
+
+	// Second pass: collect all test files
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Only process test files
+		if !strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse test file
+		testFile := parseTestFile(file, pass.Fset, filePath)
+		if testFile != nil && testFile.ResourceName != "" {
+			registry.RegisterTestFile(testFile)
+		}
+	}
+
+	// Third pass: check for resources with ImportState but no import tests
+	// Only check regular resources (not data sources)
+	for name, resource := range registry.Resources {
+		// Only check resources that implement ImportState
+		if !resource.HasImportState {
+			continue
+		}
+
+		// Check if resource has test file with import test step
+		testFile := registry.GetTestFile(name)
+		if testFile == nil {
+			// No test file at all - but this is covered by BasicTestAnalyzer
+			continue
+		}
+
+		// Check if any test function has an import step
+		hasImportTest := false
+		for _, testFunc := range testFile.TestFunctions {
+			if testFunc.HasImportStep {
+				hasImportTest = true
+				break
+			}
+		}
+
+		if !hasImportTest {
+			pass.Reportf(resource.SchemaPos, "resource '%s' implements ImportState but has no import test coverage", name)
+		}
+	}
+
 	return nil, nil
 }
 
 func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	// To be implemented in Phase 6 (User Story 4)
+	registry := NewResourceRegistry()
+
+	// First pass: collect all resources and data sources
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Skip test files
+		if strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse resources from this file
+		resources := parseResources(file, pass.Fset, filePath)
+		for _, res := range resources {
+			registry.RegisterResource(res)
+		}
+	}
+
+	// Second pass: collect all test files
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Only process test files
+		if !strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse test file
+		testFile := parseTestFile(file, pass.Fset, filePath)
+		if testFile != nil && testFile.ResourceName != "" {
+			registry.RegisterTestFile(testFile)
+		}
+	}
+
+	// Third pass: check for resources with validation rules but no error tests
+	for name, resource := range registry.Resources {
+		// Check if resource has validation rules
+		hasValidation := false
+		for _, attr := range resource.Attributes {
+			if attr.NeedsValidationTest() {
+				hasValidation = true
+				break
+			}
+		}
+
+		if !hasValidation {
+			// Resource doesn't need error tests
+			continue
+		}
+
+		// Check if resource has test file with error test
+		testFile := registry.GetTestFile(name)
+		if testFile == nil {
+			// No test file at all - but this is covered by BasicTestAnalyzer
+			continue
+		}
+
+		// Check if any test function has an error case
+		hasErrorTest := false
+		for _, testFunc := range testFile.TestFunctions {
+			if testFunc.HasErrorCase {
+				hasErrorTest = true
+				break
+			}
+		}
+
+		if !hasErrorTest {
+			pass.Reportf(resource.SchemaPos, "resource '%s' has validation rules but no error case tests", name)
+		}
+	}
+
 	return nil, nil
 }
 
 func runStateCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	// To be implemented in Phase 7 (User Story 5)
+	registry := NewResourceRegistry()
+
+	// First pass: collect all resources and data sources
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Skip test files
+		if strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse resources from this file
+		resources := parseResources(file, pass.Fset, filePath)
+		for _, res := range resources {
+			registry.RegisterResource(res)
+		}
+	}
+
+	// Second pass: collect all test files
+	for _, file := range pass.Files {
+		filePath := pass.Fset.Position(file.Pos()).Filename
+
+		// Only process test files
+		if !strings.HasSuffix(filePath, "_test.go") {
+			continue
+		}
+
+		// Parse test file
+		testFile := parseTestFile(file, pass.Fset, filePath)
+		if testFile != nil && testFile.ResourceName != "" {
+			registry.RegisterTestFile(testFile)
+		}
+	}
+
+	// Third pass: check for test steps without Check fields
+	for _, testFile := range registry.TestFiles {
+		for _, testFunc := range testFile.TestFunctions {
+			for _, step := range testFunc.TestSteps {
+				// Skip import and error test steps - they don't require Check
+				if step.ImportState || step.ExpectError {
+					continue
+				}
+
+				// Regular test steps should have Check fields
+				if !step.HasCheck {
+					// Find the resource to get its name for the error message
+					resourceName := testFile.ResourceName
+					if resource := registry.GetResource(resourceName); resource != nil {
+						pass.Reportf(resource.SchemaPos, "test step for resource '%s' has no state validation checks", resourceName)
+					}
+				}
+			}
+		}
+	}
+
 	return nil, nil
 }
 

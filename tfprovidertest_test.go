@@ -199,3 +199,19 @@ func TestAST_TestFileParsing(t *testing.T) {
 		// assert.True(t, testStep.ImportStateVerify)
 	})
 }
+
+// T036: Test for Update Test Analyzer
+func TestUpdateTestCoverage(t *testing.T) {
+	t.Run("should detect missing update tests for updatable resources", func(t *testing.T) {
+		// TDD red phase - this test should fail before implementation
+		// analysistest will validate that resources with updatable attributes
+		// but only single-step tests get flagged
+
+		// This test is intentionally minimal until the analyzer is implemented
+		t.Skip("UpdateTestAnalyzer not yet implemented")
+
+		// Expected behavior after implementation:
+		// analysistest.Run(t, analysistest.TestData(), UpdateTestAnalyzer, "update_missing")
+		// analysistest.Run(t, analysistest.TestData(), UpdateTestAnalyzer, "update_passing")
+	})
+}

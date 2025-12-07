@@ -105,22 +105,22 @@ This is a single-project golangci-lint plugin with all code at repository root:
 
 ### Tests for User Story 2 (TDD) ⚠️
 
-- [ ] T033 [P] [US2] Create testdata fixture: resource with updatable attrs, single-step test in /workspace/testdata/src/testlintdata/update_missing/
-- [ ] T034 [P] [US2] Create testdata fixture: resource with RequiresReplace attrs (passing) in /workspace/testdata/src/testlintdata/update_passing/
-- [ ] T035 [P] [US2] Create testdata fixture: resource with multi-step update test (passing) in /workspace/testdata/src/testlintdata/update_passing/
-- [ ] T036 [US2] Write TestUpdateTestCoverage using analysistest.Run() in /workspace/tfprovidertest_test.go
-- [ ] T037 [US2] Verify test FAILS (red phase)
+- [X] T033 [P] [US2] Create testdata fixture: resource with updatable attrs, single-step test in /workspace/testdata/src/testlintdata/update_missing/
+- [X] T034 [P] [US2] Create testdata fixture: resource with RequiresReplace attrs (passing) in /workspace/testdata/src/testlintdata/update_passing/
+- [X] T035 [P] [US2] Create testdata fixture: resource with multi-step update test (passing) in /workspace/testdata/src/testlintdata/update_passing/
+- [X] T036 [US2] Write TestUpdateTestCoverage using analysistest.Run() in /workspace/tfprovidertest_test.go
+- [X] T037 [US2] Verify test FAILS (red phase)
 
 ### Implementation for User Story 2
 
-- [ ] T038 [US2] Implement UpdateTestAnalyzer with Name, Doc, Run fields in /workspace/tfprovidertest.go
-- [ ] T039 [US2] Implement attribute analysis: detect updatable attributes (no RequiresReplace) in /workspace/tfprovidertest.go
-- [ ] T040 [US2] Implement test step analysis: count steps, compare configs in /workspace/tfprovidertest.go
-- [ ] T041 [US2] Implement HasUpdatableAttributes() check in /workspace/tfprovidertest.go
-- [ ] T042 [US2] Implement HasUpdateTest() check via TestFileInfo in /workspace/tfprovidertest.go
-- [ ] T043 [US2] Implement pass.Report() for missing update tests in /workspace/tfprovidertest.go
-- [ ] T044 [US2] Verify TestUpdateTestCoverage PASSES (green phase)
-- [ ] T045 [US2] Refactor for clarity (refactor phase)
+- [X] T038 [US2] Implement UpdateTestAnalyzer with Name, Doc, Run fields in /workspace/tfprovidertest.go
+- [X] T039 [US2] Implement attribute analysis: detect updatable attributes (no RequiresReplace) in /workspace/tfprovidertest.go
+- [X] T040 [US2] Implement test step analysis: count steps, compare configs in /workspace/tfprovidertest.go
+- [X] T041 [US2] Implement HasUpdatableAttributes() check in /workspace/tfprovidertest.go
+- [X] T042 [US2] Implement HasUpdateTest() check via TestFileInfo in /workspace/tfprovidertest.go
+- [X] T043 [US2] Implement pass.Report() for missing update tests in /workspace/tfprovidertest.go
+- [X] T044 [US2] Verify TestUpdateTestCoverage PASSES (green phase)
+- [X] T045 [US2] Refactor for clarity (refactor phase)
 
 **Checkpoint**: Update test detection fully functional - independent of other analyzers
 
@@ -134,21 +134,21 @@ This is a single-project golangci-lint plugin with all code at repository root:
 
 ### Tests for User Story 3 (TDD) ⚠️
 
-- [ ] T046 [P] [US3] Create testdata fixture: resource with ImportState method, no import test in /workspace/testdata/src/testlintdata/import_missing/
-- [ ] T047 [P] [US3] Create testdata fixture: resource with ImportState and valid import test (passing) in /workspace/testdata/src/testlintdata/import_passing/
-- [ ] T048 [P] [US3] Create testdata fixture: resource without ImportState (passing) in /workspace/testdata/src/testlintdata/import_passing/
-- [ ] T049 [US3] Write TestImportTestCoverage using analysistest.Run() in /workspace/tfprovidertest_test.go
-- [ ] T050 [US3] Verify test FAILS (red phase)
+- [X] T046 [P] [US3] Create testdata fixture: resource with ImportState method, no import test in /workspace/testdata/src/testlintdata/import_missing/
+- [X] T047 [P] [US3] Create testdata fixture: resource with ImportState and valid import test (passing) in /workspace/testdata/src/testlintdata/import_passing/
+- [X] T048 [P] [US3] Create testdata fixture: resource without ImportState (passing) in /workspace/testdata/src/testlintdata/import_passing/
+- [X] T049 [US3] Write TestImportTestCoverage using analysistest.Run() in /workspace/tfprovidertest_test.go
+- [X] T050 [US3] Verify test FAILS (red phase)
 
 ### Implementation for User Story 3
 
-- [ ] T051 [US3] Implement ImportTestAnalyzer with Name, Doc, Run fields in /workspace/tfprovidertest.go
-- [ ] T052 [US3] Implement AST detection of ImportState method implementation in /workspace/tfprovidertest.go
-- [ ] T053 [US3] Implement test step analysis: find ImportState: true, ImportStateVerify: true in /workspace/tfprovidertest.go
-- [ ] T054 [US3] Implement HasImportTest() check via TestStepInfo in /workspace/tfprovidertest.go
-- [ ] T055 [US3] Implement pass.Report() for missing import tests in /workspace/tfprovidertest.go
-- [ ] T056 [US3] Verify TestImportTestCoverage PASSES (green phase)
-- [ ] T057 [US3] Refactor for clarity (refactor phase)
+- [X] T051 [US3] Implement ImportTestAnalyzer with Name, Doc, Run fields in /workspace/tfprovidertest.go
+- [X] T052 [US3] Implement AST detection of ImportState method implementation in /workspace/tfprovidertest.go
+- [X] T053 [US3] Implement test step analysis: find ImportState: true, ImportStateVerify: true in /workspace/tfprovidertest.go
+- [X] T054 [US3] Implement HasImportTest() check via TestStepInfo in /workspace/tfprovidertest.go
+- [X] T055 [US3] Implement pass.Report() for missing import tests in /workspace/tfprovidertest.go
+- [X] T056 [US3] Verify TestImportTestCoverage PASSES (green phase)
+- [X] T057 [US3] Refactor for clarity (refactor phase)
 
 **Checkpoint**: Import test detection fully functional - independent of other analyzers
 
@@ -162,22 +162,22 @@ This is a single-project golangci-lint plugin with all code at repository root:
 
 ### Tests for User Story 4 (TDD) ⚠️
 
-- [ ] T058 [P] [US4] Create testdata fixture: resource with validators, no error test in /workspace/testdata/src/testlintdata/error_missing/
-- [ ] T059 [P] [US4] Create testdata fixture: resource with validators and ExpectError test (passing) in /workspace/testdata/src/testlintdata/error_passing/
-- [ ] T060 [P] [US4] Create testdata fixture: resource with no validators (passing) in /workspace/testdata/src/testlintdata/error_passing/
-- [ ] T061 [US4] Write TestErrorTestCoverage using analysistest.Run() in /workspace/tfprovidertest_test.go
-- [ ] T062 [US4] Verify test FAILS (red phase)
+- [X] T058 [P] [US4] Create testdata fixture: resource with validators, no error test in /workspace/testdata/src/testlintdata/error_missing/
+- [X] T059 [P] [US4] Create testdata fixture: resource with validators and ExpectError test (passing) in /workspace/testdata/src/testlintdata/error_passing/
+- [X] T060 [P] [US4] Create testdata fixture: resource with no validators (passing) in /workspace/testdata/src/testlintdata/error_passing/
+- [X] T061 [US4] Write TestErrorTestCoverage using analysistest.Run() in /workspace/tfprovidertest_test.go
+- [X] T062 [US4] Verify test FAILS (red phase)
 
 ### Implementation for User Story 4
 
-- [ ] T063 [US4] Implement ErrorTestAnalyzer with Name, Doc, Run fields in /workspace/tfprovidertest.go
-- [ ] T064 [US4] Implement attribute analysis: detect Required, Validators, ConflictsWith in /workspace/tfprovidertest.go
-- [ ] T065 [US4] Implement HasValidationRules() check in /workspace/tfprovidertest.go
-- [ ] T066 [US4] Implement test step analysis: find ExpectError fields in /workspace/tfprovidertest.go
-- [ ] T067 [US4] Implement HasErrorTest() check via TestStepInfo in /workspace/tfprovidertest.go
-- [ ] T068 [US4] Implement pass.Report() for missing error tests in /workspace/tfprovidertest.go
-- [ ] T069 [US4] Verify TestErrorTestCoverage PASSES (green phase)
-- [ ] T070 [US4] Refactor for clarity (refactor phase)
+- [X] T063 [US4] Implement ErrorTestAnalyzer with Name, Doc, Run fields in /workspace/tfprovidertest.go
+- [X] T064 [US4] Implement attribute analysis: detect Required, Validators, ConflictsWith in /workspace/tfprovidertest.go
+- [X] T065 [US4] Implement HasValidationRules() check in /workspace/tfprovidertest.go
+- [X] T066 [US4] Implement test step analysis: find ExpectError fields in /workspace/tfprovidertest.go
+- [X] T067 [US4] Implement HasErrorTest() check via TestStepInfo in /workspace/tfprovidertest.go
+- [X] T068 [US4] Implement pass.Report() for missing error tests in /workspace/tfprovidertest.go
+- [X] T069 [US4] Verify TestErrorTestCoverage PASSES (green phase)
+- [X] T070 [US4] Refactor for clarity (refactor phase)
 
 **Checkpoint**: Error test detection fully functional - independent of other analyzers
 
@@ -191,21 +191,21 @@ This is a single-project golangci-lint plugin with all code at repository root:
 
 ### Tests for User Story 5 (TDD) ⚠️
 
-- [ ] T071 [P] [US5] Create testdata fixture: test with steps missing Check fields in /workspace/testdata/src/testlintdata/checks_missing/
-- [ ] T072 [P] [US5] Create testdata fixture: test with empty ComposeTestCheckFunc (passing) in /workspace/testdata/src/testlintdata/checks_passing/
-- [ ] T073 [P] [US5] Create testdata fixture: test with proper check functions (passing) in /workspace/testdata/src/testlintdata/checks_passing/
-- [ ] T074 [US5] Write TestStateCheckValidation using analysistest.Run() in /workspace/tfprovidertest_test.go
-- [ ] T075 [US5] Verify test FAILS (red phase)
+- [X] T071 [P] [US5] Create testdata fixture: test with steps missing Check fields in /workspace/testdata/src/testlintdata/checks_missing/
+- [X] T072 [P] [US5] Create testdata fixture: test with empty ComposeTestCheckFunc (passing) in /workspace/testdata/src/testlintdata/checks_passing/
+- [X] T073 [P] [US5] Create testdata fixture: test with proper check functions (passing) in /workspace/testdata/src/testlintdata/checks_passing/
+- [X] T074 [US5] Write TestStateCheckValidation using analysistest.Run() in /workspace/tfprovidertest_test.go
+- [X] T075 [US5] Verify test FAILS (red phase)
 
 ### Implementation for User Story 5
 
-- [ ] T076 [US5] Implement StateCheckAnalyzer with Name, Doc, Run fields in /workspace/tfprovidertest.go
-- [ ] T077 [US5] Implement test step analysis: detect Check field presence in /workspace/tfprovidertest.go
-- [ ] T078 [US5] Implement check function parsing: extract TestCheckResourceAttr, TestCheckResourceAttrSet in /workspace/tfprovidertest.go
-- [ ] T079 [US5] Implement HasStateChecks() validation logic in /workspace/tfprovidertest.go
-- [ ] T080 [US5] Implement pass.Report() for missing check functions in /workspace/tfprovidertest.go
-- [ ] T081 [US5] Verify TestStateCheckValidation PASSES (green phase)
-- [ ] T082 [US5] Refactor for clarity (refactor phase)
+- [X] T076 [US5] Implement StateCheckAnalyzer with Name, Doc, Run fields in /workspace/tfprovidertest.go
+- [X] T077 [US5] Implement test step analysis: detect Check field presence in /workspace/tfprovidertest.go
+- [X] T078 [US5] Implement check function parsing: extract TestCheckResourceAttr, TestCheckResourceAttrSet in /workspace/tfprovidertest.go
+- [X] T079 [US5] Implement HasStateChecks() validation logic in /workspace/tfprovidertest.go
+- [X] T080 [US5] Implement pass.Report() for missing check functions in /workspace/tfprovidertest.go
+- [X] T081 [US5] Verify TestStateCheckValidation PASSES (green phase)
+- [X] T082 [US5] Refactor for clarity (refactor phase)
 
 **Checkpoint**: State check validation fully functional - all 5 analyzers complete
 
