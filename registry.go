@@ -1,0 +1,443 @@
+// Package tfprovidertest implements a golangci-lint plugin that identifies test coverage gaps
+// in Terraform providers built with terraform-plugin-framework.
+package tfprovidertest
+
+import (
+	"fmt"
+	"go/token"
+	"path/filepath"
+	"strings"
+	"sync"
+)
+
+// ResourceRegistry maintains thread-safe mappings of resources, data sources,
+// and their associated test files discovered during AST analysis.
+type ResourceRegistry struct {
+	mu          sync.RWMutex
+	resources   map[string]*ResourceInfo
+	dataSources map[string]*ResourceInfo
+	testFiles   map[string]*TestFileInfo
+	// fileToResource maps file paths to resource names for file-based matching
+	fileToResource map[string]string
+}
+
+// NewResourceRegistry creates a new empty resource registry.
+func NewResourceRegistry() *ResourceRegistry {
+	return &ResourceRegistry{
+		resources:      make(map[string]*ResourceInfo),
+		dataSources:    make(map[string]*ResourceInfo),
+		testFiles:      make(map[string]*TestFileInfo),
+		fileToResource: make(map[string]string),
+	}
+}
+
+// RegisterResource adds a resource or data source to the registry.
+func (r *ResourceRegistry) RegisterResource(info *ResourceInfo) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if info.IsDataSource {
+		r.dataSources[info.Name] = info
+	} else {
+		r.resources[info.Name] = info
+	}
+	// Map file path to resource name for file-based matching
+	r.fileToResource[info.FilePath] = info.Name
+}
+
+// RegisterTestFile adds a test file to the registry, associating it with a resource.
+func (r *ResourceRegistry) RegisterTestFile(info *TestFileInfo) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.testFiles[info.ResourceName] = info
+}
+
+// GetResource retrieves a resource by name from the registry.
+func (r *ResourceRegistry) GetResource(name string) *ResourceInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.resources[name]
+}
+
+// GetDataSource retrieves a data source by name from the registry.
+func (r *ResourceRegistry) GetDataSource(name string) *ResourceInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.dataSources[name]
+}
+
+// GetResourceByFile retrieves a resource by its file path.
+func (r *ResourceRegistry) GetResourceByFile(filePath string) *ResourceInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if resourceName, ok := r.fileToResource[filePath]; ok {
+		if resource, ok := r.resources[resourceName]; ok {
+			return resource
+		}
+		if dataSource, ok := r.dataSources[resourceName]; ok {
+			return dataSource
+		}
+	}
+	return nil
+}
+
+// GetTestFile retrieves test file information for a given resource name.
+func (r *ResourceRegistry) GetTestFile(resourceName string) *TestFileInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.testFiles[resourceName]
+}
+
+// GetUntestedResources returns all resources and data sources that lack test coverage.
+func (r *ResourceRegistry) GetUntestedResources() []*ResourceInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var untested []*ResourceInfo
+	for name, resource := range r.resources {
+		if _, hasTest := r.testFiles[name]; !hasTest {
+			untested = append(untested, resource)
+		}
+	}
+	for name, dataSource := range r.dataSources {
+		if _, hasTest := r.testFiles[name]; !hasTest {
+			untested = append(untested, dataSource)
+		}
+	}
+	return untested
+}
+
+// GetAllResources returns a copy of all resources (thread-safe).
+func (r *ResourceRegistry) GetAllResources() map[string]*ResourceInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	copy := make(map[string]*ResourceInfo, len(r.resources))
+	for k, v := range r.resources {
+		copy[k] = v
+	}
+	return copy
+}
+
+// GetAllDataSources returns a copy of all data sources (thread-safe).
+func (r *ResourceRegistry) GetAllDataSources() map[string]*ResourceInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	copy := make(map[string]*ResourceInfo, len(r.dataSources))
+	for k, v := range r.dataSources {
+		copy[k] = v
+	}
+	return copy
+}
+
+// GetAllTestFiles returns a copy of all test files (thread-safe).
+func (r *ResourceRegistry) GetAllTestFiles() map[string]*TestFileInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	copy := make(map[string]*TestFileInfo, len(r.testFiles))
+	for k, v := range r.testFiles {
+		copy[k] = v
+	}
+	return copy
+}
+
+// ResourceInfo holds metadata about a Terraform resource or data source
+// discovered through AST parsing of provider code.
+type ResourceInfo struct {
+	Name           string
+	IsDataSource   bool
+	FilePath       string
+	SchemaPos      token.Pos
+	Attributes     []AttributeInfo
+	HasImportState bool
+	ImportStatePos token.Pos
+}
+
+// AttributeInfo represents a single attribute from a resource schema.
+type AttributeInfo struct {
+	Name           string
+	Type           string
+	Required       bool
+	Optional       bool
+	Computed       bool
+	IsUpdatable    bool
+	HasValidators  bool
+	ValidatorTypes []string
+}
+
+// NeedsUpdateTest returns true if the attribute is optional and updatable.
+func (a *AttributeInfo) NeedsUpdateTest() bool {
+	return a.Optional && a.IsUpdatable
+}
+
+// NeedsValidationTest returns true if the attribute has validators or is required.
+func (a *AttributeInfo) NeedsValidationTest() bool {
+	return a.HasValidators || a.Required
+}
+
+// TestFileInfo represents parsed information from a test file.
+type TestFileInfo struct {
+	FilePath      string
+	ResourceName  string
+	IsDataSource  bool
+	TestFunctions []TestFunctionInfo
+}
+
+// TestFunctionInfo represents a single TestAcc function and its test steps.
+type TestFunctionInfo struct {
+	Name             string
+	FunctionPos      token.Pos
+	UsesResourceTest bool
+	TestSteps        []TestStepInfo
+	HasErrorCase     bool
+	HasImportStep    bool
+}
+
+// TestStepInfo represents a single step within a resource.TestCase.
+type TestStepInfo struct {
+	StepNumber        int
+	StepPos           token.Pos // Position of this step in the source code
+	Config            string
+	HasConfig         bool // True if Config field exists (even if not a literal)
+	HasCheck          bool
+	CheckFunctions    []string
+	ImportState       bool
+	ImportStateVerify bool
+	ExpectError       bool
+}
+
+// IsUpdateStep returns true if this is not the first step and has a config.
+func (t *TestStepInfo) IsUpdateStep() bool {
+	return t.StepNumber > 0 && t.HasConfig
+}
+
+// IsValidImportStep returns true if this step properly tests ImportState.
+func (t *TestStepInfo) IsValidImportStep() bool {
+	return t.ImportState && t.ImportStateVerify
+}
+
+// TestFileSearchResult represents a test file that was searched for a resource.
+type TestFileSearchResult struct {
+	FilePath string
+	Found    bool
+}
+
+// TestFunctionMatchInfo represents a test function found during analysis with its match status.
+type TestFunctionMatchInfo struct {
+	Name        string
+	Line        int
+	MatchStatus string // "matched" or "not_matched"
+	MatchReason string // Why it didn't match (empty if matched)
+}
+
+// VerboseDiagnosticInfo holds detailed diagnostic information for verbose output.
+type VerboseDiagnosticInfo struct {
+	ResourceName       string
+	ResourceType       string // "resource" or "data source"
+	ResourceFile       string
+	ResourceLine       int
+	TestFilesSearched  []TestFileSearchResult
+	TestFunctionsFound []TestFunctionMatchInfo
+	ExpectedPatterns   []string
+	FoundPattern       string
+	SuggestedFixes     []string
+}
+
+// HasMatchingTestFile checks if a resource has a matching test file with Test* functions.
+// This provides file-based test matching fallback for providers with non-standard naming.
+func HasMatchingTestFile(resourceName string, isDataSource bool, registry *ResourceRegistry) bool {
+	testFile := registry.GetTestFile(resourceName)
+	if testFile == nil {
+		return false
+	}
+	return len(testFile.TestFunctions) > 0
+}
+
+// BuildExpectedTestPath constructs the expected test file path for a given resource.
+// For example, /path/to/resource_widget.go -> /path/to/resource_widget_test.go
+func BuildExpectedTestPath(resource *ResourceInfo) string {
+	filePath := resource.FilePath
+	if strings.HasSuffix(filePath, ".go") {
+		return strings.TrimSuffix(filePath, ".go") + "_test.go"
+	}
+	return filePath + "_test.go"
+}
+
+// BuildExpectedTestFunc constructs the expected test function name for a given resource.
+// For example, widget -> TestAccWidget_basic, http (data source) -> TestAccDataSourceHttp_basic
+func BuildExpectedTestFunc(resource *ResourceInfo) string {
+	titleName := toTitleCase(resource.Name)
+	if resource.IsDataSource {
+		return fmt.Sprintf("TestAccDataSource%s_basic", titleName)
+	}
+	return fmt.Sprintf("TestAcc%s_basic", titleName)
+}
+
+// ClassifyTestFunctionMatch determines if a test function matches a resource and provides
+// a reason if it doesn't match.
+func ClassifyTestFunctionMatch(funcName string, resourceName string) (status string, reason string) {
+	titleName := toTitleCase(resourceName)
+
+	// Check for exact match patterns
+	matchPatterns := []string{
+		"TestAcc" + titleName,
+		"TestAccResource" + titleName,
+		"TestAccDataSource" + titleName,
+		"TestResource" + titleName,
+		"TestDataSource" + titleName,
+	}
+
+	for _, pattern := range matchPatterns {
+		if strings.HasPrefix(funcName, pattern) {
+			return "matched", ""
+		}
+	}
+
+	// Check if it has TestAcc prefix but wrong resource name
+	if strings.HasPrefix(funcName, "TestAcc") {
+		return "not_matched", "does not match resource '" + resourceName + "'"
+	}
+
+	// Check if it has Test prefix but missing Acc
+	if strings.HasPrefix(funcName, "Test") && !strings.HasPrefix(funcName, "TestAcc") {
+		// Check if it looks like it's for this resource
+		lowerFunc := strings.ToLower(funcName)
+		lowerResource := strings.ReplaceAll(resourceName, "_", "")
+		if strings.Contains(lowerFunc, lowerResource) {
+			return "not_matched", "missing 'Acc' prefix"
+		}
+		return "not_matched", "does not match resource '" + resourceName + "'"
+	}
+
+	return "not_matched", "does not follow test naming convention"
+}
+
+// BuildVerboseDiagnosticInfo creates a VerboseDiagnosticInfo for a resource.
+func BuildVerboseDiagnosticInfo(resource *ResourceInfo, registry *ResourceRegistry) VerboseDiagnosticInfo {
+	resourceType := "resource"
+	if resource.IsDataSource {
+		resourceType = "data source"
+	}
+
+	info := VerboseDiagnosticInfo{
+		ResourceName: resource.Name,
+		ResourceType: resourceType,
+		ResourceFile: resource.FilePath,
+		ResourceLine: 0, // Will be set by caller with actual position
+	}
+
+	// Build expected test file path
+	expectedTestPath := BuildExpectedTestPath(resource)
+
+	// Check if test file exists in registry
+	testFile := registry.GetTestFile(resource.Name)
+	if testFile != nil {
+		info.TestFilesSearched = []TestFileSearchResult{
+			{FilePath: testFile.FilePath, Found: true},
+		}
+
+		// Analyze test functions
+		for _, testFunc := range testFile.TestFunctions {
+			status, reason := ClassifyTestFunctionMatch(testFunc.Name, resource.Name)
+			info.TestFunctionsFound = append(info.TestFunctionsFound, TestFunctionMatchInfo{
+				Name:        testFunc.Name,
+				Line:        0, // Line info not available in TestFunctionInfo currently
+				MatchStatus: status,
+				MatchReason: reason,
+			})
+		}
+	} else {
+		info.TestFilesSearched = []TestFileSearchResult{
+			{FilePath: expectedTestPath, Found: false},
+		}
+	}
+
+	// Build expected patterns
+	titleName := toTitleCase(resource.Name)
+	if resource.IsDataSource {
+		info.ExpectedPatterns = []string{
+			"TestAccDataSource" + titleName + "*",
+			"TestDataSource" + titleName + "*",
+		}
+	} else {
+		info.ExpectedPatterns = []string{
+			"TestAcc" + titleName + "*",
+			"TestAccResource" + titleName + "*",
+			"TestResource" + titleName + "*",
+		}
+	}
+
+	// Build suggested fixes
+	info.SuggestedFixes = buildSuggestedFixes(resource, testFile)
+
+	return info
+}
+
+// buildSuggestedFixes creates suggested fix messages for a resource missing tests.
+func buildSuggestedFixes(resource *ResourceInfo, testFile *TestFileInfo) []string {
+	var fixes []string
+	expectedFunc := BuildExpectedTestFunc(resource)
+
+	if testFile == nil {
+		// No test file exists
+		expectedPath := BuildExpectedTestPath(resource)
+		fixes = append(fixes, fmt.Sprintf("Create test file %s with function %s", filepath.Base(expectedPath), expectedFunc))
+	} else if len(testFile.TestFunctions) == 0 {
+		// Test file exists but no test functions
+		fixes = append(fixes, fmt.Sprintf("Add acceptance test function %s to %s", expectedFunc, filepath.Base(testFile.FilePath)))
+	} else {
+		// Test functions exist but don't match naming convention
+		fixes = append(fixes, fmt.Sprintf("Option 1: Rename tests to follow convention (%s)", expectedFunc))
+		fixes = append(fixes, "Option 2: Configure custom test patterns in .golangci.yml:\n      test-name-patterns:\n        - \"Test"+toTitleCase(resource.Name)+"\"")
+	}
+
+	return fixes
+}
+
+// FormatVerboseDiagnostic formats a VerboseDiagnosticInfo into a human-readable string.
+func FormatVerboseDiagnostic(info VerboseDiagnosticInfo) string {
+	var sb strings.Builder
+
+	// Resource Location section
+	sb.WriteString("\n  Resource Location:\n")
+	sb.WriteString(fmt.Sprintf("    %s: %s:%d\n", info.ResourceType, info.ResourceFile, info.ResourceLine))
+
+	// Test Files Searched section
+	sb.WriteString("\n  Test Files Searched:\n")
+	for _, tf := range info.TestFilesSearched {
+		status := "not found"
+		if tf.Found {
+			status = "found"
+		}
+		sb.WriteString(fmt.Sprintf("    - %s (%s)\n", filepath.Base(tf.FilePath), status))
+	}
+
+	// Test Functions Found section (only if there are any)
+	if len(info.TestFunctionsFound) > 0 {
+		sb.WriteString("\n  Test Functions Found:\n")
+		for _, tf := range info.TestFunctionsFound {
+			matchStatus := "MATCHED"
+			if tf.MatchStatus == "not_matched" {
+				matchStatus = fmt.Sprintf("NOT MATCHED (%s)", tf.MatchReason)
+			}
+			sb.WriteString(fmt.Sprintf("    - %s (line %d) - %s\n", tf.Name, tf.Line, matchStatus))
+		}
+	}
+
+	// Why Not Matched section (only if there are expected patterns)
+	if len(info.ExpectedPatterns) > 0 {
+		sb.WriteString("\n  Why Not Matched:\n")
+		sb.WriteString(fmt.Sprintf("    Expected pattern: %s\n", strings.Join(info.ExpectedPatterns, " or ")))
+		if info.FoundPattern != "" {
+			sb.WriteString(fmt.Sprintf("    Found pattern: %s\n", info.FoundPattern))
+		}
+	}
+
+	// Suggested Fix section
+	if len(info.SuggestedFixes) > 0 {
+		sb.WriteString("\n  Suggested Fix:\n")
+		for _, fix := range info.SuggestedFixes {
+			sb.WriteString(fmt.Sprintf("    %s\n", fix))
+		}
+	}
+
+	return sb.String()
+}
