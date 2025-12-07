@@ -1397,3 +1397,122 @@ func TestRegistryCache_ThreadSafety(t *testing.T) {
 		assert.NotNil(t, tfprovidertest.StateCheckAnalyzer.Run)
 	})
 }
+
+// T701: Test for unified GetAllDefinitions() method
+func TestRegistry_GetAllDefinitions(t *testing.T) {
+	t.Run("should return all resources and data sources in unified map", func(t *testing.T) {
+		registry := tfprovidertest.NewResourceRegistry()
+
+		// Register a resource
+		resource := &tfprovidertest.ResourceInfo{
+			Name:         "widget",
+			IsDataSource: false,
+			FilePath:     "/path/to/resource_widget.go",
+		}
+		registry.RegisterResource(resource)
+
+		// Register a data source
+		dataSource := &tfprovidertest.ResourceInfo{
+			Name:         "http",
+			IsDataSource: true,
+			FilePath:     "/path/to/data_source_http.go",
+		}
+		registry.RegisterResource(dataSource)
+
+		// Get unified definitions
+		definitions := registry.GetAllDefinitions()
+
+		assert.Len(t, definitions, 2)
+		assert.NotNil(t, definitions["widget"])
+		assert.NotNil(t, definitions["http"])
+		assert.False(t, definitions["widget"].IsDataSource)
+		assert.True(t, definitions["http"].IsDataSource)
+	})
+
+	t.Run("should return empty map when no resources registered", func(t *testing.T) {
+		registry := tfprovidertest.NewResourceRegistry()
+		definitions := registry.GetAllDefinitions()
+		assert.Len(t, definitions, 0)
+	})
+
+	t.Run("should be thread-safe", func(t *testing.T) {
+		registry := tfprovidertest.NewResourceRegistry()
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
+
+		// Multiple concurrent reads should not panic
+		done := make(chan bool, 10)
+		for i := 0; i < 10; i++ {
+			go func() {
+				_ = registry.GetAllDefinitions()
+				done <- true
+			}()
+		}
+		for i := 0; i < 10; i++ {
+			<-done
+		}
+	})
+}
+
+// T702: Test that GetResources and GetDataSources filter correctly
+func TestRegistry_FilteredGetters(t *testing.T) {
+	t.Run("GetAllResources should only return non-data-sources", func(t *testing.T) {
+		registry := tfprovidertest.NewResourceRegistry()
+
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "gadget", IsDataSource: false})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", IsDataSource: true})
+
+		resources := registry.GetAllResources()
+		assert.Len(t, resources, 2)
+		assert.NotNil(t, resources["widget"])
+		assert.NotNil(t, resources["gadget"])
+		assert.Nil(t, resources["http"])
+	})
+
+	t.Run("GetAllDataSources should only return data sources", func(t *testing.T) {
+		registry := tfprovidertest.NewResourceRegistry()
+
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", IsDataSource: true})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "ami", IsDataSource: true})
+
+		dataSources := registry.GetAllDataSources()
+		assert.Len(t, dataSources, 2)
+		assert.NotNil(t, dataSources["http"])
+		assert.NotNil(t, dataSources["ami"])
+		assert.Nil(t, dataSources["widget"])
+	})
+}
+
+// T703: Test GetResourceOrDataSource unified lookup
+func TestRegistry_GetResourceOrDataSource(t *testing.T) {
+	t.Run("should find resource by name", func(t *testing.T) {
+		registry := tfprovidertest.NewResourceRegistry()
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", IsDataSource: true})
+
+		found := registry.GetResourceOrDataSource("widget")
+		assert.NotNil(t, found)
+		assert.Equal(t, "widget", found.Name)
+		assert.False(t, found.IsDataSource)
+	})
+
+	t.Run("should find data source by name", func(t *testing.T) {
+		registry := tfprovidertest.NewResourceRegistry()
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", IsDataSource: true})
+
+		found := registry.GetResourceOrDataSource("http")
+		assert.NotNil(t, found)
+		assert.Equal(t, "http", found.Name)
+		assert.True(t, found.IsDataSource)
+	})
+
+	t.Run("should return nil when not found", func(t *testing.T) {
+		registry := tfprovidertest.NewResourceRegistry()
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
+
+		found := registry.GetResourceOrDataSource("unknown")
+		assert.Nil(t, found)
+	})
+}
