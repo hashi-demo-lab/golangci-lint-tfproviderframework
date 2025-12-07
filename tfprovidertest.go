@@ -1,3 +1,12 @@
+// Package tfprovidertest implements a golangci-lint plugin that identifies test coverage gaps
+// in Terraform providers built with terraform-plugin-framework.
+//
+// The plugin provides five analyzers that enforce HashiCorp's testing best practices:
+//   - Basic Test Coverage: Detects resources without acceptance tests
+//   - Update Test Coverage: Validates multi-step tests for updatable attributes
+//   - Import Test Coverage: Ensures ImportState methods have import tests
+//   - Error Test Coverage: Verifies validation rules have error case tests
+//   - State Check Validation: Confirms test steps include state validation functions
 package tfprovidertest
 
 import (
@@ -12,20 +21,21 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-// T011: Settings struct with defaults
+// Settings configures which analyzers are enabled and file path patterns to match.
+// All analyzers are enabled by default.
 type Settings struct {
-	EnableBasicTest        bool     `yaml:"enable-basic-test"`
-	EnableUpdateTest       bool     `yaml:"enable-update-test"`
-	EnableImportTest       bool     `yaml:"enable-import-test"`
-	EnableErrorTest        bool     `yaml:"enable-error-test"`
-	EnableStateCheck       bool     `yaml:"enable-state-check"`
-	ResourcePathPattern    string   `yaml:"resource-path-pattern"`
-	DataSourcePathPattern  string   `yaml:"data-source-path-pattern"`
-	TestFilePattern        string   `yaml:"test-file-pattern"`
-	ExcludePaths           []string `yaml:"exclude-paths"`
+	EnableBasicTest       bool     `yaml:"enable-basic-test"`
+	EnableUpdateTest      bool     `yaml:"enable-update-test"`
+	EnableImportTest      bool     `yaml:"enable-import-test"`
+	EnableErrorTest       bool     `yaml:"enable-error-test"`
+	EnableStateCheck      bool     `yaml:"enable-state-check"`
+	ResourcePathPattern   string   `yaml:"resource-path-pattern"`
+	DataSourcePathPattern string   `yaml:"data-source-path-pattern"`
+	TestFilePattern       string   `yaml:"test-file-pattern"`
+	ExcludePaths          []string `yaml:"exclude-paths"`
 }
 
-// Default settings enable all analyzers
+// DefaultSettings returns the default configuration with all analyzers enabled.
 func DefaultSettings() Settings {
 	return Settings{
 		EnableBasicTest:       true,
@@ -40,7 +50,8 @@ func DefaultSettings() Settings {
 	}
 }
 
-// T012: ResourceRegistry with thread-safe maps
+// ResourceRegistry maintains thread-safe mappings of resources, data sources,
+// and their associated test files discovered during AST analysis.
 type ResourceRegistry struct {
 	mu          sync.RWMutex
 	Resources   map[string]*ResourceInfo
@@ -48,6 +59,7 @@ type ResourceRegistry struct {
 	TestFiles   map[string]*TestFileInfo
 }
 
+// NewResourceRegistry creates a new empty resource registry.
 func NewResourceRegistry() *ResourceRegistry {
 	return &ResourceRegistry{
 		Resources:   make(map[string]*ResourceInfo),
@@ -56,6 +68,7 @@ func NewResourceRegistry() *ResourceRegistry {
 	}
 }
 
+// RegisterResource adds a resource or data source to the registry.
 func (r *ResourceRegistry) RegisterResource(info *ResourceInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -66,30 +79,35 @@ func (r *ResourceRegistry) RegisterResource(info *ResourceInfo) {
 	}
 }
 
+// RegisterTestFile adds a test file to the registry, associating it with a resource.
 func (r *ResourceRegistry) RegisterTestFile(info *TestFileInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.TestFiles[info.ResourceName] = info
 }
 
+// GetResource retrieves a resource by name from the registry.
 func (r *ResourceRegistry) GetResource(name string) *ResourceInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.Resources[name]
 }
 
+// GetDataSource retrieves a data source by name from the registry.
 func (r *ResourceRegistry) GetDataSource(name string) *ResourceInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.DataSources[name]
 }
 
+// GetTestFile retrieves test file information for a given resource name.
 func (r *ResourceRegistry) GetTestFile(resourceName string) *TestFileInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.TestFiles[resourceName]
 }
 
+// GetUntestedResources returns all resources and data sources that lack test coverage.
 func (r *ResourceRegistry) GetUntestedResources() []*ResourceInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -108,7 +126,8 @@ func (r *ResourceRegistry) GetUntestedResources() []*ResourceInfo {
 	return untested
 }
 
-// Data model entities from data-model.md
+// ResourceInfo holds metadata about a Terraform resource or data source
+// discovered through AST parsing of provider code.
 type ResourceInfo struct {
 	Name           string
 	IsDataSource   bool
@@ -119,6 +138,7 @@ type ResourceInfo struct {
 	ImportStatePos token.Pos
 }
 
+// AttributeInfo represents a single attribute from a resource schema.
 type AttributeInfo struct {
 	Name           string
 	Type           string
@@ -130,14 +150,17 @@ type AttributeInfo struct {
 	ValidatorTypes []string
 }
 
+// NeedsUpdateTest returns true if the attribute is optional and updatable.
 func (a *AttributeInfo) NeedsUpdateTest() bool {
 	return a.Optional && a.IsUpdatable
 }
 
+// NeedsValidationTest returns true if the attribute has validators or is required.
 func (a *AttributeInfo) NeedsValidationTest() bool {
 	return a.HasValidators || a.Required
 }
 
+// TestFileInfo represents parsed information from a test file.
 type TestFileInfo struct {
 	FilePath      string
 	ResourceName  string
@@ -145,6 +168,7 @@ type TestFileInfo struct {
 	TestFunctions []TestFunctionInfo
 }
 
+// TestFunctionInfo represents a single TestAcc function and its test steps.
 type TestFunctionInfo struct {
 	Name             string
 	FunctionPos      token.Pos
@@ -154,6 +178,7 @@ type TestFunctionInfo struct {
 	HasImportStep    bool
 }
 
+// TestStepInfo represents a single step within a resource.TestCase.
 type TestStepInfo struct {
 	StepNumber        int
 	Config            string
@@ -164,15 +189,18 @@ type TestStepInfo struct {
 	ExpectError       bool
 }
 
+// IsUpdateStep returns true if this is not the first step and has a config.
 func (t *TestStepInfo) IsUpdateStep() bool {
 	return t.StepNumber > 0 && t.Config != ""
 }
 
+// IsValidImportStep returns true if this step properly tests ImportState.
 func (t *TestStepInfo) IsValidImportStep() bool {
 	return t.ImportState && t.ImportStateVerify
 }
 
-// T013-T015: AST parser implementation for detecting resources and attributes
+// parseResources extracts all resources and data sources from a Go source file
+// by analyzing Schema() method implementations.
 func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*ResourceInfo {
 	var resources []*ResourceInfo
 
@@ -635,11 +663,12 @@ func extractCheckFunctions(node ast.Node) []string {
 	return funcs
 }
 
-// T017: Plugin struct with required methods
+// Plugin implements the golangci-lint plugin interface.
 type Plugin struct {
 	settings Settings
 }
 
+// New creates a new plugin instance with the given settings.
 func New(settings any) (register.LinterPlugin, error) {
 	s := DefaultSettings()
 	if settings != nil {
@@ -652,6 +681,7 @@ func New(settings any) (register.LinterPlugin, error) {
 	return &Plugin{settings: s}, nil
 }
 
+// BuildAnalyzers returns the list of enabled analyzers based on settings.
 func (p *Plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	var analyzers []*analysis.Analyzer
 
@@ -674,40 +704,44 @@ func (p *Plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	return analyzers, nil
 }
 
+// GetLoadMode returns the AST load mode required by the analyzers.
 func (p *Plugin) GetLoadMode() string {
 	return register.LoadModeSyntax
 }
 
-// T018: Plugin registration
 func init() {
 	register.Plugin("tfprovidertest", New)
 }
 
-// Analyzer placeholders - will be implemented in user story phases
+// BasicTestAnalyzer detects resources and data sources lacking acceptance tests.
 var BasicTestAnalyzer = &analysis.Analyzer{
 	Name: "tfprovider-resource-basic-test",
 	Doc:  "Checks that every resource and data source has at least one acceptance test.",
 	Run:  runBasicTestAnalyzer,
 }
 
+// UpdateTestAnalyzer validates that resources with updatable attributes have multi-step tests.
 var UpdateTestAnalyzer = &analysis.Analyzer{
 	Name: "tfprovider-resource-update-test",
 	Doc:  "Checks that resources with updatable attributes have multi-step update tests.",
 	Run:  runUpdateTestAnalyzer,
 }
 
+// ImportTestAnalyzer ensures resources with ImportState methods have import tests.
 var ImportTestAnalyzer = &analysis.Analyzer{
 	Name: "tfprovider-resource-import-test",
 	Doc:  "Checks that resources implementing ImportState have import tests.",
 	Run:  runImportTestAnalyzer,
 }
 
+// ErrorTestAnalyzer checks that resources with validators have error case tests.
 var ErrorTestAnalyzer = &analysis.Analyzer{
 	Name: "tfprovider-test-error-cases",
 	Doc:  "Checks that resources with validation rules have error case tests.",
 	Run:  runErrorTestAnalyzer,
 }
 
+// StateCheckAnalyzer validates that test steps include state validation check functions.
 var StateCheckAnalyzer = &analysis.Analyzer{
 	Name: "tfprovider-test-check-functions",
 	Doc:  "Checks that test steps include state validation check functions.",

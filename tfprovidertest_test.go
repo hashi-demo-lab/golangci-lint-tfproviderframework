@@ -2,6 +2,10 @@ package tfprovidertest_test
 
 import (
 	"testing"
+
+	tfprovidertest "github.com/example/tfprovidertest"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // T006: Test for Settings defaults
@@ -214,4 +218,171 @@ func TestUpdateTestCoverage(t *testing.T) {
 		// analysistest.Run(t, analysistest.TestData(), UpdateTestAnalyzer, "update_missing")
 		// analysistest.Run(t, analysistest.TestData(), UpdateTestAnalyzer, "update_passing")
 	})
+}
+
+// T083: Validate all 5 analyzers return from BuildAnalyzers()
+func TestPlugin_BuildAnalyzers(t *testing.T) {
+	t.Run("should return all 5 analyzers when all are enabled", func(t *testing.T) {
+		plugin, err := tfprovidertest.New(nil)
+		require.NoError(t, err)
+		require.NotNil(t, plugin)
+
+		analyzers, err := plugin.BuildAnalyzers()
+		require.NoError(t, err)
+		require.Len(t, analyzers, 5, "should return exactly 5 analyzers when all are enabled")
+
+		// Verify analyzer names
+		expectedNames := map[string]bool{
+			"tfprovider-resource-basic-test":  false,
+			"tfprovider-resource-update-test": false,
+			"tfprovider-resource-import-test": false,
+			"tfprovider-test-error-cases":     false,
+			"tfprovider-test-check-functions": false,
+		}
+
+		for _, analyzer := range analyzers {
+			if _, exists := expectedNames[analyzer.Name]; exists {
+				expectedNames[analyzer.Name] = true
+			} else {
+				t.Errorf("unexpected analyzer: %s", analyzer.Name)
+			}
+		}
+
+		// Ensure all analyzers were found
+		for name, found := range expectedNames {
+			assert.True(t, found, "analyzer %s should be included", name)
+		}
+	})
+}
+
+// T084: Validate Settings configuration enables/disables analyzers
+func TestPlugin_Settings(t *testing.T) {
+	t.Run("should respect individual analyzer disable settings", func(t *testing.T) {
+		settings := map[string]interface{}{
+			"EnableBasicTest":  true,
+			"EnableUpdateTest": false,
+			"EnableImportTest": true,
+			"EnableErrorTest":  false,
+			"EnableStateCheck": true,
+		}
+
+		plugin, err := tfprovidertest.New(settings)
+		require.NoError(t, err)
+
+		analyzers, err := plugin.BuildAnalyzers()
+		require.NoError(t, err)
+		require.Len(t, analyzers, 3, "should return only 3 enabled analyzers")
+
+		// Verify only enabled analyzers are returned
+		enabledNames := make(map[string]bool)
+		for _, analyzer := range analyzers {
+			enabledNames[analyzer.Name] = true
+		}
+
+		assert.True(t, enabledNames["tfprovider-resource-basic-test"], "basic test should be enabled")
+		assert.False(t, enabledNames["tfprovider-resource-update-test"], "update test should be disabled")
+		assert.True(t, enabledNames["tfprovider-resource-import-test"], "import test should be enabled")
+		assert.False(t, enabledNames["tfprovider-test-error-cases"], "error test should be disabled")
+		assert.True(t, enabledNames["tfprovider-test-check-functions"], "state check should be enabled")
+	})
+
+	t.Run("should disable all analyzers when all settings are false", func(t *testing.T) {
+		settings := map[string]interface{}{
+			"EnableBasicTest":  false,
+			"EnableUpdateTest": false,
+			"EnableImportTest": false,
+			"EnableErrorTest":  false,
+			"EnableStateCheck": false,
+		}
+
+		plugin, err := tfprovidertest.New(settings)
+		require.NoError(t, err)
+
+		analyzers, err := plugin.BuildAnalyzers()
+		require.NoError(t, err)
+		require.Len(t, analyzers, 0, "should return no analyzers when all are disabled")
+	})
+
+	t.Run("default settings should enable all analyzers", func(t *testing.T) {
+		plugin, err := tfprovidertest.New(nil)
+		require.NoError(t, err)
+
+		analyzers, err := plugin.BuildAnalyzers()
+		require.NoError(t, err)
+		require.Len(t, analyzers, 5, "default settings should enable all 5 analyzers")
+	})
+}
+
+// T091: Performance benchmarks
+func BenchmarkResourceRegistry_Register(b *testing.B) {
+	registry := tfprovidertest.NewResourceRegistry()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		resource := &tfprovidertest.ResourceInfo{
+			Name:         "benchmark_resource",
+			IsDataSource: false,
+			FilePath:     "/test/resource_benchmark.go",
+		}
+		registry.RegisterResource(resource)
+	}
+}
+
+func BenchmarkResourceRegistry_GetResource(b *testing.B) {
+	registry := tfprovidertest.NewResourceRegistry()
+
+	// Setup: register 100 resources
+	for i := 0; i < 100; i++ {
+		resource := &tfprovidertest.ResourceInfo{
+			Name:         "resource_" + string(rune(i)),
+			IsDataSource: false,
+			FilePath:     "/test/resource.go",
+		}
+		registry.RegisterResource(resource)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		registry.GetResource("resource_50")
+	}
+}
+
+func BenchmarkResourceRegistry_GetUntestedResources(b *testing.B) {
+	registry := tfprovidertest.NewResourceRegistry()
+
+	// Setup: register 50 resources and 25 test files
+	for i := 0; i < 50; i++ {
+		resource := &tfprovidertest.ResourceInfo{
+			Name:         "resource_" + string(rune(i)),
+			IsDataSource: false,
+			FilePath:     "/test/resource.go",
+		}
+		registry.RegisterResource(resource)
+	}
+
+	for i := 0; i < 25; i++ {
+		testFile := &tfprovidertest.TestFileInfo{
+			ResourceName: "resource_" + string(rune(i)),
+			FilePath:     "/test/resource_test.go",
+		}
+		registry.RegisterTestFile(testFile)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		registry.GetUntestedResources()
+	}
+}
+
+func BenchmarkPlugin_BuildAnalyzers(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		plugin, err := tfprovidertest.New(nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, err = plugin.BuildAnalyzers()
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
 }

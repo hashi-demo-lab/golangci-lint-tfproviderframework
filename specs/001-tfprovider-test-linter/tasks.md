@@ -215,19 +215,19 @@ This is a single-project golangci-lint plugin with all code at repository root:
 
 **Purpose**: Integration, validation, and finalization
 
-- [ ] T083 [P] Validate all 5 analyzers return from BuildAnalyzers() in /workspace/tfprovidertest.go
-- [ ] T084 [P] Validate Settings configuration enables/disables analyzers in /workspace/tfprovidertest.go
+- [X] T083 [P] Validate all 5 analyzers return from BuildAnalyzers() in /workspace/tfprovidertest.go
+- [X] T084 [P] Validate Settings configuration enables/disables analyzers in /workspace/tfprovidertest.go
 - [ ] T085 [P] Test plugin integration with .custom-gcl.yml locally
 - [ ] T086 Run linter against terraform-provider-time (expect 0 false positives, <10s runtime)
 - [ ] T087 Run linter against terraform-provider-tls (expect 0 false positives)
 - [ ] T088 Run linter against terraform-provider-http (expect 0 false positives)
 - [ ] T089 Run linter against terraform-provider-aap (expect 3+ gaps detected)
 - [ ] T090 [P] Document validation results in /workspace/validation/
-- [ ] T091 [P] Add performance benchmarks using testing.B in /workspace/tfprovidertest_test.go
+- [X] T091 [P] Add performance benchmarks using testing.B in /workspace/tfprovidertest_test.go
 - [ ] T092 [P] Update README.md with validation results and performance metrics
-- [ ] T093 Code cleanup: remove debug statements, add godoc comments
-- [ ] T094 Run go fmt, go vet, golangci-lint on plugin code
-- [ ] T095 Verify quickstart.md examples work end-to-end
+- [X] T093 Code cleanup: remove debug statements, add godoc comments
+- [X] T094 Run go fmt, go vet, golangci-lint on plugin code
+- [X] T095 Verify quickstart.md examples work end-to-end
 
 ---
 
