@@ -244,6 +244,75 @@ linters:
             - "**/*_generated.go"
 ```
 
+### Test Matching Strategies
+
+The linter uses three matching strategies to associate tests with resources (in priority order):
+
+1. **Function Name Matching** (highest confidence): Extracts resource name from test function name
+   - `TestAccWidget_basic` → matches `widget` resource
+   - `TestAccDataSourceHTTP_basic` → matches `http` data source
+   - `TestAccAWSInstance_update` → matches `instance` resource (strips provider prefix)
+
+2. **File Proximity Matching** (medium confidence): Matches based on file naming conventions
+   - `resource_widget_test.go` → matches `widget` resource
+   - `data_source_http_test.go` → matches `http` data source
+   - `widget_resource_test.go` → matches `widget` resource
+
+3. **Fuzzy Matching** (optional, low confidence): Uses Levenshtein distance for approximate matches
+   - Disabled by default to avoid false positives
+   - Enable with `enable-fuzzy-matching: true`
+
+### Custom Test Helpers
+
+If your provider uses custom test helper functions that wrap `resource.Test()`:
+
+```yaml
+linters:
+  settings:
+    custom:
+      tfprovidertest:
+        settings:
+          custom-test-helpers:
+            - "testhelper.AccTest"
+            - "internal.RunAccTest"
+```
+
+### Custom Test Name Patterns
+
+For non-standard test naming conventions:
+
+```yaml
+linters:
+  settings:
+    custom:
+      tfprovidertest:
+        settings:
+          test-name-patterns:
+            - "TestAcc"
+            - "TestResource"
+            - "TestDataSource"
+            - "TestIntegration"
+```
+
+### Verbose Diagnostics
+
+Enable detailed output to understand why tests aren't matching:
+
+```yaml
+linters:
+  settings:
+    custom:
+      tfprovidertest:
+        settings:
+          verbose: true
+```
+
+This shows:
+- Test files searched
+- Test functions found and their match status
+- Expected naming patterns
+- Suggested fixes
+
 ## CI/CD Integration
 
 ### GitHub Actions
@@ -271,10 +340,13 @@ jobs:
 - **Medium providers** (50 resources): <60 seconds
 - **Large providers** (500 resources): <5 minutes
 
-Optimizations:
-- Uses AST-only analysis (no type information needed)
-- Parallel analyzer execution
-- Efficient AST caching
+### Optimizations
+
+- **Unified Registry Caching**: Registry is built once and shared across all 5 analyzers (5x performance improvement)
+- **Function-First Indexing**: Test functions are indexed upfront for O(1) lookups
+- **AST-Only Analysis**: No type information needed, reducing memory overhead
+- **Parallel Analyzer Execution**: All analyzers run concurrently
+- **Unified Definitions Map**: Single map for all resources/data sources eliminates redundant merging
 
 ## Validation Results
 
@@ -327,11 +399,52 @@ Adjust path patterns in `.golangci.yml` settings to match your project structure
 2. Use `exclude-paths` to skip unnecessary files
 3. Increase concurrency: `golangci-lint run --concurrency 4`
 
+## Architecture
+
+### Core Components
+
+| Component | File | Description |
+|-----------|------|-------------|
+| **ResourceRegistry** | `registry.go` | Thread-safe storage for resources, data sources, and test functions |
+| **Linker** | `linker.go` | Associates test functions with resources using matching strategies |
+| **Parser** | `parser.go` | Extracts resources and test functions from Go AST |
+| **Analyzers** | `analyzer.go` | Five go/analysis analyzers for different test coverage checks |
+| **Settings** | `settings.go` | Configuration management with sensible defaults |
+| **Utils** | `utils.go` | Shared utilities for name extraction and pattern matching |
+
+### Key Design Decisions
+
+1. **Unified Registry**: Single `definitions` map stores all resources/data sources, with filtered views for backward compatibility
+2. **Function-First Indexing**: Test functions are indexed globally first, then linked to resources via the Linker
+3. **Registry Caching**: `sync.Once` ensures registry is built only once per analysis pass, shared across all 5 analyzers
+4. **Configurable Matching**: Function name → File proximity → Fuzzy (optional) matching chain
+
+### Public API
+
+```go
+// Create a new registry
+registry := tfprovidertest.NewResourceRegistry()
+
+// Register resources
+registry.RegisterResource(&tfprovidertest.ResourceInfo{...})
+
+// Get all definitions (resources + data sources)
+definitions := registry.GetAllDefinitions()
+
+// Get resource or data source by name
+info := registry.GetResourceOrDataSource("widget")
+
+// Link tests to resources
+linker := tfprovidertest.NewLinker(registry, settings)
+linker.LinkTestsToResources()
+```
+
 ## Contributing
 
 1. Report issues at github.com/example/tfprovidertest/issues
 2. Follow TDD practices (write tests first)
 3. Run `go test ./...` before submitting PRs
+4. Ensure `go fmt` and `go vet` pass
 
 ## License
 
