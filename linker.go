@@ -35,15 +35,12 @@ type ResourceMatch struct {
 // LinkTestsToResources iterates over all test functions and associates them with resources.
 // It uses multiple strategies in order of confidence to find the best match.
 func (l *Linker) LinkTestsToResources() {
-	allResources := l.registry.GetAllResources()
-	allDataSources := l.registry.GetAllDataSources()
+	// Use unified definitions map instead of merging separate resources/dataSources maps
+	allDefinitions := l.registry.GetAllDefinitions()
 
-	// Merge resources and data sources for matching
-	resourceNames := make(map[string]bool)
-	for name := range allResources {
-		resourceNames[name] = true
-	}
-	for name := range allDataSources {
+	// Build resource names set for matching
+	resourceNames := make(map[string]bool, len(allDefinitions))
+	for name := range allDefinitions {
 		resourceNames[name] = true
 	}
 

@@ -42,9 +42,9 @@ func (m MatchType) String() string {
 // and their associated test functions discovered during AST analysis.
 type ResourceRegistry struct {
 	mu             sync.RWMutex
-	definitions    map[string]*ResourceInfo   // Unified map of all resources and data sources
-	resources      map[string]*ResourceInfo   // Legacy: filtered view of resources (IsDataSource=false)
-	dataSources    map[string]*ResourceInfo   // Legacy: filtered view of data sources (IsDataSource=true)
+	definitions    map[string]*ResourceInfo // Unified map of all resources and data sources
+	resources      map[string]*ResourceInfo // Legacy: filtered view of resources (IsDataSource=false)
+	dataSources    map[string]*ResourceInfo // Legacy: filtered view of data sources (IsDataSource=true)
 	testFunctions  []*TestFunctionInfo
 	resourceTests  map[string][]*TestFunctionInfo
 	fileToResource map[string]string
