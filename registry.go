@@ -42,8 +42,9 @@ func (m MatchType) String() string {
 // and their associated test functions discovered during AST analysis.
 type ResourceRegistry struct {
 	mu             sync.RWMutex
-	resources      map[string]*ResourceInfo
-	dataSources    map[string]*ResourceInfo
+	definitions    map[string]*ResourceInfo   // Unified map of all resources and data sources
+	resources      map[string]*ResourceInfo   // Legacy: filtered view of resources (IsDataSource=false)
+	dataSources    map[string]*ResourceInfo   // Legacy: filtered view of data sources (IsDataSource=true)
 	testFunctions  []*TestFunctionInfo
 	resourceTests  map[string][]*TestFunctionInfo
 	fileToResource map[string]string
@@ -52,6 +53,7 @@ type ResourceRegistry struct {
 // NewResourceRegistry creates a new empty resource registry.
 func NewResourceRegistry() *ResourceRegistry {
 	return &ResourceRegistry{
+		definitions:    make(map[string]*ResourceInfo),
 		resources:      make(map[string]*ResourceInfo),
 		dataSources:    make(map[string]*ResourceInfo),
 		testFunctions:  make([]*TestFunctionInfo, 0),
@@ -61,9 +63,16 @@ func NewResourceRegistry() *ResourceRegistry {
 }
 
 // RegisterResource adds a resource or data source to the registry.
+// It stores the resource in both the unified definitions map and the
+// appropriate filtered map (resources or dataSources) for backward compatibility.
 func (r *ResourceRegistry) RegisterResource(info *ResourceInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// Store in unified definitions map
+	r.definitions[info.Name] = info
+
+	// Also store in legacy filtered maps for backward compatibility
 	if info.IsDataSource {
 		r.dataSources[info.Name] = info
 	} else {
