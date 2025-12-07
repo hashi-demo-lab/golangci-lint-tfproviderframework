@@ -350,28 +350,36 @@ jobs:
 
 ## Validation Results
 
-This linter has been validated against 4 Terraform providers:
+This linter has been validated against 7 Terraform providers:
 
-| Provider | Resources | Data Sources | False Positives | Performance |
-|----------|-----------|--------------|-----------------|-------------|
-| terraform-provider-time | 4 | 0 | 0 | 7.4ms |
-| terraform-provider-http | 0 | 1 | 1* | 2.4ms |
-| terraform-provider-tls | 6 | 2 | 6* | 12.6ms |
-| terraform-provider-aap | 6 | 2 | 8 (some real gaps) | 19.4ms |
+| Provider | Resources | Data Sources | Basic Coverage Issues | Performance |
+|----------|-----------|--------------|----------------------|-------------|
+| terraform-provider-time | 4 | 0 | 0 | 30.5ms |
+| terraform-provider-http | 0 | 1 | 1* | 12.9ms |
+| terraform-provider-tls | 6 | 2 | 6* | 48.0ms |
+| terraform-provider-aap | 6 | 2 | 8* | 35.3ms |
+| terraform-provider-hcp | 11 | 0 | 11* | 49.9ms |
+| terraform-provider-helm | 1 | 1 | 0 | 17.2ms |
+| terraform-provider-google-beta | 1,262 | 290 | 745* | ~2.2s |
 
-*Note: False positives in http and tls providers are due to non-standard test naming conventions (e.g., `TestDataSource_*` instead of `TestAccDataSource*`). These can be avoided by configuring custom test name patterns.
+*Issues may include false positives due to non-standard test naming conventions or conditionally skipped tests.
 
 ### Key Findings
 
-1. **terraform-provider-time**: Perfect results - zero false positives, all resources properly tested
-2. **terraform-provider-http/tls**: Uses non-standard test naming - linter correctly identifies Schema methods but doesn't match tests due to naming differences
-3. **terraform-provider-aap**: Mix of real gaps (base classes) and naming pattern mismatches
+1. **terraform-provider-time**: Zero basic coverage issues - all resources have acceptance tests
+2. **terraform-provider-helm**: Complete coverage with 46+ test scenarios
+3. **terraform-provider-google-beta**: Successfully analyzed 1,552 resources in ~2.2s (705 resources/sec)
+4. **terraform-provider-http/tls**: Uses non-standard test naming (`TestDataSource_*` vs `TestAccDataSource*`)
+5. **terraform-provider-hcp**: Tests exist but are conditionally skipped via `t.Skip()`
 
 ### Recommendations
 
 For providers using non-standard naming:
-- Configure custom test-name-patterns in settings
-- Use file-based exclusions for base classes (`base_*.go`)
+- Configure `test-name-patterns` in settings
+- Use `exclude-patterns` for base classes (`base_*.go`)
+- Use `exclude-sweeper-files: true` to skip test infrastructure files
+
+See `/workspace/validation/VALIDATION_REPORT.md` for detailed analysis.
 
 ## Reference Providers
 
