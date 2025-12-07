@@ -1208,24 +1208,31 @@ func TestBuildVerboseDiagnostic(t *testing.T) {
 		assert.False(t, info.TestFilesSearched[0].Found)
 	})
 
-	t.Run("should build verbose diagnostic for resource with test file but no matching functions", func(t *testing.T) {
+	t.Run("should build verbose diagnostic for resource with test functions", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
 			Name:         "private_key",
 			IsDataSource: false,
 			FilePath:     "/path/to/resource_private_key.go",
 		}
-		testFile := &tfprovidertest.TestFileInfo{
-			FilePath:     "/path/to/resource_private_key_test.go",
-			ResourceName: "private_key",
-			TestFunctions: []tfprovidertest.TestFunctionInfo{
-				{Name: "TestPrivateKeyRSA", UsesResourceTest: true},
-				{Name: "TestPrivateKeyECDSA", UsesResourceTest: true},
-			},
-		}
 
 		registry := tfprovidertest.NewResourceRegistry()
 		registry.RegisterResource(resource)
-		registry.RegisterTestFile(testFile)
+
+		// Register test functions
+		testFunc1 := &tfprovidertest.TestFunctionInfo{
+			Name:             "TestPrivateKeyRSA",
+			FilePath:         "/path/to/resource_private_key_test.go",
+			UsesResourceTest: true,
+		}
+		testFunc2 := &tfprovidertest.TestFunctionInfo{
+			Name:             "TestPrivateKeyECDSA",
+			FilePath:         "/path/to/resource_private_key_test.go",
+			UsesResourceTest: true,
+		}
+		registry.RegisterTestFunction(testFunc1)
+		registry.RegisterTestFunction(testFunc2)
+		registry.LinkTestToResource("private_key", testFunc1)
+		registry.LinkTestToResource("private_key", testFunc2)
 
 		info := tfprovidertest.BuildVerboseDiagnosticInfo(resource, registry)
 
