@@ -26,11 +26,11 @@ This is a single-project golangci-lint plugin with all code at repository root:
 
 **Purpose**: Project initialization and Go module structure
 
-- [ ] T001 Create Go module with go.mod in /workspace/
-- [ ] T002 Add dependencies: golang.org/x/tools v0.31.0, plugin-module-register v0.1.1, testify v1.10.0
-- [ ] T003 [P] Create .golangci.example.yml configuration template in /workspace/
-- [ ] T004 [P] Create .custom-gcl.yml for local development in /workspace/
-- [ ] T005 [P] Create README.md with installation and usage docs in /workspace/
+- [X] T001 Create Go module with go.mod in /workspace/
+- [X] T002 Add dependencies: golang.org/x/tools v0.31.0, plugin-module-register v0.1.1, testify v1.10.0
+- [X] T003 [P] Create .golangci.example.yml configuration template in /workspace/
+- [X] T004 [P] Create .custom-gcl.yml for local development in /workspace/
+- [X] T005 [P] Create README.md with installation and usage docs in /workspace/
 
 ---
 
@@ -44,22 +44,22 @@ This is a single-project golangci-lint plugin with all code at repository root:
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T006 [P] Test for Settings defaults in /workspace/tfprovidertest_test.go
-- [ ] T007 [P] Test for ResourceRegistry operations in /workspace/tfprovidertest_test.go
-- [ ] T008 [P] Test for AST resource detection in /workspace/tfprovidertest_test.go
-- [ ] T009 [P] Test for AST data source detection in /workspace/tfprovidertest_test.go
-- [ ] T010 [P] Test for test file parsing in /workspace/tfprovidertest_test.go
+- [X] T006 [P] Test for Settings defaults in /workspace/tfprovidertest_test.go
+- [X] T007 [P] Test for ResourceRegistry operations in /workspace/tfprovidertest_test.go
+- [X] T008 [P] Test for AST resource detection in /workspace/tfprovidertest_test.go
+- [X] T009 [P] Test for AST data source detection in /workspace/tfprovidertest_test.go
+- [X] T010 [P] Test for test file parsing in /workspace/tfprovidertest_test.go
 
 ### Foundational Implementation
 
-- [ ] T011 [P] Implement Settings struct with defaults in /workspace/tfprovidertest.go
-- [ ] T012 [P] Implement ResourceRegistry with thread-safe maps in /workspace/tfprovidertest.go
-- [ ] T013 Implement AST parser for detecting framework resources in /workspace/tfprovidertest.go
-- [ ] T014 Implement AST parser for detecting data sources in /workspace/tfprovidertest.go
-- [ ] T015 Implement AST parser for extracting schema attributes in /workspace/tfprovidertest.go
-- [ ] T016 Implement test file parser for TestAcc functions in /workspace/tfprovidertest.go
-- [ ] T017 Implement Plugin struct with New(), BuildAnalyzers(), GetLoadMode() in /workspace/tfprovidertest.go
-- [ ] T018 Add plugin registration via init() and register.Plugin() in /workspace/tfprovidertest.go
+- [X] T011 [P] Implement Settings struct with defaults in /workspace/tfprovidertest.go
+- [X] T012 [P] Implement ResourceRegistry with thread-safe maps in /workspace/tfprovidertest.go
+- [X] T013 Implement AST parser for detecting framework resources in /workspace/tfprovidertest.go
+- [X] T014 Implement AST parser for detecting data sources in /workspace/tfprovidertest.go
+- [X] T015 Implement AST parser for extracting schema attributes in /workspace/tfprovidertest.go
+- [X] T016 Implement test file parser for TestAcc functions in /workspace/tfprovidertest.go
+- [X] T017 Implement Plugin struct with New(), BuildAnalyzers(), GetLoadMode() in /workspace/tfprovidertest.go
+- [X] T018 Add plugin registration via init() and register.Plugin() in /workspace/tfprovidertest.go
 
 **Checkpoint**: Foundation ready - analyzer implementation can now begin in parallel
 
@@ -75,23 +75,23 @@ This is a single-project golangci-lint plugin with all code at repository root:
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T019 [P] [US1] Create testdata fixture: resource with no test file in /workspace/testdata/src/testlintdata/basic_missing/
-- [ ] T020 [P] [US1] Create testdata fixture: resource with test file but no TestAcc function in /workspace/testdata/src/testlintdata/basic_missing/
-- [ ] T021 [P] [US1] Create testdata fixture: well-tested resource (passing case) in /workspace/testdata/src/testlintdata/basic_passing/
-- [ ] T022 [P] [US1] Create testdata fixture: data source with no test in /workspace/testdata/src/testlintdata/basic_missing/
-- [ ] T023 [US1] Write TestBasicTestCoverage using analysistest.Run() in /workspace/tfprovidertest_test.go
-- [ ] T024 [US1] Verify test FAILS (red phase)
+- [X] T019 [P] [US1] Create testdata fixture: resource with no test file in /workspace/testdata/src/testlintdata/basic_missing/
+- [X] T020 [P] [US1] Create testdata fixture: resource with test file but no TestAcc function in /workspace/testdata/src/testlintdata/basic_missing/
+- [X] T021 [P] [US1] Create testdata fixture: well-tested resource (passing case) in /workspace/testdata/src/testlintdata/basic_passing/
+- [X] T022 [P] [US1] Create testdata fixture: data source with no test in /workspace/testdata/src/testlintdata/basic_missing/
+- [X] T023 [US1] Write TestBasicTestCoverage using analysistest.Run() in /workspace/tfprovidertest_test.go
+- [X] T024 [US1] Verify test FAILS (red phase)
 
 ### Implementation for User Story 1
 
-- [ ] T025 [US1] Implement BasicTestAnalyzer with Name, Doc, Run fields in /workspace/tfprovidertest.go
-- [ ] T026 [US1] Implement Run function: traverse AST, build ResourceRegistry in /workspace/tfprovidertest.go
-- [ ] T027 [US1] Implement Run function: match resources to test files in /workspace/tfprovidertest.go
-- [ ] T028 [US1] Implement Run function: detect missing test files via GetUntestedResources() in /workspace/tfprovidertest.go
-- [ ] T029 [US1] Implement Run function: detect missing TestAcc functions in /workspace/tfprovidertest.go
-- [ ] T030 [US1] Implement pass.Report() calls with actionable messages in /workspace/tfprovidertest.go
-- [ ] T031 [US1] Verify TestBasicTestCoverage PASSES (green phase)
-- [ ] T032 [US1] Refactor for clarity and performance (refactor phase)
+- [X] T025 [US1] Implement BasicTestAnalyzer with Name, Doc, Run fields in /workspace/tfprovidertest.go
+- [X] T026 [US1] Implement Run function: traverse AST, build ResourceRegistry in /workspace/tfprovidertest.go
+- [X] T027 [US1] Implement Run function: match resources to test files in /workspace/tfprovidertest.go
+- [X] T028 [US1] Implement Run function: detect missing test files via GetUntestedResources() in /workspace/tfprovidertest.go
+- [X] T029 [US1] Implement Run function: detect missing TestAcc functions in /workspace/tfprovidertest.go
+- [X] T030 [US1] Implement pass.Report() calls with actionable messages in /workspace/tfprovidertest.go
+- [X] T031 [US1] Verify TestBasicTestCoverage PASSES (green phase)
+- [X] T032 [US1] Refactor for clarity and performance (refactor phase)
 
 **Checkpoint**: Basic test detection fully functional - can detect untested resources independently
 
