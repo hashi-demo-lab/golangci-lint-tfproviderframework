@@ -459,7 +459,7 @@ func ParseTestFileWithConfig(file *ast.File, fset *token.FileSet, filePath strin
 			return true
 		}
 
-		steps, hasCheckDestroy, inferred := extractTestStepsWithHelpers(funcDecl.Body, helperPatterns)
+		steps, hasCheckDestroy, hasPreCheck, inferred := extractTestStepsWithHelpers(funcDecl.Body, helperPatterns)
 		testFunc := TestFunctionInfo{
 			Name:              funcDecl.Name.Name,
 			FilePath:          filePath,
@@ -468,6 +468,7 @@ func ParseTestFileWithConfig(file *ast.File, fset *token.FileSet, filePath strin
 			TestSteps:         steps,
 			HelperUsed:        detectHelperUsed(funcDecl.Body, config.LocalHelpers),
 			HasCheckDestroy:   hasCheckDestroy,
+			HasPreCheck:       hasPreCheck,
 			InferredResources: inferred,
 		}
 
@@ -918,9 +919,10 @@ func extractPatternsFromExpr(expr ast.Expr, addPattern func(string)) {
 }
 
 // extractTestStepsWithHelpers is like extractTestSteps but also looks up helper patterns.
-func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string][]string) ([]TestStepInfo, bool, []string) {
+func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string][]string) ([]TestStepInfo, bool, bool, []string) {
 	var steps []TestStepInfo
 	var hasCheckDestroy bool
+	var hasPreCheck bool
 	uniqueInferred := make(map[string]bool)
 	stepNumber := 1
 
@@ -945,10 +947,13 @@ func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string]
 			return true
 		}
 
-		testSteps, foundCheckDestroy := extractStepsFromTestCaseWithHelpers(callExpr.Args[1], &stepNumber, uniqueInferred, helperPatterns)
+		testSteps, foundCheckDestroy, foundPreCheck := extractStepsFromTestCaseWithHelpers(callExpr.Args[1], &stepNumber, uniqueInferred, helperPatterns)
 		steps = append(steps, testSteps...)
 		if foundCheckDestroy {
 			hasCheckDestroy = true
+		}
+		if foundPreCheck {
+			hasPreCheck = true
 		}
 
 		return true
@@ -959,17 +964,18 @@ func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string]
 		inferredResources = append(inferredResources, resourceName)
 	}
 
-	return steps, hasCheckDestroy, inferredResources
+	return steps, hasCheckDestroy, hasPreCheck, inferredResources
 }
 
 // extractStepsFromTestCaseWithHelpers extracts steps and looks up helper patterns.
-func extractStepsFromTestCaseWithHelpers(testCaseExpr ast.Expr, stepNumber *int, inferred map[string]bool, helperPatterns map[string][]string) ([]TestStepInfo, bool) {
+func extractStepsFromTestCaseWithHelpers(testCaseExpr ast.Expr, stepNumber *int, inferred map[string]bool, helperPatterns map[string][]string) ([]TestStepInfo, bool, bool) {
 	var steps []TestStepInfo
 	hasCheckDestroy := false
+	hasPreCheck := false
 
 	compLit, ok := testCaseExpr.(*ast.CompositeLit)
 	if !ok {
-		return steps, hasCheckDestroy
+		return steps, hasCheckDestroy, hasPreCheck
 	}
 
 	for _, elt := range compLit.Elts {
@@ -986,6 +992,8 @@ func extractStepsFromTestCaseWithHelpers(testCaseExpr ast.Expr, stepNumber *int,
 		switch key.Name {
 		case "CheckDestroy":
 			hasCheckDestroy = true
+		case "PreCheck":
+			hasPreCheck = true
 		case "Steps":
 			stepsLit, ok := kv.Value.(*ast.CompositeLit)
 			if !ok {
@@ -1007,7 +1015,7 @@ func extractStepsFromTestCaseWithHelpers(testCaseExpr ast.Expr, stepNumber *int,
 		}
 	}
 
-	return steps, hasCheckDestroy
+	return steps, hasCheckDestroy, hasPreCheck
 }
 
 // parseTestStepWithHashAndHelpers parses a step and looks up helper patterns for Config.
@@ -1069,6 +1077,14 @@ func parseTestStepWithHashAndHelpers(stepExpr ast.Expr, stepNum int, inferred ma
 			}
 		case "ExpectError":
 			step.ExpectError = true
+		case "ExpectNonEmptyPlan":
+			if ident, ok := kv.Value.(*ast.Ident); ok {
+				step.ExpectNonEmptyPlan = ident.Name == "true"
+			}
+		case "RefreshState":
+			if ident, ok := kv.Value.(*ast.Ident); ok {
+				step.RefreshState = ident.Name == "true"
+			}
 		}
 	}
 
