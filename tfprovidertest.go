@@ -71,12 +71,3 @@ func init() {
 	register.Plugin("tfprovidertest", New)
 }
 
-// Public API functions for backward compatibility
-
-// ExtractResourceNameFromTestFunc is deprecated. Use file-based matching instead.
-// This function is kept for backward compatibility but always returns empty string.
-// The new approach uses extractResourceNameFromFilePath() in parser.go.
-func ExtractResourceNameFromTestFunc(funcName string) string {
-	// Deprecated: File-based matching is now used instead
-	return ""
-}

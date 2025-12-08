@@ -253,6 +253,78 @@ func TestLinkerDataSourceMatching(t *testing.T) {
 	}
 }
 
+func TestLinkerInferredMatching(t *testing.T) {
+	reg := NewResourceRegistry()
+
+	// Register a resource named "example_widget"
+	reg.RegisterResource(&ResourceInfo{Name: "example_widget"})
+
+	// Create a test function with InferredResources (simulating what extractTestSteps would populate
+	// when parsing a Config string containing `resource "example_widget" "test" {`)
+	fn := &TestFunctionInfo{
+		Name:              "TestSomeArbitraryName_basic",
+		FilePath:          "/path/to/arbitrary_test.go",
+		InferredResources: []string{"example_widget"},
+	}
+	reg.RegisterTestFunction(fn)
+
+	// Run linker
+	settings := DefaultSettings()
+	linker := NewLinker(reg, settings)
+	linker.LinkTestsToResources()
+
+	// Verify the test is linked to "example_widget" with MatchTypeInferred
+	widgetTests := reg.GetResourceTests("example_widget")
+	if len(widgetTests) != 1 {
+		t.Fatalf("expected 1 example_widget test, got %d", len(widgetTests))
+	}
+
+	if widgetTests[0].MatchType != MatchTypeInferred {
+		t.Errorf("expected MatchTypeInferred, got %v", widgetTests[0].MatchType)
+	}
+	if widgetTests[0].MatchConfidence != 1.0 {
+		t.Errorf("expected confidence 1.0, got %f", widgetTests[0].MatchConfidence)
+	}
+}
+
+func TestLinkerInferredMatchingPriority(t *testing.T) {
+	// Test that inferred matching takes priority over function name matching
+	reg := NewResourceRegistry()
+
+	// Register two resources
+	reg.RegisterResource(&ResourceInfo{Name: "widget"})
+	reg.RegisterResource(&ResourceInfo{Name: "gadget"})
+
+	// Create a test function whose name suggests "widget" but has "gadget" inferred from config
+	fn := &TestFunctionInfo{
+		Name:              "TestAccWidget_basic",                  // Function name suggests "widget"
+		FilePath:          "/path/to/resource_widget_test.go",     // File suggests "widget"
+		InferredResources: []string{"gadget"},                     // Config actually tests "gadget"
+	}
+	reg.RegisterTestFunction(fn)
+
+	// Run linker
+	settings := DefaultSettings()
+	linker := NewLinker(reg, settings)
+	linker.LinkTestsToResources()
+
+	// Verify the test is linked to "gadget" (inferred), not "widget" (function name)
+	gadgetTests := reg.GetResourceTests("gadget")
+	if len(gadgetTests) != 1 {
+		t.Errorf("expected 1 gadget test (inferred priority), got %d", len(gadgetTests))
+	}
+
+	widgetTests := reg.GetResourceTests("widget")
+	if len(widgetTests) != 0 {
+		t.Errorf("expected 0 widget tests (inferred should take priority), got %d", len(widgetTests))
+	}
+
+	// Verify match type
+	if len(gadgetTests) > 0 && gadgetTests[0].MatchType != MatchTypeInferred {
+		t.Errorf("expected MatchTypeInferred, got %v", gadgetTests[0].MatchType)
+	}
+}
+
 func TestLinkerPriorityMatching(t *testing.T) {
 	// Test that function name matching takes priority over file proximity
 	reg := NewResourceRegistry()
@@ -371,6 +443,7 @@ func TestMatchTypeString(t *testing.T) {
 		expected  string
 	}{
 		{MatchTypeNone, "none"},
+		{MatchTypeInferred, "inferred_from_config"},
 		{MatchTypeFunctionName, "function_name"},
 		{MatchTypeFileProximity, "file_proximity"},
 		{MatchTypeFuzzy, "fuzzy"},

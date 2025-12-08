@@ -40,8 +40,7 @@ func TestRegistry_Module(t *testing.T) {
 		reg := NewResourceRegistry()
 
 		assert.NotNil(t, reg)
-		assert.Empty(t, reg.GetAllResources())
-		assert.Empty(t, reg.GetAllDataSources())
+		assert.Empty(t, reg.GetAllDefinitions())
 		assert.Empty(t, reg.GetAllTestFunctions())
 	})
 
@@ -55,7 +54,7 @@ func TestRegistry_Module(t *testing.T) {
 
 		reg.RegisterResource(resource)
 
-		retrieved := reg.GetResource("test_resource")
+		retrieved := reg.GetResourceOrDataSource("test_resource")
 		assert.NotNil(t, retrieved)
 		assert.Equal(t, "test_resource", retrieved.Name)
 		assert.Equal(t, "/path/to/resource_test_resource.go", retrieved.FilePath)
@@ -254,6 +253,10 @@ func TestMatchType_String(t *testing.T) {
 		assert.Equal(t, "none", MatchTypeNone.String())
 	})
 
+	t.Run("MatchTypeInferred returns 'inferred_from_config'", func(t *testing.T) {
+		assert.Equal(t, "inferred_from_config", MatchTypeInferred.String())
+	})
+
 	t.Run("MatchTypeFunctionName returns 'function_name'", func(t *testing.T) {
 		assert.Equal(t, "function_name", MatchTypeFunctionName.String())
 	})
@@ -355,16 +358,18 @@ func TestLinkTestToResource(t *testing.T) {
 
 // Test GetUnmatchedTestFunctions
 func TestGetUnmatchedTestFunctions(t *testing.T) {
-	t.Run("should return functions with empty InferredResources", func(t *testing.T) {
+	t.Run("should return functions with MatchTypeNone", func(t *testing.T) {
 		reg := NewResourceRegistry()
 
 		matched := &TestFunctionInfo{
 			Name:              "TestAccWidget_basic",
 			InferredResources: []string{"widget"},
+			MatchType:         MatchTypeFunctionName, // Has a match
 		}
 		unmatched := &TestFunctionInfo{
 			Name:              "TestAccOrphan_basic",
-			InferredResources: []string{}, // No matches
+			InferredResources: []string{},
+			MatchType:         MatchTypeNone, // No match
 		}
 
 		reg.RegisterTestFunction(matched)
@@ -381,6 +386,7 @@ func TestGetUnmatchedTestFunctions(t *testing.T) {
 		fn := &TestFunctionInfo{
 			Name:              "TestAccWidget_basic",
 			InferredResources: []string{"widget"},
+			MatchType:         MatchTypeInferred, // Has a match
 		}
 
 		reg.RegisterTestFunction(fn)

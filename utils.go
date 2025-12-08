@@ -88,50 +88,151 @@ func toTitleCase(s string) string {
 var testFuncPatterns = []*regexp.Regexp{
 	// Pattern 1: TestAcc{Provider}{Resource}_{suffix} (e.g., TestAccAWSInstance_basic)
 	// Provider is optional uppercase letters followed by resource name
-	regexp.MustCompile(`^TestAcc([A-Z][a-z]+)?([A-Z][a-zA-Z0-9]+)_`),
+	// The underscore is optional to match patterns like TestAccEDAEventStreamAfterCreateAction
+	regexp.MustCompile(`^TestAcc([A-Z][a-z]+)?([A-Z][a-zA-Z0-9]+?)(?:_|Action|$)`),
 	// Pattern 2: TestAccDataSource{Resource}_{suffix}
-	regexp.MustCompile(`^TestAccDataSource([A-Z][a-zA-Z0-9]+)_`),
+	regexp.MustCompile(`^TestAccDataSource([A-Z][a-zA-Z0-9]+?)(?:_|$)`),
 	// Pattern 3: TestAccResource{Resource}_{suffix}
-	regexp.MustCompile(`^TestAccResource([A-Z][a-zA-Z0-9]+)_`),
+	regexp.MustCompile(`^TestAccResource([A-Z][a-zA-Z0-9]+?)(?:_|$)`),
 	// Pattern 4: TestAcc{Resource}_{suffix} (no provider prefix, simple pattern)
-	regexp.MustCompile(`^TestAcc([A-Z][a-zA-Z0-9]+)_`),
+	regexp.MustCompile(`^TestAcc([A-Z][a-zA-Z0-9]+?)(?:_|Action|$)`),
+}
+
+// actionLifecycleSuffixes are CamelCase suffixes that describe when/how an action runs,
+// not what the action is. These should be stripped before matching.
+var actionLifecycleSuffixes = []string{
+	"AfterCreate",
+	"AfterUpdate",
+	"AfterDelete",
+	"BeforeCreate",
+	"BeforeUpdate",
+	"BeforeDelete",
+	"DoesNotTrigger",
+	"Unrelated",
 }
 
 // ExtractResourceFromFuncName attempts to extract a resource name from a test function name.
 // Returns the resource name in snake_case and whether a match was found.
+// For action tests (e.g., TestAccAAPJobAction_basic), it strips the "Action" suffix.
 //
 // Examples:
 //
-//	TestAccAWSInstance_basic -> "instance", true
+//	TestAccAWSInstance_basic -> "aws_instance", true
 //	TestAccWidget_basic -> "widget", true
 //	TestAccDataSourceHTTP_basic -> "http", true
 //	TestAccResourceWidget_basic -> "widget", true
+//	TestAccAAPJobAction_basic -> "aap_job", true
 //	TestHelper -> "", false
 func ExtractResourceFromFuncName(funcName string) (string, bool) {
+	var resourceName string
+
 	// Try data source pattern first (more specific)
 	if matches := testFuncPatterns[1].FindStringSubmatch(funcName); len(matches) > 1 {
-		return toSnakeCase(matches[1]), true
-	}
-
-	// Try resource pattern
-	if matches := testFuncPatterns[2].FindStringSubmatch(funcName); len(matches) > 1 {
-		return toSnakeCase(matches[1]), true
-	}
-
-	// Try provider+resource pattern
-	if matches := testFuncPatterns[0].FindStringSubmatch(funcName); len(matches) > 2 {
+		resourceName = matches[1]
+	} else if matches := testFuncPatterns[2].FindStringSubmatch(funcName); len(matches) > 1 {
+		// Try resource pattern
+		resourceName = matches[1]
+	} else if matches := testFuncPatterns[0].FindStringSubmatch(funcName); len(matches) > 2 {
+		// Try provider+resource pattern
 		// matches[1] = provider (optional), matches[2] = resource
 		if matches[2] != "" {
-			return toSnakeCase(matches[2]), true
+			resourceName = matches[2]
+		}
+	} else if matches := testFuncPatterns[3].FindStringSubmatch(funcName); len(matches) > 1 {
+		// Try simple pattern (no provider prefix)
+		resourceName = matches[1]
+	}
+
+	if resourceName == "" {
+		return "", false
+	}
+
+	// Strip "Action" suffix for action tests (e.g., JobAction -> Job)
+	resourceName = strings.TrimSuffix(resourceName, "Action")
+
+	// Strip action lifecycle suffixes (e.g., EventStreamAfterCreate -> EventStream)
+	for _, suffix := range actionLifecycleSuffixes {
+		if strings.HasSuffix(resourceName, suffix) {
+			resourceName = strings.TrimSuffix(resourceName, suffix)
+			break
 		}
 	}
 
-	// Try simple pattern (no provider prefix)
-	if matches := testFuncPatterns[3].FindStringSubmatch(funcName); len(matches) > 1 {
-		return toSnakeCase(matches[1]), true
+	return toSnakeCase(resourceName), true
+}
+
+// ExtractResourceFromFuncNameWithoutPrefix extracts a resource name and also tries
+// stripping provider prefixes. Returns both the full name and the stripped name.
+func ExtractResourceFromFuncNameWithoutPrefix(funcName string) (fullName string, strippedName string, found bool) {
+	fullName, found = ExtractResourceFromFuncName(funcName)
+	if !found {
+		return "", "", false
 	}
 
-	return "", false
+	strippedName = stripProviderPrefix(fullName)
+	return fullName, strippedName, true
+}
+
+// multiResourcePattern matches patterns like "ResourceWithDataSource" or "ResourceAndDataSource"
+var multiResourcePattern = regexp.MustCompile(`^TestAcc([A-Z][a-zA-Z0-9]+?)(?:Resource)?(?:With|And)([A-Z][a-zA-Z0-9]+?)(?:DataSource|Resource)?(?:_|$)`)
+
+// ExtractAllResourcesFromFuncName extracts all resource names mentioned in a test function name.
+// This handles multi-resource integration tests like "TestAccInventoryResourceWithOrganizationDataSource".
+// Returns all extracted names (both with and without provider prefix stripped).
+func ExtractAllResourcesFromFuncName(funcName string) []string {
+	var results []string
+	seen := make(map[string]bool)
+
+	addResult := func(name string) {
+		if name != "" && !seen[name] {
+			seen[name] = true
+			results = append(results, name)
+		}
+	}
+
+	// Try multi-resource pattern first
+	if matches := multiResourcePattern.FindStringSubmatch(funcName); len(matches) > 2 {
+		// matches[1] = first resource, matches[2] = second resource
+		name1 := toSnakeCase(matches[1])
+		name2 := toSnakeCase(matches[2])
+		addResult(name1)
+		addResult(stripProviderPrefix(name1))
+		addResult(name2)
+		addResult(stripProviderPrefix(name2))
+	}
+
+	// Also try standard extraction
+	if fullName, strippedName, found := ExtractResourceFromFuncNameWithoutPrefix(funcName); found {
+		addResult(fullName)
+		addResult(strippedName)
+	}
+
+	return results
+}
+
+// stripProviderPrefix removes the first underscore-separated segment if it looks like
+// a provider prefix (2-6 lowercase letters). This handles cases like:
+// - aap_job -> job
+// - eda_event_stream -> event_stream
+// - aws_instance -> instance
+//
+// It only strips if:
+// 1. There's at least one underscore
+// 2. The first segment is 2-6 characters (typical provider prefix length)
+// 3. The remaining name is non-empty
+func stripProviderPrefix(name string) string {
+	idx := strings.Index(name, "_")
+	if idx < 2 || idx > 6 {
+		// No underscore, or prefix too short/long to be a provider
+		return name
+	}
+
+	remainder := name[idx+1:]
+	if remainder == "" {
+		return name
+	}
+
+	return remainder
 }
 
 // ExtractProviderFromFuncName extracts the provider prefix from a test function name.
@@ -151,10 +252,17 @@ func ExtractProviderFromFuncName(funcName string) string {
 	return ""
 }
 
-// isBaseClassFile checks if a file is a base class file that should be excluded
-func isBaseClassFile(filePath string) bool {
+// IsBaseClassFile checks if a file is a base class file that should be excluded.
+// Base class files typically follow the naming pattern base_*.go and contain
+// abstract/base implementations that are not actual Terraform resources.
+func IsBaseClassFile(filePath string) bool {
 	base := filepath.Base(filePath)
 	return strings.HasPrefix(base, "base_") || strings.HasPrefix(base, "base.")
+}
+
+// isBaseClassFile is an unexported alias for backward compatibility
+func isBaseClassFile(filePath string) bool {
+	return IsBaseClassFile(filePath)
 }
 
 // IsSweeperFile checks if a file is a sweeper file that should be excluded.
@@ -230,9 +338,10 @@ func CamelCaseToSnakeCaseExported(s string) string {
 	return toSnakeCase(s)
 }
 
-// formatResourceLocation formats the resource location for enhanced issue reporting.
+// FormatResourceLocation formats the resource location for enhanced issue reporting.
 // Returns a string like "Resource: /path/to/file.go:45"
-func formatResourceLocation(pass *analysis.Pass, resource *ResourceInfo) string {
+// Exported for use by external tools that need to format resource locations.
+func FormatResourceLocation(pass *analysis.Pass, resource *ResourceInfo) string {
 	pos := pass.Fset.Position(resource.SchemaPos)
 	return fmt.Sprintf("Resource: %s:%d", pos.Filename, pos.Line)
 }
@@ -255,11 +364,12 @@ func getReceiverTypeName(recv *ast.FieldList) string {
 }
 
 // extractResourceName extracts the resource name from a type name.
-// For example: "WidgetResource" -> "widget", "HttpDataSource" -> "http"
+// For example: "WidgetResource" -> "widget", "HttpDataSource" -> "http", "JobAction" -> "job"
 func extractResourceName(typeName string) string {
-	// Remove "Resource" or "DataSource" suffix
+	// Remove "Resource", "DataSource", or "Action" suffix
 	name := strings.TrimSuffix(typeName, "Resource")
 	name = strings.TrimSuffix(name, "DataSource")
+	name = strings.TrimSuffix(name, "Action")
 
 	// Convert CamelCase to snake_case
 	return toSnakeCase(name)

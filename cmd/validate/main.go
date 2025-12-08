@@ -10,6 +10,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -35,6 +36,7 @@ func main() {
 	showMatches := flag.Bool("show-matches", false, "Show all resource -> test function associations")
 	showUnmatched := flag.Bool("show-unmatched", false, "Show test functions without resource association")
 	showOrphaned := flag.Bool("show-orphaned", false, "Show resources without any test coverage")
+	showReport := flag.Bool("report", false, "Show comprehensive coverage report with table views")
 	outputFormat := flag.String("format", "text", "Output format: text, json, or table")
 
 	// Strategy flags
@@ -114,6 +116,12 @@ func main() {
 		}
 	}
 
+	// Handle report command - comprehensive coverage report
+	if *showReport {
+		runReport(fset, allFiles, settings, *outputFormat)
+		return
+	}
+
 	// Handle diagnostic commands
 	if *showMatches || *showUnmatched || *showOrphaned {
 		runDiagnostics(fset, allFiles, settings, *outputFormat, *showMatches, *showUnmatched, *showOrphaned)
@@ -138,6 +146,8 @@ func printUsage() {
 	fmt.Println("        Enable verbose diagnostic output")
 	fmt.Println()
 	fmt.Println("Diagnostic Options:")
+	fmt.Println("  -report")
+	fmt.Println("        Show comprehensive coverage report with table views")
 	fmt.Println("  -show-matches")
 	fmt.Println("        Show all resource -> test function associations")
 	fmt.Println("  -show-unmatched")
@@ -239,6 +249,8 @@ func runDiagnostics(fset *token.FileSet, files []*ast.File, settings tfprovidert
 }
 
 // outputMatchesText outputs matches in human-readable text format
+//
+//nolint:unused // Prepared for future diagnostic output implementation
 func outputMatchesText(matches []MatchInfo) {
 	for _, m := range matches {
 		fmt.Printf("  %s -> %s (%.0f%%, %s)\n", m.ResourceName, m.TestFunction, m.Confidence*100, m.MatchType)
@@ -249,6 +261,8 @@ func outputMatchesText(matches []MatchInfo) {
 }
 
 // outputMatchesTable outputs matches in a formatted table
+//
+//nolint:unused // Prepared for future diagnostic output implementation
 func outputMatchesTable(matches []MatchInfo) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "RESOURCE\tTEST FUNCTION\tCONFIDENCE\tMATCH TYPE\tTEST FILE")
@@ -260,6 +274,8 @@ func outputMatchesTable(matches []MatchInfo) {
 }
 
 // outputMatchesJSON outputs matches as formatted JSON
+//
+//nolint:unused // Prepared for future diagnostic output implementation
 func outputMatchesJSON(matches []MatchInfo) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
@@ -269,6 +285,8 @@ func outputMatchesJSON(matches []MatchInfo) {
 }
 
 // outputMatches routes to the appropriate output formatter
+//
+//nolint:unused // Prepared for future diagnostic output implementation
 func outputMatches(matches []MatchInfo, format string) {
 	switch format {
 	case "json":
@@ -365,4 +383,423 @@ func findProviderCodeDir(providerPath string) string {
 	}
 
 	return ""
+}
+
+// buildRegistryFromFiles creates a registry from parsed AST files
+func buildRegistryFromFiles(fset *token.FileSet, files []*ast.File, settings tfprovidertest.Settings) *tfprovidertest.ResourceRegistry {
+	registry := tfprovidertest.NewResourceRegistry()
+	config := tfprovidertest.DefaultParserConfig()
+
+	for _, file := range files {
+		filePath := fset.Position(file.Pos()).Filename
+
+		// Apply exclusion settings
+		if settings.ExcludeBaseClasses && tfprovidertest.IsBaseClassFile(filePath) {
+			continue
+		}
+		if settings.ExcludeSweeperFiles && tfprovidertest.IsSweeperFile(filePath) {
+			continue
+		}
+		if settings.ExcludeMigrationFiles && tfprovidertest.IsMigrationFile(filePath) {
+			continue
+		}
+
+		if strings.HasSuffix(filePath, "_test.go") {
+			testInfo := tfprovidertest.ParseTestFileWithConfig(file, fset, filePath, config)
+			if testInfo == nil {
+				continue
+			}
+			for i := range testInfo.TestFunctions {
+				registry.RegisterTestFunction(&testInfo.TestFunctions[i])
+			}
+		} else {
+			resources := tfprovidertest.ParseResources(file, fset, filePath)
+			for _, resource := range resources {
+				registry.RegisterResource(resource)
+			}
+		}
+	}
+
+	// Run linking
+	linker := tfprovidertest.NewLinker(registry, settings)
+	linker.LinkTestsToResources()
+
+	return registry
+}
+
+// runReport generates a comprehensive coverage report with table views
+func runReport(fset *token.FileSet, files []*ast.File, settings tfprovidertest.Settings, format string) {
+	registry := buildRegistryFromFiles(fset, files, settings)
+	allDefs := registry.GetAllDefinitions()
+
+	// Group definitions by kind
+	var resources, dataSources, actions []*tfprovidertest.ResourceInfo
+	for _, info := range allDefs {
+		switch info.Kind {
+		case tfprovidertest.KindResource:
+			resources = append(resources, info)
+		case tfprovidertest.KindDataSource:
+			dataSources = append(dataSources, info)
+		case tfprovidertest.KindAction:
+			actions = append(actions, info)
+		}
+	}
+
+	// Sort each slice by name
+	sort.Slice(resources, func(i, j int) bool { return resources[i].Name < resources[j].Name })
+	sort.Slice(dataSources, func(i, j int) bool { return dataSources[i].Name < dataSources[j].Name })
+	sort.Slice(actions, func(i, j int) bool { return actions[i].Name < actions[j].Name })
+
+	orphans := registry.GetUnmatchedTestFunctions()
+
+	switch format {
+	case "json":
+		outputReportJSON(registry, resources, dataSources, actions, orphans)
+	case "table":
+		outputReportTable(registry, resources, dataSources, actions, orphans)
+	default:
+		outputReportTable(registry, resources, dataSources, actions, orphans)
+	}
+}
+
+// ReportData holds all data for JSON output
+type ReportData struct {
+	Summary     ReportSummary      `json:"summary"`
+	Resources   []ResourceReport   `json:"resources"`
+	DataSources []ResourceReport   `json:"data_sources"`
+	Actions     []ResourceReport   `json:"actions"`
+	Orphans     []OrphanReport     `json:"orphan_tests"`
+}
+
+type ReportSummary struct {
+	TotalResources          int `json:"total_resources"`
+	UntestedResources       int `json:"untested_resources"`
+	TotalDataSources        int `json:"total_data_sources"`
+	UntestedDataSources     int `json:"untested_data_sources"`
+	TotalActions            int `json:"total_actions"`
+	UntestedActions         int `json:"untested_actions"`
+	OrphanTests             int `json:"orphan_tests"`
+	MissingCheckDestroy     int `json:"missing_check_destroy"`
+	MissingStateChecks      int `json:"missing_state_checks"`
+}
+
+type ResourceReport struct {
+	Name             string       `json:"name"`
+	File             string       `json:"file"`
+	TestCount        int          `json:"test_count"`
+	HasCheckDestroy  bool         `json:"has_check_destroy"`
+	HasStateCheck    bool         `json:"has_state_check"`
+	HasImportTest    bool         `json:"has_import_test"`
+	HasUpdateTest    bool         `json:"has_update_test"`
+	Tests            []TestReport `json:"tests"`
+}
+
+type TestReport struct {
+	Name      string `json:"name"`
+	MatchType string `json:"match_type"`
+}
+
+type OrphanReport struct {
+	Name              string   `json:"name"`
+	File              string   `json:"file"`
+	InferredResources []string `json:"inferred_resources,omitempty"`
+}
+
+func buildResourceReport(registry *tfprovidertest.ResourceRegistry, info *tfprovidertest.ResourceInfo) ResourceReport {
+	key := info.Kind.String() + ":" + info.Name
+	tests := registry.GetResourceTests(key)
+
+	report := ResourceReport{
+		Name:      info.Name,
+		File:      filepath.Base(info.FilePath),
+		TestCount: len(tests),
+	}
+
+	for _, t := range tests {
+		report.Tests = append(report.Tests, TestReport{
+			Name:      t.Name,
+			MatchType: t.MatchType.String(),
+		})
+		if t.HasCheckDestroy {
+			report.HasCheckDestroy = true
+		}
+		if t.HasStateOrPlanCheck() {
+			report.HasStateCheck = true
+		}
+		if t.HasImportStep {
+			report.HasImportTest = true
+		}
+		for _, step := range t.TestSteps {
+			if step.IsRealUpdateStep() {
+				report.HasUpdateTest = true
+				break
+			}
+		}
+	}
+
+	return report
+}
+
+func outputReportJSON(registry *tfprovidertest.ResourceRegistry, resources, dataSources, actions []*tfprovidertest.ResourceInfo, orphans []*tfprovidertest.TestFunctionInfo) {
+	data := ReportData{}
+
+	// Build resource reports
+	for _, info := range resources {
+		report := buildResourceReport(registry, info)
+		data.Resources = append(data.Resources, report)
+		if report.TestCount == 0 {
+			data.Summary.UntestedResources++
+		} else if !report.HasCheckDestroy {
+			data.Summary.MissingCheckDestroy++
+		}
+	}
+	data.Summary.TotalResources = len(resources)
+
+	// Build data source reports
+	for _, info := range dataSources {
+		report := buildResourceReport(registry, info)
+		data.DataSources = append(data.DataSources, report)
+		if report.TestCount == 0 {
+			data.Summary.UntestedDataSources++
+		}
+	}
+	data.Summary.TotalDataSources = len(dataSources)
+
+	// Build action reports
+	for _, info := range actions {
+		report := buildResourceReport(registry, info)
+		data.Actions = append(data.Actions, report)
+		if report.TestCount == 0 {
+			data.Summary.UntestedActions++
+		} else if !report.HasStateCheck {
+			data.Summary.MissingStateChecks++
+		}
+	}
+	data.Summary.TotalActions = len(actions)
+
+	// Build orphan reports
+	for _, fn := range orphans {
+		data.Orphans = append(data.Orphans, OrphanReport{
+			Name:              fn.Name,
+			File:              filepath.Base(fn.FilePath),
+			InferredResources: fn.InferredResources,
+		})
+	}
+	data.Summary.OrphanTests = len(orphans)
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(data); err != nil {
+		fmt.Fprintf(os.Stderr, "Error encoding JSON: %v\n", err)
+	}
+}
+
+func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dataSources, actions []*tfprovidertest.ResourceInfo, orphans []*tfprovidertest.TestFunctionInfo) {
+	// Calculate summary stats first
+	var untestedResources, untestedDataSources, untestedActions int
+	var missingCheckDestroy, missingStateCheck int
+
+	for _, info := range resources {
+		key := tfprovidertest.KindResource.String() + ":" + info.Name
+		tests := registry.GetResourceTests(key)
+		if len(tests) == 0 {
+			untestedResources++
+		} else {
+			hasCheckDestroy := false
+			for _, t := range tests {
+				if t.HasCheckDestroy {
+					hasCheckDestroy = true
+					break
+				}
+			}
+			if !hasCheckDestroy {
+				missingCheckDestroy++
+			}
+		}
+	}
+
+	for _, info := range dataSources {
+		key := tfprovidertest.KindDataSource.String() + ":" + info.Name
+		tests := registry.GetResourceTests(key)
+		if len(tests) == 0 {
+			untestedDataSources++
+		}
+	}
+
+	for _, info := range actions {
+		key := tfprovidertest.KindAction.String() + ":" + info.Name
+		tests := registry.GetResourceTests(key)
+		if len(tests) == 0 {
+			untestedActions++
+		} else {
+			hasStateCheck := false
+			for _, t := range tests {
+				if t.HasStateOrPlanCheck() {
+					hasStateCheck = true
+					break
+				}
+			}
+			if !hasStateCheck {
+				missingStateCheck++
+			}
+		}
+	}
+
+	// Print header
+	fmt.Println()
+	fmt.Println("╔════════════════════════════════════════════════════════════════════════════════╗")
+	fmt.Println("║                        TERRAFORM PROVIDER TEST COVERAGE REPORT                 ║")
+	fmt.Println("╚════════════════════════════════════════════════════════════════════════════════╝")
+
+	// Summary table
+	fmt.Println()
+	fmt.Println("┌─────────────────────────────────────────────────────────────────────────────────┐")
+	fmt.Println("│ SUMMARY                                                                         │")
+	fmt.Println("├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤")
+	fmt.Println("│ Category     │ Total │ Untested │ Issues                                          │")
+	fmt.Println("├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤")
+	fmt.Printf("│ Resources    │ %5d │ %8d │ %d missing CheckDestroy                          │\n", len(resources), untestedResources, missingCheckDestroy)
+	fmt.Printf("│ Data Sources │ %5d │ %8d │ -                                               │\n", len(dataSources), untestedDataSources)
+	fmt.Printf("│ Actions      │ %5d │ %8d │ %d missing state/plan checks                     │\n", len(actions), untestedActions, missingStateCheck)
+	fmt.Printf("│ Orphan Tests │ %5d │        - │ -                                               │\n", len(orphans))
+	fmt.Println("└──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘")
+
+	// Resources table
+	if len(resources) > 0 {
+		fmt.Println()
+		fmt.Println("┌─────────────────────────────────────────────────────────────────────────────────┐")
+		fmt.Println("│ RESOURCES                                                                       │")
+		fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "  NAME\tTESTS\tDESTROY\tSTATE\tIMPORT\tUPDATE\tFILE")
+		fmt.Fprintln(w, "  ────\t─────\t───────\t─────\t──────\t──────\t────")
+		for _, info := range resources {
+			report := buildResourceReport(registry, info)
+			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+				info.Name,
+				report.TestCount,
+				checkMark(report.HasCheckDestroy),
+				checkMark(report.HasStateCheck),
+				checkMark(report.HasImportTest),
+				checkMark(report.HasUpdateTest),
+				report.File,
+			)
+		}
+		w.Flush()
+	}
+
+	// Data Sources table
+	if len(dataSources) > 0 {
+		fmt.Println()
+		fmt.Println("┌─────────────────────────────────────────────────────────────────────────────────┐")
+		fmt.Println("│ DATA SOURCES                                                                    │")
+		fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "  NAME\tTESTS\tSTATE CHECK\tFILE")
+		fmt.Fprintln(w, "  ────\t─────\t───────────\t────")
+		for _, info := range dataSources {
+			report := buildResourceReport(registry, info)
+			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\n",
+				info.Name,
+				report.TestCount,
+				checkMark(report.HasStateCheck),
+				report.File,
+			)
+		}
+		w.Flush()
+	}
+
+	// Actions table
+	if len(actions) > 0 {
+		fmt.Println()
+		fmt.Println("┌─────────────────────────────────────────────────────────────────────────────────┐")
+		fmt.Println("│ ACTIONS                                                                         │")
+		fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "  NAME\tTESTS\tSTATE CHECK\tFILE")
+		fmt.Fprintln(w, "  ────\t─────\t───────────\t────")
+		for _, info := range actions {
+			report := buildResourceReport(registry, info)
+			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\n",
+				info.Name,
+				report.TestCount,
+				checkMark(report.HasStateCheck),
+				report.File,
+			)
+		}
+		w.Flush()
+	}
+
+	// Orphans table
+	fmt.Println()
+	fmt.Println("┌─────────────────────────────────────────────────────────────────────────────────┐")
+	fmt.Println("│ ORPHAN TESTS                                                                    │")
+	fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
+	if len(orphans) == 0 {
+		fmt.Println("  ✓ All test functions are associated with resources!")
+	} else {
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "  TEST FUNCTION\tFILE\tINFERRED RESOURCES")
+		fmt.Fprintln(w, "  ─────────────\t────\t──────────────────")
+		for _, fn := range orphans {
+			inferred := "-"
+			if len(fn.InferredResources) > 0 {
+				inferred = strings.Join(fn.InferredResources, ", ")
+			}
+			fmt.Fprintf(w, "  %s\t%s\t%s\n", fn.Name, filepath.Base(fn.FilePath), inferred)
+		}
+		w.Flush()
+	}
+
+	// Test details table
+	fmt.Println()
+	fmt.Println("┌─────────────────────────────────────────────────────────────────────────────────┐")
+	fmt.Println("│ TEST ASSOCIATIONS                                                               │")
+	fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "  RESOURCE\tKIND\tTEST FUNCTION\tMATCH TYPE")
+	fmt.Fprintln(w, "  ────────\t────\t─────────────\t──────────")
+
+	// Combine all definitions
+	type defWithKind struct {
+		info *tfprovidertest.ResourceInfo
+		kind string
+	}
+	var allDefs []defWithKind
+	for _, info := range resources {
+		allDefs = append(allDefs, defWithKind{info, "resource"})
+	}
+	for _, info := range dataSources {
+		allDefs = append(allDefs, defWithKind{info, "data"})
+	}
+	for _, info := range actions {
+		allDefs = append(allDefs, defWithKind{info, "action"})
+	}
+
+	for _, def := range allDefs {
+		key := def.info.Kind.String() + ":" + def.info.Name
+		tests := registry.GetResourceTests(key)
+		if len(tests) == 0 {
+			fmt.Fprintf(w, "  %s\t%s\t-\t-\n", def.info.Name, def.kind)
+		} else {
+			for i, t := range tests {
+				name := def.info.Name
+				kind := def.kind
+				if i > 0 {
+					name = ""
+					kind = ""
+				}
+				fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", name, kind, t.Name, t.MatchType.String())
+			}
+		}
+	}
+	w.Flush()
+	fmt.Println()
+}
+
+func checkMark(b bool) string {
+	if b {
+		return "✓"
+	}
+	return "✗"
 }
