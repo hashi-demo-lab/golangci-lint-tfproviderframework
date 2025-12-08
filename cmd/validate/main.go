@@ -493,6 +493,7 @@ type ResourceReport struct {
 	HasImportTest   bool         `json:"has_import_test"`
 	HasUpdateTest   bool         `json:"has_update_test"`
 	HasExpectError  bool         `json:"has_expect_error"`
+	HasPreCheck     bool         `json:"has_pre_check"`
 	Tests           []TestReport `json:"tests"`
 }
 
@@ -540,6 +541,41 @@ func buildResourceReport(registry *tfprovidertest.ResourceRegistry, info *tfprov
 			}
 			if step.HasPlanCheck {
 				report.HasPlanCheck = true
+			}
+		}
+	}
+
+	return report
+}
+
+// buildActionReport creates a report for an action, focusing on action-relevant test patterns
+func buildActionReport(registry *tfprovidertest.ResourceRegistry, info *tfprovidertest.ResourceInfo) ResourceReport {
+	key := info.Kind.String() + ":" + info.Name
+	tests := registry.GetResourceTests(key)
+
+	report := ResourceReport{
+		Name:      info.Name,
+		File:      filepath.Base(info.FilePath),
+		TestCount: len(tests),
+	}
+
+	for _, t := range tests {
+		report.Tests = append(report.Tests, TestReport{
+			Name:      t.Name,
+			MatchType: t.MatchType.String(),
+		})
+		if t.HasStateOrPlanCheck() {
+			report.HasStateCheck = true
+		}
+		if t.HasPreCheck {
+			report.HasPreCheck = true
+		}
+		for _, step := range t.TestSteps {
+			if step.IsRealUpdateStep() {
+				report.HasUpdateTest = true
+			}
+			if step.ExpectError {
+				report.HasExpectError = true
 			}
 		}
 	}
@@ -725,14 +761,17 @@ func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dat
 		fmt.Println("│ ACTIONS                                                                         │")
 		fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  NAME\tTESTS\tCheck\tFILE")
-		fmt.Fprintln(w, "  ────\t─────\t─────\t────")
+		fmt.Fprintln(w, "  NAME\tTESTS\tSteps>1\tExpectError\tCheck\tPreCheck\tFILE")
+		fmt.Fprintln(w, "  ────\t─────\t───────\t───────────\t─────\t────────\t────")
 		for _, info := range actions {
-			report := buildResourceReport(registry, info)
-			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\n",
+			report := buildActionReport(registry, info)
+			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\t%s\t%s\t%s\n",
 				info.Name,
 				report.TestCount,
+				checkMark(report.HasUpdateTest),
+				checkMark(report.HasExpectError),
 				checkMark(report.HasStateCheck),
+				checkMark(report.HasPreCheck),
 				report.File,
 			)
 		}

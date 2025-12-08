@@ -86,13 +86,15 @@ func hashConfigExpr(expr ast.Expr) string {
 // It uses multiple detection strategies:
 // 1. Schema() method on types ending with Resource/DataSource/Action
 // 2. MetadataEntitySlug in factory functions (NewXxxDataSource, NewXxxResource)
-// 3. Metadata() method with resp.TypeName assignment
+// 3. Metadata() method with resp.TypeName assignment (preferred over Strategy 1)
 // 4. NewXxxAction factory functions returning action.Action
 func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*ResourceInfo {
 	var resources []*ResourceInfo
 	// Use compound key "kind:name" to allow same name across different kinds
 	// (e.g., "job" resource and "job" action can coexist)
 	seen := make(map[string]bool)
+	// Track receiver type -> resource index for Strategy 3 to replace Strategy 1 entries
+	recvTypeToIndex := make(map[string]int)
 
 	seenKey := func(kind ResourceKind, name string) string {
 		return kind.String() + ":" + name
@@ -145,6 +147,8 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 		}
 
 		resources = append(resources, resource)
+		// Track receiver type so Strategy 3 can replace with Metadata TypeName
+		recvTypeToIndex[recvType] = len(resources) - 1
 		return true
 	})
 
@@ -188,6 +192,7 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 	})
 
 	// Strategy 3: Look for Metadata() methods with resp.TypeName assignment
+	// This is the authoritative source for resource names - it overrides Strategy 1
 	ast.Inspect(file, func(n ast.Node) bool {
 		funcDecl, ok := n.(*ast.FuncDecl)
 		if !ok || funcDecl.Recv == nil || funcDecl.Name.Name != "Metadata" {
@@ -209,12 +214,26 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 		// Look for resp.TypeName = "..." assignment
 		if funcDecl.Body != nil {
 			name := extractTypeNameFromMetadata(funcDecl.Body)
+			if name == "" {
+				return true
+			}
+
 			kind := KindResource
 			if isDataSource {
 				kind = KindDataSource
 			}
 			key := seenKey(kind, name)
-			if name != "" && !seen[key] {
+
+			// Check if Strategy 1 already registered this receiver type with a different name
+			if idx, exists := recvTypeToIndex[recvType]; exists {
+				// Replace Strategy 1's name with the authoritative Metadata TypeName
+				oldResource := resources[idx]
+				oldKey := seenKey(oldResource.Kind, oldResource.Name)
+				delete(seen, oldKey)
+				oldResource.Name = name
+				seen[key] = true
+			} else if !seen[key] {
+				// No Strategy 1 entry, add new resource
 				seen[key] = true
 				resources = append(resources, &ResourceInfo{
 					Name:         name,
@@ -1085,6 +1104,12 @@ func parseTestStepWithHashAndHelpers(stepExpr ast.Expr, stepNum int, inferred ma
 			if ident, ok := kv.Value.(*ast.Ident); ok {
 				step.RefreshState = ident.Name == "true"
 			}
+		case "ConfigPlanChecks":
+			// Detect ConfigPlanChecks field (plan validation)
+			step.HasPlanCheck = true
+		case "ConfigStateChecks":
+			// Detect ConfigStateChecks field (newer state validation pattern)
+			step.HasConfigStateChecks = true
 		}
 	}
 

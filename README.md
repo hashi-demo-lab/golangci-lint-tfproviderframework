@@ -68,7 +68,7 @@ Column names reference HashiCorp SDK fields directly for clarity:
 | ImportState | `TestStep.ImportState` | Import testing step |
 | CheckDestroy | `TestCase.CheckDestroy` | Destroy verification |
 | ExpectError | `TestStep.ExpectError` | Error case validation |
-| Check | `TestStep.Check` | State validation func |
+| Check | `TestStep.Check` or `TestStep.ConfigStateChecks` | State validation (legacy or modern) |
 | PlanChecks | `TestStep.ConfigPlanChecks` | Plan validation checks |
 
 ## Installation
@@ -287,8 +287,9 @@ func TestAccResourceConfig_update(t *testing.T) {
 
 **What it checks**: Test steps include state validation checks.
 
-**Fix**: Add `Check` field with validation functions:
+**Fix**: Add `Check` field (legacy) or `ConfigStateChecks` field (modern) with validation functions:
 
+**Legacy Pattern (Check):**
 ```go
 {
     Config: testAccResourceDatabaseConfig("test"),
@@ -296,6 +297,20 @@ func TestAccResourceConfig_update(t *testing.T) {
         resource.TestCheckResourceAttr("example_database.test", "name", "test"),
         resource.TestCheckResourceAttrSet("example_database.test", "id"),
     ),
+}
+```
+
+**Modern Pattern (ConfigStateChecks):**
+```go
+{
+    Config: testAccResourceDatabaseConfig("test"),
+    ConfigStateChecks: []statecheck.StateCheck{
+        statecheck.ExpectKnownValue(
+            "example_database.test",
+            tfjsonpath.New("name"),
+            knownvalue.StringExact("test"),
+        ),
+    },
 }
 ```
 
@@ -317,7 +332,8 @@ This linter detects coverage for the testing patterns documented in HashiCorp's 
 | Import Test | `TestStep.ImportState` | ImportState | ✅ Detected |
 | Error Expectation | `TestStep.ExpectError` | ExpectError | ✅ Detected |
 | Destroy Verification | `TestCase.CheckDestroy` | CheckDestroy | ✅ Detected |
-| State Validation | `TestStep.Check` | Check | ✅ Detected |
+| State Validation (Legacy) | `TestStep.Check` | Check | ✅ Detected |
+| State Validation (Modern) | `TestStep.ConfigStateChecks` | Check | ✅ Detected |
 | Plan Validation | `TestStep.ConfigPlanChecks` | PlanChecks | ✅ Detected |
 | Non-Empty Plan | `TestStep.ExpectNonEmptyPlan` | - | ✅ Detected |
 
