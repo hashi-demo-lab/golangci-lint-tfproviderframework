@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/example/tfprovidertest/internal/discovery"
+	"github.com/example/tfprovidertest/internal/registry"
 )
 
 func TestFindLocalTestHelpers(t *testing.T) {
@@ -1263,5 +1264,107 @@ resource "example_thing" "third" {
 				}
 			}
 		})
+	}
+}
+
+// TestReturnTypeStrategy_NoDuplicatesWithMetadataEntitySlug tests that ReturnTypeStrategy
+// does not create duplicate resources when FactoryFunctionStrategy has already discovered
+// the resource via MetadataEntitySlug. This is the AAP provider pattern where:
+// - EDAEventStreamDataSource embeds BaseEdaDataSource (which has Schema method)
+// - NewEDAEventStreamDataSource() has MetadataEntitySlug: "eda_eventstream"
+// - ReturnTypeStrategy should NOT add "eda_event_stream" (derived from type name)
+func TestReturnTypeStrategy_NoDuplicatesWithMetadataEntitySlug(t *testing.T) {
+	// This mimics the AAP provider pattern:
+	// - Base class has Schema() method
+	// - Concrete class embeds base and has a factory function with MetadataEntitySlug
+	src := `
+package provider
+
+import (
+	"context"
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+)
+
+// StringDescriptions holds string descriptions for resources
+type StringDescriptions struct {
+	MetadataEntitySlug    string
+	DescriptiveEntityName string
+	APIEntitySlug         string
+}
+
+// BaseEdaDataSource is the base data source - has Schema method
+type BaseEdaDataSource struct {
+	StringDescriptions
+}
+
+func NewBaseEdaDataSource(stringDescriptions StringDescriptions) *BaseEdaDataSource {
+	return &BaseEdaDataSource{StringDescriptions: stringDescriptions}
+}
+
+// Schema is defined on the base type
+func (d *BaseEdaDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	// Base schema implementation
+}
+
+// EDAEventStreamDataSource embeds BaseEdaDataSource - does NOT have its own Schema method
+type EDAEventStreamDataSource struct {
+	BaseEdaDataSource
+}
+
+// NewEDAEventStreamDataSource creates a new data source with MetadataEntitySlug
+func NewEDAEventStreamDataSource() datasource.DataSource {
+	return &EDAEventStreamDataSource{
+		BaseEdaDataSource: *NewBaseEdaDataSource(StringDescriptions{
+			MetadataEntitySlug:    "eda_eventstream",
+			DescriptiveEntityName: "EDA Event Stream",
+			APIEntitySlug:         "event-streams",
+		}),
+	}
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "eda_eventstream_datasource.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("failed to parse source: %v", err)
+	}
+
+	// Run all discovery strategies
+	state := discovery.NewDiscoveryState()
+	strategies := []discovery.DiscoveryStrategy{
+		&discovery.SchemaMethodStrategy{},
+		&discovery.FactoryFunctionStrategy{},
+		&discovery.MetadataMethodStrategy{},
+		&discovery.ActionFactoryStrategy{},
+		&discovery.ReturnTypeStrategy{},
+		&discovery.RegistryFactoryStrategy{},
+	}
+
+	for _, strategy := range strategies {
+		strategy.Discover(file, fset, "eda_eventstream_datasource.go", state)
+	}
+
+	// Count how many data sources were discovered with similar names
+	dataSourceCount := 0
+	foundNames := make(map[string]bool)
+	for _, res := range state.Resources {
+		if res.Kind == registry.KindDataSource {
+			dataSourceCount++
+			foundNames[res.Name] = true
+		}
+	}
+
+	// Should only have ONE data source named "eda_eventstream" (from MetadataEntitySlug)
+	// Should NOT have "eda_event_stream" (from type name conversion)
+	// Should NOT have "base_eda" (from base class Schema method)
+	if foundNames["eda_event_stream"] && foundNames["eda_eventstream"] {
+		t.Errorf("Found duplicate data sources: both 'eda_event_stream' and 'eda_eventstream' were discovered. Only 'eda_eventstream' (from MetadataEntitySlug) should be registered.")
+	}
+
+	if foundNames["base_eda"] {
+		t.Errorf("Base class 'base_eda' was incorrectly discovered as a data source")
+	}
+
+	if !foundNames["eda_eventstream"] {
+		t.Errorf("Expected 'eda_eventstream' data source to be discovered from MetadataEntitySlug, found: %v", foundNames)
 	}
 }

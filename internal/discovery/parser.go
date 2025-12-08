@@ -130,6 +130,9 @@ type DiscoveryState struct {
 	ActionTypeNames map[string]token.Pos
 	// ProcessedActionTypes tracks which action types have been processed via Metadata
 	ProcessedActionTypes map[string]bool
+	// ProcessedFactoryFuncs tracks factory function names processed by FactoryFunctionStrategy
+	// to prevent ReturnTypeStrategy from creating duplicates with different names
+	ProcessedFactoryFuncs map[string]bool
 	// Resources accumulates all discovered resources across strategies
 	Resources []*registry.ResourceInfo
 }
@@ -137,11 +140,12 @@ type DiscoveryState struct {
 // NewDiscoveryState creates a new DiscoveryState with initialized maps.
 func NewDiscoveryState() *DiscoveryState {
 	return &DiscoveryState{
-		Seen:                 make(map[string]bool),
-		RecvTypeToIndex:      make(map[string]int),
-		ActionTypeNames:      make(map[string]token.Pos),
-		ProcessedActionTypes: make(map[string]bool),
-		Resources:            make([]*registry.ResourceInfo, 0),
+		Seen:                  make(map[string]bool),
+		RecvTypeToIndex:       make(map[string]int),
+		ActionTypeNames:       make(map[string]token.Pos),
+		ProcessedActionTypes:  make(map[string]bool),
+		ProcessedFactoryFuncs: make(map[string]bool),
+		Resources:             make([]*registry.ResourceInfo, 0),
 	}
 }
 
@@ -170,6 +174,13 @@ func (s *SchemaMethodStrategy) Discover(file *ast.File, fset *token.FileSet, fil
 
 		recvType := getReceiverTypeName(funcDecl.Recv)
 		if recvType == "" {
+			return true
+		}
+
+		// Skip base class types that are infrastructure classes, not actual resources
+		// These are types like BaseDataSource, BaseResource, BaseEdaDataSource, etc.
+		// They define schema methods but are meant to be embedded, not used directly
+		if isBaseClassType(recvType) {
 			return true
 		}
 
@@ -260,6 +271,9 @@ func (f *FactoryFunctionStrategy) Discover(file *ast.File, fset *token.FileSet, 
 			key := state.SeenKey(kind, name)
 			if name != "" && !state.Seen[key] {
 				state.Seen[key] = true
+				// Track this factory function to prevent ReturnTypeStrategy from creating
+				// a duplicate with a different name derived from the function name
+				state.ProcessedFactoryFuncs[funcName] = true
 				resource := &registry.ResourceInfo{
 					Name:      name,
 					Kind:      kind,
@@ -481,6 +495,14 @@ func (r *ReturnTypeStrategy) Discover(file *ast.File, fset *token.FileSet, fileP
 			return true
 		}
 
+		funcName := funcDecl.Name.Name
+
+		// Skip if this factory function was already processed by FactoryFunctionStrategy
+		// which discovered the correct name via MetadataEntitySlug
+		if state.ProcessedFactoryFuncs[funcName] {
+			return true
+		}
+
 		// Check return type
 		for _, result := range funcDecl.Type.Results.List {
 			returnType := typeToString(result.Type)
@@ -520,7 +542,6 @@ func (r *ReturnTypeStrategy) Discover(file *ast.File, fset *token.FileSet, fileP
 			state.Resources = append(state.Resources, resource)
 
 			// Track for Metadata resolution
-			funcName := funcDecl.Name.Name
 			state.RecvTypeToIndex[funcName] = len(state.Resources) - 1
 		}
 		return true

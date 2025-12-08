@@ -75,6 +75,22 @@ func (l *Linker) LinkTestsToResources() {
 		// Combines the reliability of HCL parsing with the intent clarity of function naming
 		// This solves the problem of tests that use multiple resources (e.g., group test uses inventory as dependency)
 		if resourceName, found := matchResourceByName(fn.Name, simpleNames); found {
+			// Determine preferred kind from function name pattern
+			// TestAccInventoryDataSource -> prefer data source
+			// TestAccGroupResource -> prefer resource
+			preferDataSource := strings.Contains(fn.Name, "DataSource")
+
+			// If function name indicates DataSource and there's a data source with this name,
+			// directly link to the data source using compound key
+			if preferDataSource {
+				dataSourceKey := "data source:" + resourceName
+				if _, exists := allDefinitions[dataSourceKey]; exists {
+					fn.MatchType = registry.MatchTypeFunctionName
+					l.registry.LinkTestToResource(dataSourceKey, fn)
+					continue // Skip to next test function
+				}
+			}
+
 			// If we also have inferred resources, validate that this resource is in the config
 			if len(fn.InferredResources) > 0 {
 				// Check if function-derived resource is in inferred list
@@ -482,10 +498,13 @@ func MinInt(nums ...int) int {
 }
 
 // DefaultFunctionNameKeywordsToStrip returns the default CamelCase keywords to strip
-// from test function names before matching. This handles generated patterns.
+// from test function names before matching. This handles generated patterns and
+// common naming conventions where tests include "Resource" or "DataSource" in the name.
 func DefaultFunctionNameKeywordsToStrip() []string {
 	return []string{
-		"Generated", // Generated test suffix
+		"Resource",   // TestAccGroupResource -> group
+		"DataSource", // TestAccInventoryDataSource -> inventory
+		"Generated",  // Generated test suffix
 	}
 }
 

@@ -41,6 +41,30 @@ func extractResourceName(typeName string) string {
 	return toSnakeCase(name)
 }
 
+// isBaseClassType checks if a type name represents a base/infrastructure class
+// that should not be registered as an actual resource.
+// Base classes are used for composition (embedding) and define common Schema
+// methods that are inherited by concrete resource types.
+// Examples: BaseDataSource, BaseResource, BaseEdaDataSource, BaseDataSourceWithOrg
+func isBaseClassType(typeName string) bool {
+	// Check if the type name starts with "Base" (case-sensitive)
+	// This catches common patterns like BaseDataSource, BaseResource, BaseEdaDataSource
+	if strings.HasPrefix(typeName, "Base") {
+		return true
+	}
+
+	// Also check for common generic infrastructure patterns
+	lowerName := strings.ToLower(typeName)
+	genericPrefixes := []string{"generic", "common", "abstract", "internal"}
+	for _, prefix := range genericPrefixes {
+		if strings.HasPrefix(lowerName, prefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // toSnakeCase converts CamelCase to snake_case (e.g., "MyResource" -> "my_resource")
 func toSnakeCase(s string) string {
 	var result strings.Builder
