@@ -153,29 +153,11 @@ func (l *Linker) LinkTestsToResources() {
 
 		// Strategy 3: Legacy Inferred Content Matching (fallback for helper functions without direct HCL)
 		if !matchFound && len(fn.InferredResources) > 0 {
-			// Build a normalized lookup map for resources with compound words
-			// e.g., "big_query_table" -> normalizes to "bigquery_table" for matching
-			normalizedLookup := make(map[string]string) // normalized -> actual
-			for key := range allDefinitions {
-				// Extract resource name from "kind:name"
-				if colonIdx := strings.Index(key, ":"); colonIdx != -1 {
-					name := key[colonIdx+1:]
-					normalized := normalizeCompoundWords(name)
-					if normalized != name {
-						normalizedLookup[key[:colonIdx+1]+normalized] = key
-					}
-				}
-			}
-			for name := range simpleNames {
-				normalized := normalizeCompoundWords(name)
-				if normalized != name {
-					normalizedLookup[normalized] = name
-				}
-			}
-
 			// Helper to match against a specific kind
 			matchKind := func(kindPrefix string) bool {
 				for _, inferredName := range fn.InferredResources {
+					// First try the full name (e.g., "google_bigquery_table")
+					// This matches resources registered with full names from provider registry maps
 					key := kindPrefix + inferredName
 					if _, exists := allDefinitions[key]; exists {
 						bestMatch = &ResourceMatch{
@@ -185,27 +167,13 @@ func (l *Linker) LinkTestsToResources() {
 						}
 						return true
 					}
-					// Try stripping provider prefix
+					// Try stripping provider prefix (e.g., google_bigquery_table -> bigquery_table)
 					if idx := strings.Index(inferredName, "_"); idx != -1 {
 						shortName := inferredName[idx+1:]
 						key = kindPrefix + shortName
 						if _, exists := allDefinitions[key]; exists {
 							bestMatch = &ResourceMatch{
 								ResourceName: shortName,
-								Confidence:   0.85,
-								MatchType:    registry.MatchTypeInferred,
-							}
-							return true
-						}
-						// Try normalized compound word lookup
-						// e.g., "bigquery_table" -> matches "big_query_table"
-						if actualKey, exists := normalizedLookup[key]; exists {
-							actualName := actualKey
-							if colonIdx := strings.Index(actualKey, ":"); colonIdx != -1 {
-								actualName = actualKey[colonIdx+1:]
-							}
-							bestMatch = &ResourceMatch{
-								ResourceName: actualName,
 								Confidence:   0.85,
 								MatchType:    registry.MatchTypeInferred,
 							}

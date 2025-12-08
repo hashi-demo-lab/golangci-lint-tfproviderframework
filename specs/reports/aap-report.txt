@@ -10,7 +10,7 @@ Analyzing provider at: /workspace/validation/terraform-provider-aap (5 directori
 ├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤
 │ Category     │ Total │ Untested │ Issues                                          │
 ├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤
-│ Resources    │     5 │        0 │ 2 without CheckDestroy                          │
+│ Resources    │     5 │        1 │ 2 without CheckDestroy                          │
 │ Data Sources │     6 │        2 │ -                                               │
 │ Actions      │     3 │        0 │ 2 without Check func                            │
 │ Orphan Tests │     0 │        - │ -                                               │
@@ -21,9 +21,9 @@ Analyzing provider at: /workspace/validation/terraform-provider-aap (5 directori
 └─────────────────────────────────────────────────────────────────────────────────┘
   NAME          TESTS  Update  ImportState  CheckDestroy  ExpectError  Check  ConfigStateChecks  PlanChecks  FILE                      TEST FILE
   ────          ─────  ──────  ───────────  ────────────  ───────────  ─────  ─────────────────  ──────────  ────                      ─────────
-  group         1      ✓       ✗            ✓             ✓            ✓      ✗                  ✗           group_resource.go         group_resource_test.go
+  group         0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           group_resource.go         -
   host          1      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           host_resource.go          host_resource_test.go
-  inventory     4      ✓       ✗            ✓             ✓            ✓      ✗                  ✗           inventory_resource.go     (4 files)
+  inventory     5      ✓       ✗            ✓             ✓            ✓      ✗                  ✗           inventory_resource.go     (5 files)
   job           6      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           job_resource.go           job_resource_test.go
   workflow_job  7      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           workflow_job_resource.go  workflow_job_resource_test.go
 
@@ -58,12 +58,13 @@ Analyzing provider at: /workspace/validation/terraform-provider-aap (5 directori
 └─────────────────────────────────────────────────────────────────────────────────┘
   RESOURCE               KIND      TEST FUNCTION                                                 MATCH TYPE
   ────────               ────      ─────────────                                                 ──────────
-  group                  resource  TestAccGroupResource                                          inferred_from_config
+  group                  resource  -                                                             -
   host                   resource  TestAccHostResourceDeleteWithRetry                            inferred_from_config
-  inventory              resource  TestAccInventoryDataSource                                    inferred_from_config
-                                   TestAccHostResource                                           inferred_from_config
+  inventory              resource  TestAccInventoryResourceWithOrganizationDataSource            inferred_from_config
+                                   TestAccGroupResource                                          inferred_from_config
+                                   TestAccInventoryDataSource                                    inferred_from_config
                                    TestAccInventoryResource                                      inferred_from_config
-                                   TestAccInventoryResourceWithOrganizationDataSource            inferred_from_config
+                                   TestAccHostResource                                           inferred_from_config
   job                    resource  TestAccAAPJob_basic                                           inferred_from_config
                                    TestAccAAPJob_UpdateWithSameParameters                        inferred_from_config
                                    TestAccAAPJob_UpdateWithNewInventoryIdPromptOnLaunch          inferred_from_config

@@ -2018,22 +2018,19 @@ func ParseProviderRegistryMaps(file *ast.File, fset *token.FileSet, filePath str
 						continue
 					}
 
-					// Extract short name by stripping provider prefix
-					// e.g., "google_compute_instance" -> "compute_instance"
-					shortName := resourceName
-					if idx := strings.Index(resourceName, "_"); idx > 0 {
-						shortName = resourceName[idx+1:]
-					}
+					// Use the full resource name from the registry map
+					// This is the actual Terraform resource type (e.g., "google_bigquery_table")
+					// which matches what appears in HCL configs
 
-					// Skip if already seen
-					key := kind.String() + ":" + shortName
+					// Skip if already seen (using full name)
+					key := kind.String() + ":" + resourceName
 					if seen[key] {
 						continue
 					}
 					seen[key] = true
 
 					resources = append(resources, &registry.ResourceInfo{
-						Name:      shortName,
+						Name:      resourceName,
 						Kind:      kind,
 						FilePath:  filePath,
 						SchemaPos: keyLit.Pos(),
