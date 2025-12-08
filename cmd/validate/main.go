@@ -462,6 +462,9 @@ func buildRegistryFromFiles(fset *token.FileSet, files []*ast.File, settings con
 	linker := matching.NewLinker(reg, &settings)
 	linker.LinkTestsToResources()
 
+	// Classify all tests to enable filtering of orphans
+	linker.ClassifyAllTests()
+
 	return reg
 }
 

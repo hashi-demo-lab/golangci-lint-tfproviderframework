@@ -13,7 +13,7 @@ Analyzing provider at: /workspace/validation/terraform-provider-time (6 director
 │ Resources    │     4 │        0 │ 0 without CheckDestroy                          │
 │ Data Sources │     0 │        0 │ -                                               │
 │ Actions      │     0 │        0 │ 0 without Check func                            │
-│ Orphan Tests │     7 │        - │ -                                               │
+│ Orphan Tests │     0 │        - │ -                                               │
 └──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -29,15 +29,7 @@ Analyzing provider at: /workspace/validation/terraform-provider-time (6 director
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │ ORPHAN TESTS                                                                    │
 └─────────────────────────────────────────────────────────────────────────────────┘
-  TEST FUNCTION                         FILE                                   INFERRED RESOURCES
-  ─────────────                         ────                                   ──────────────────
-  TestDurationParse_valid               function_duration_parse_test.go        -
-  TestDurationParse_invalid             function_duration_parse_test.go        -
-  TestUnixTimestampParseFunction_Valid  function_unix_timestamp_parse_test.go  -
-  TestUnixTimestampParseFunction_Null   function_unix_timestamp_parse_test.go  -
-  TestRFC3339Parse_UTC                  function_rfc3339_parse_test.go         -
-  TestRFC3339Parse_offset               function_rfc3339_parse_test.go         -
-  TestRFC3339Parse_invalid              function_rfc3339_parse_test.go         -
+  ✓ All test functions are associated with resources!
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │ TEST ASSOCIATIONS                                                               │

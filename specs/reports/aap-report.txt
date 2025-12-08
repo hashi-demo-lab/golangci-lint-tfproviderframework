@@ -60,10 +60,10 @@ Analyzing provider at: /workspace/validation/terraform-provider-aap (5 directori
   ────────               ────      ─────────────                                                 ──────────
   group                  resource  TestAccGroupResource                                          inferred_from_config
   host                   resource  TestAccHostResourceDeleteWithRetry                            inferred_from_config
-  inventory              resource  TestAccInventoryResource                                      inferred_from_config
-                                   TestAccInventoryResourceWithOrganizationDataSource            inferred_from_config
+  inventory              resource  TestAccInventoryDataSource                                    inferred_from_config
                                    TestAccHostResource                                           inferred_from_config
-                                   TestAccInventoryDataSource                                    inferred_from_config
+                                   TestAccInventoryResource                                      inferred_from_config
+                                   TestAccInventoryResourceWithOrganizationDataSource            inferred_from_config
   job                    resource  TestAccAAPJob_basic                                           inferred_from_config
                                    TestAccAAPJob_UpdateWithSameParameters                        inferred_from_config
                                    TestAccAAPJob_UpdateWithNewInventoryIdPromptOnLaunch          inferred_from_config
