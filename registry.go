@@ -310,21 +310,22 @@ type TestFunctionInfo struct {
 
 // TestStepInfo represents a single step within a resource.TestCase.
 type TestStepInfo struct {
-	StepNumber         int
-	StepPos            token.Pos
-	Config             string
-	ConfigHash         string
-	HasConfig          bool
-	HasCheck           bool
-	CheckFunctions     []string
-	ImportState        bool
-	ImportStateVerify  bool
-	ExpectError        bool
-	IsUpdateStepFlag   bool
-	PreviousConfigHash string
-	HasPlanCheck       bool // HasPlanCheck tracks presence of ConfigPlanChecks
-	ExpectNonEmptyPlan bool // ExpectNonEmptyPlan tracks if step expects non-empty plan
-	RefreshState       bool // RefreshState tracks if step uses refresh mode
+	StepNumber           int
+	StepPos              token.Pos
+	Config               string
+	ConfigHash           string
+	HasConfig            bool
+	HasCheck             bool
+	CheckFunctions       []string
+	ImportState          bool
+	ImportStateVerify    bool
+	ExpectError          bool
+	IsUpdateStepFlag     bool
+	PreviousConfigHash   string
+	HasPlanCheck         bool // HasPlanCheck tracks presence of ConfigPlanChecks
+	HasConfigStateChecks bool // HasConfigStateChecks tracks presence of ConfigStateChecks (newer pattern)
+	ExpectNonEmptyPlan   bool // ExpectNonEmptyPlan tracks if step expects non-empty plan
+	RefreshState         bool // RefreshState tracks if step uses refresh mode
 }
 
 // IsUpdateStep returns true if this is not the first step and has a config.
@@ -365,10 +366,10 @@ func (t *TestStepInfo) IsValidImportStep() bool {
 }
 
 // HasStateOrPlanCheck returns true if this test function has at least one step
-// with state validation (Check field) or plan validation (ConfigPlanChecks).
+// with state validation (Check field, ConfigStateChecks) or plan validation (ConfigPlanChecks).
 func (t *TestFunctionInfo) HasStateOrPlanCheck() bool {
 	for _, step := range t.TestSteps {
-		if step.HasCheck || step.HasPlanCheck {
+		if step.HasCheck || step.HasPlanCheck || step.HasConfigStateChecks {
 			return true
 		}
 	}
@@ -425,7 +426,7 @@ func (r *ResourceRegistry) GetResourceCoverage(resourceName string) *ResourceCov
 		for _, step := range test.TestSteps {
 			coverage.StepCount++
 
-			if step.HasCheck {
+			if step.HasCheck || step.HasConfigStateChecks {
 				coverage.HasStateCheck = true
 			}
 			if step.HasPlanCheck {
@@ -474,7 +475,7 @@ func (r *ResourceRegistry) GetAllResourceCoverage() []*ResourceCoverage {
 			for _, step := range test.TestSteps {
 				coverage.StepCount++
 
-				if step.HasCheck {
+				if step.HasCheck || step.HasConfigStateChecks {
 					coverage.HasStateCheck = true
 				}
 				if step.HasPlanCheck {
