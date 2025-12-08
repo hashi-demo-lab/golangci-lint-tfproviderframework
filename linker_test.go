@@ -683,3 +683,79 @@ func TestClassifyNonMatchingFunctions(t *testing.T) {
 		})
 	}
 }
+
+// TestLinkerDataSourcePreference tests that functions with "DataSource" in the name
+// are preferentially matched to data sources over resources when both exist with the same name.
+// This fixes the issue where TestAccInventoryDataSource was matched to inventory resource
+// instead of inventory data source.
+func TestLinkerDataSourcePreference(t *testing.T) {
+	reg := registry.NewResourceRegistry()
+
+	// Register BOTH a resource and a data source with the same base name
+	reg.RegisterResource(&registry.ResourceInfo{Name: "inventory", Kind: registry.KindResource})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "inventory", Kind: registry.KindDataSource})
+
+	// Register a test function that has "DataSource" in the name
+	fn := &registry.TestFunctionInfo{
+		Name:     "TestAccInventoryDataSource",
+		FilePath: "/inventory_data_source_test.go",
+	}
+	reg.RegisterTestFunction(fn)
+
+	// Run linker
+	settings := config.DefaultSettings()
+	linker := matching.NewLinker(reg, settings)
+	linker.LinkTestsToResources()
+
+	// The test should be linked to the DATA SOURCE, not the resource
+	// Use compound key to check specifically the data source
+	dataSourceTests := reg.GetResourceTests("data source:inventory")
+	resourceTests := reg.GetResourceTests("resource:inventory")
+
+	if len(dataSourceTests) != 1 {
+		t.Errorf("expected 1 data source test, got %d", len(dataSourceTests))
+	}
+
+	if len(resourceTests) != 0 {
+		t.Errorf("expected 0 resource tests (should be matched to data source), got %d", len(resourceTests))
+	}
+
+	// Verify match type
+	if len(dataSourceTests) > 0 && dataSourceTests[0].MatchType != registry.MatchTypeFunctionName {
+		t.Errorf("expected MatchTypeFunctionName for data source preference, got %v", dataSourceTests[0].MatchType)
+	}
+}
+
+// TestLinkerResourceSuffixStripping tests that "Resource" and "DataSource" suffixes
+// are stripped from function names to produce the correct resource name match.
+// This fixes the issue where TestAccGroupResource produced "group_resource" instead of "group".
+func TestLinkerResourceSuffixStripping(t *testing.T) {
+	reg := registry.NewResourceRegistry()
+
+	// Register resources
+	reg.RegisterResource(&registry.ResourceInfo{Name: "group", Kind: registry.KindResource})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "host", Kind: registry.KindResource})
+
+	// Register test functions with "Resource" suffix in name
+	fn1 := &registry.TestFunctionInfo{Name: "TestAccGroupResource", FilePath: "/group_resource_test.go"}
+	fn2 := &registry.TestFunctionInfo{Name: "TestAccHostResource", FilePath: "/host_resource_test.go"}
+	reg.RegisterTestFunction(fn1)
+	reg.RegisterTestFunction(fn2)
+
+	// Run linker
+	settings := config.DefaultSettings()
+	linker := matching.NewLinker(reg, settings)
+	linker.LinkTestsToResources()
+
+	// Verify "TestAccGroupResource" matches "group" (not "group_resource")
+	groupTests := reg.GetResourceTests("group")
+	if len(groupTests) != 1 {
+		t.Errorf("expected 1 group test, got %d (TestAccGroupResource should match 'group')", len(groupTests))
+	}
+
+	// Verify "TestAccHostResource" matches "host"
+	hostTests := reg.GetResourceTests("host")
+	if len(hostTests) != 1 {
+		t.Errorf("expected 1 host test, got %d (TestAccHostResource should match 'host')", len(hostTests))
+	}
+}

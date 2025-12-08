@@ -130,6 +130,9 @@ type DiscoveryState struct {
 	ActionTypeNames map[string]token.Pos
 	// ProcessedActionTypes tracks which action types have been processed via Metadata
 	ProcessedActionTypes map[string]bool
+	// ProcessedFactoryFuncs tracks factory function names processed by FactoryFunctionStrategy
+	// to prevent ReturnTypeStrategy from creating duplicates with different names
+	ProcessedFactoryFuncs map[string]bool
 	// Resources accumulates all discovered resources across strategies
 	Resources []*registry.ResourceInfo
 }
@@ -137,11 +140,12 @@ type DiscoveryState struct {
 // NewDiscoveryState creates a new DiscoveryState with initialized maps.
 func NewDiscoveryState() *DiscoveryState {
 	return &DiscoveryState{
-		Seen:                 make(map[string]bool),
-		RecvTypeToIndex:      make(map[string]int),
-		ActionTypeNames:      make(map[string]token.Pos),
-		ProcessedActionTypes: make(map[string]bool),
-		Resources:            make([]*registry.ResourceInfo, 0),
+		Seen:                  make(map[string]bool),
+		RecvTypeToIndex:       make(map[string]int),
+		ActionTypeNames:       make(map[string]token.Pos),
+		ProcessedActionTypes:  make(map[string]bool),
+		ProcessedFactoryFuncs: make(map[string]bool),
+		Resources:             make([]*registry.ResourceInfo, 0),
 	}
 }
 
@@ -170,6 +174,13 @@ func (s *SchemaMethodStrategy) Discover(file *ast.File, fset *token.FileSet, fil
 
 		recvType := getReceiverTypeName(funcDecl.Recv)
 		if recvType == "" {
+			return true
+		}
+
+		// Skip base class types that are infrastructure classes, not actual resources
+		// These are types like BaseDataSource, BaseResource, BaseEdaDataSource, etc.
+		// They define schema methods but are meant to be embedded, not used directly
+		if isBaseClassType(recvType) {
 			return true
 		}
 
@@ -260,6 +271,9 @@ func (f *FactoryFunctionStrategy) Discover(file *ast.File, fset *token.FileSet, 
 			key := state.SeenKey(kind, name)
 			if name != "" && !state.Seen[key] {
 				state.Seen[key] = true
+				// Track this factory function to prevent ReturnTypeStrategy from creating
+				// a duplicate with a different name derived from the function name
+				state.ProcessedFactoryFuncs[funcName] = true
 				resource := &registry.ResourceInfo{
 					Name:      name,
 					Kind:      kind,
@@ -481,6 +495,14 @@ func (r *ReturnTypeStrategy) Discover(file *ast.File, fset *token.FileSet, fileP
 			return true
 		}
 
+		funcName := funcDecl.Name.Name
+
+		// Skip if this factory function was already processed by FactoryFunctionStrategy
+		// which discovered the correct name via MetadataEntitySlug
+		if state.ProcessedFactoryFuncs[funcName] {
+			return true
+		}
+
 		// Check return type
 		for _, result := range funcDecl.Type.Results.List {
 			returnType := typeToString(result.Type)
@@ -520,9 +542,89 @@ func (r *ReturnTypeStrategy) Discover(file *ast.File, fset *token.FileSet, fileP
 			state.Resources = append(state.Resources, resource)
 
 			// Track for Metadata resolution
-			funcName := funcDecl.Name.Name
 			state.RecvTypeToIndex[funcName] = len(state.Resources) - 1
 		}
+		return true
+	})
+
+	return resources
+}
+
+// RegistryFactoryStrategy discovers resources by looking for registry.AddResourceFactory()
+// and registry.AddDataSourceFactory() calls, commonly used in AWSCC and similar providers.
+type RegistryFactoryStrategy struct{}
+
+func (r *RegistryFactoryStrategy) Name() string {
+	return "RegistryFactory"
+}
+
+func (r *RegistryFactoryStrategy) Discover(file *ast.File, fset *token.FileSet, filePath string, state *DiscoveryState) []*registry.ResourceInfo {
+	var resources []*registry.ResourceInfo
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		callExpr, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		// Look for registry.AddResourceFactory or registry.AddDataSourceFactory calls
+		sel, ok := callExpr.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+
+		// Check if it's a registry.Add*Factory call
+		pkgIdent, ok := sel.X.(*ast.Ident)
+		if !ok || pkgIdent.Name != "registry" {
+			return true
+		}
+
+		var kind registry.ResourceKind
+		switch sel.Sel.Name {
+		case "AddResourceFactory":
+			kind = registry.KindResource
+		case "AddDataSourceFactory":
+			kind = registry.KindDataSource
+		case "AddListResourceFactory":
+			// List resources are a variant of data sources in AWSCC (plural data sources)
+			kind = registry.KindDataSource
+		default:
+			return true
+		}
+
+		// First argument should be the resource name (string literal)
+		if len(callExpr.Args) < 1 {
+			return true
+		}
+
+		// Extract the resource name from the first argument
+		var name string
+		switch arg := callExpr.Args[0].(type) {
+		case *ast.BasicLit:
+			if arg.Kind == token.STRING {
+				name = strings.Trim(arg.Value, `"`)
+			}
+		}
+
+		if name == "" {
+			return true
+		}
+
+		key := state.SeenKey(kind, name)
+		if state.Seen[key] {
+			return true
+		}
+
+		state.Seen[key] = true
+		resource := &registry.ResourceInfo{
+			Name:      name,
+			Kind:      kind,
+			FilePath:  filePath,
+			SchemaPos: callExpr.Pos(),
+		}
+		resources = append(resources, resource)
+		state.Resources = append(state.Resources, resource)
+
 		return true
 	})
 
@@ -804,6 +906,7 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*reg
 		&MetadataMethodStrategy{},
 		&ActionFactoryStrategy{},
 		&ReturnTypeStrategy{},
+		&RegistryFactoryStrategy{},
 	}
 
 	// Execute each strategy in order
@@ -1646,6 +1749,19 @@ func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string]
 						}
 					}
 				}
+				// Also check for []resource.TestStep slice literals passed directly
+				// This handles patterns like td.ResourceTest(t, []resource.TestStep{...})
+				if arrayType, ok := compLit.Type.(*ast.ArrayType); ok {
+					if sel, ok := arrayType.Elt.(*ast.SelectorExpr); ok {
+						if ident, ok := sel.X.(*ast.Ident); ok {
+							if ident.Name == "resource" && sel.Sel.Name == "TestStep" {
+								// Extract steps directly from the slice literal
+								extractedSteps := extractStepsFromSliceLiteral(compLit, &stepNumber, uniqueInferred, uniqueBlocks, helperPatterns, typedHelperPatterns)
+								steps = append(steps, extractedSteps...)
+							}
+						}
+					}
+				}
 			}
 		}
 
@@ -1721,6 +1837,28 @@ func extractStepsFromTestCaseWithHelpersTyped(testCaseExpr ast.Expr, stepNumber 
 	}
 
 	return steps, hasCheckDestroy, hasPreCheck
+}
+
+// extractStepsFromSliceLiteral extracts test steps directly from a []resource.TestStep slice literal.
+// This handles patterns like td.ResourceTest(t, []resource.TestStep{...}) where steps are passed directly.
+func extractStepsFromSliceLiteral(stepsLit *ast.CompositeLit, stepNumber *int, inferred map[string]bool, blocks map[string]registry.InferredHCLBlock, helperPatterns map[string][]string, typedHelperPatterns map[string][]InferredResource) []registry.TestStepInfo {
+	var steps []registry.TestStepInfo
+
+	for _, stepExpr := range stepsLit.Elts {
+		step := parseTestStepWithHashAndHelpersTyped(stepExpr, *stepNumber, inferred, blocks, helperPatterns, typedHelperPatterns)
+		steps = append(steps, step)
+		*stepNumber++
+	}
+
+	// Set previous config hashes for update step detection
+	for i := range steps {
+		if i > 0 {
+			steps[i].PreviousConfigHash = steps[i-1].ConfigHash
+			steps[i].IsUpdateStepFlag = steps[i].DetermineIfUpdateStep(&steps[i-1])
+		}
+	}
+
+	return steps
 }
 
 // parseTestStepWithHashAndHelpers parses a step and looks up helper patterns for Config.
