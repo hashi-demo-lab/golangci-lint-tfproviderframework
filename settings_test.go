@@ -4,10 +4,12 @@ package tfprovidertest
 
 import (
 	"testing"
+
+	"github.com/example/tfprovidertest/pkg/config"
 )
 
 func TestDefaultSettings(t *testing.T) {
-	settings := DefaultSettings()
+	settings := config.DefaultSettings()
 
 	// Test analyzer toggles
 	if !settings.EnableBasicTest {
@@ -102,7 +104,7 @@ func TestSettingsValidate_ValidThreshold(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			settings := DefaultSettings()
+			settings := config.DefaultSettings()
 			settings.FuzzyMatchThreshold = tc.threshold
 
 			err := settings.Validate()
@@ -126,7 +128,7 @@ func TestSettingsValidate_InvalidThreshold(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			settings := DefaultSettings()
+			settings := config.DefaultSettings()
 			settings.FuzzyMatchThreshold = tc.threshold
 
 			err := settings.Validate()
@@ -138,7 +140,7 @@ func TestSettingsValidate_InvalidThreshold(t *testing.T) {
 }
 
 func TestSettingsValidate_InvalidRegex(t *testing.T) {
-	settings := DefaultSettings()
+	settings := config.DefaultSettings()
 	settings.ResourceNamingPattern = "[invalid(regex"
 
 	err := settings.Validate()
@@ -160,7 +162,7 @@ func TestSettingsValidate_ValidRegex(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			settings := DefaultSettings()
+			settings := config.DefaultSettings()
 			settings.ResourceNamingPattern = tc.pattern
 
 			err := settings.Validate()
@@ -184,7 +186,7 @@ func TestSettingsValidate_FuzzyMatchingOptional(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			settings := DefaultSettings()
+			settings := config.DefaultSettings()
 			settings.EnableFuzzyMatching = tc.enableFuzzyMatching
 
 			err := settings.Validate()
@@ -193,4 +195,89 @@ func TestSettingsValidate_FuzzyMatchingOptional(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSettingsValidate_AtLeastOneAnalyzerEnabled verifies that at least one analyzer must be enabled
+func TestSettingsValidate_AtLeastOneAnalyzerEnabled(t *testing.T) {
+	t.Run("all analyzers disabled should fail", func(t *testing.T) {
+		settings := config.DefaultSettings()
+		settings.EnableBasicTest = false
+		settings.EnableUpdateTest = false
+		settings.EnableImportTest = false
+		settings.EnableErrorTest = false
+		settings.EnableStateCheck = false
+
+		err := settings.Validate()
+		if err == nil {
+			t.Error("Validate() should return error when all analyzers are disabled")
+		}
+	})
+
+	t.Run("at least one analyzer enabled should pass", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			enabler func(*config.Settings)
+		}{
+			{"only basic test", func(s *config.Settings) { s.EnableBasicTest = true }},
+			{"only update test", func(s *config.Settings) { s.EnableUpdateTest = true }},
+			{"only import test", func(s *config.Settings) { s.EnableImportTest = true }},
+			{"only error test", func(s *config.Settings) { s.EnableErrorTest = true }},
+			{"only state check", func(s *config.Settings) { s.EnableStateCheck = true }},
+		}
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				settings := config.DefaultSettings()
+				// Disable all
+				settings.EnableBasicTest = false
+				settings.EnableUpdateTest = false
+				settings.EnableImportTest = false
+				settings.EnableErrorTest = false
+				settings.EnableStateCheck = false
+				// Enable specific one
+				tc.enabler(&settings)
+
+				err := settings.Validate()
+				if err != nil {
+					t.Errorf("Validate() returned error when %s is enabled: %v", tc.name, err)
+				}
+			})
+		}
+	})
+}
+
+// TestSettingsValidate_FuzzyMatchingThreshold verifies cross-field validation
+func TestSettingsValidate_FuzzyMatchingThreshold(t *testing.T) {
+	t.Run("fuzzy matching enabled with low threshold should fail", func(t *testing.T) {
+		settings := config.DefaultSettings()
+		settings.EnableFuzzyMatching = true
+		settings.FuzzyMatchThreshold = 0.3 // Below 0.5
+
+		err := settings.Validate()
+		if err == nil {
+			t.Error("Validate() should return error when fuzzy matching enabled with threshold < 0.5")
+		}
+	})
+
+	t.Run("fuzzy matching enabled with good threshold should pass", func(t *testing.T) {
+		settings := config.DefaultSettings()
+		settings.EnableFuzzyMatching = true
+		settings.FuzzyMatchThreshold = 0.7
+
+		err := settings.Validate()
+		if err != nil {
+			t.Errorf("Validate() should not return error: %v", err)
+		}
+	})
+
+	t.Run("fuzzy matching disabled with low threshold should pass", func(t *testing.T) {
+		settings := config.DefaultSettings()
+		settings.EnableFuzzyMatching = false
+		settings.FuzzyMatchThreshold = 0.3 // Low threshold OK when fuzzy matching disabled
+
+		err := settings.Validate()
+		if err != nil {
+			t.Errorf("Validate() should not return error when fuzzy matching disabled: %v", err)
+		}
+	})
 }

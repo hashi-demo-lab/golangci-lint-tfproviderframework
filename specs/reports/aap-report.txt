@@ -1,0 +1,98 @@
+Analyzing provider at: /workspace/validation/terraform-provider-aap (5 directories)
+
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                        TERRAFORM PROVIDER TEST COVERAGE REPORT                 ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ SUMMARY                                                                         │
+├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤
+│ Category     │ Total │ Untested │ Issues                                          │
+├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤
+│ Resources    │     5 │        0 │ 2 without CheckDestroy                          │
+│ Data Sources │     6 │        2 │ -                                               │
+│ Actions      │     3 │        0 │ 2 without Check func                            │
+│ Orphan Tests │     0 │        - │ -                                               │
+└──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ RESOURCES                                                                       │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME          TESTS  Update  ImportState  CheckDestroy  ExpectError  Check  ConfigStateChecks  PlanChecks  FILE                      TEST FILE
+  ────          ─────  ──────  ───────────  ────────────  ───────────  ─────  ─────────────────  ──────────  ────                      ─────────
+  group         1      ✓       ✗            ✓             ✓            ✓      ✗                  ✗           group_resource.go         group_resource_test.go
+  host          1      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           host_resource.go          host_resource_test.go
+  inventory     4      ✓       ✗            ✓             ✓            ✓      ✗                  ✗           inventory_resource.go     (4 files)
+  job           6      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           job_resource.go           job_resource_test.go
+  workflow_job  7      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           workflow_job_resource.go  workflow_job_resource_test.go
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ DATA SOURCES                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME                   TESTS  Check  ConfigStateChecks  FILE                                  TEST FILE
+  ────                   ─────  ─────  ─────────────────  ────                                  ─────────
+  eda_event_stream       0      ✗      ✗                  eda_eventstream_datasource.go         -
+  eda_eventstream        1      ✓      ✗                  eda_eventstream_datasource.go         eda_eventstream_datasource_test.go
+  inventory              0      ✗      ✗                  inventory_data_source.go              -
+  job_template           1      ✓      ✗                  job_template_data_source.go           job_template_data_source_test.go
+  organization           4      ✓      ✗                  organization_data_source.go           organization_data_source_test.go
+  workflow_job_template  1      ✓      ✗                  workflow_job_template_data_source.go  workflow_job_template_data_source_test.go
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ ACTIONS                                                                         │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME                  TESTS  Update  ExpectError  Check  ConfigStateChecks  PreCheck  FILE                            TEST FILE
+  ────                  ─────  ──────  ───────────  ─────  ─────────────────  ────────  ────                            ─────────
+  eda_eventstream_post  3      ✓       ✗            ✓      ✗                  ✓         eda_eventstream_post_action.go  eda_eventstream_post_action_test.go
+  job_launch            3      ✓       ✓            ✗      ✗                  ✓         job_launch_action.go            job_launch_action_test.go
+  workflow_job_launch   3      ✓       ✓            ✗      ✗                  ✓         workflow_job_launch_action.go   workflow_job_launch_action_test.go
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ ORPHAN TESTS                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  ✓ All test functions are associated with resources!
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ TEST ASSOCIATIONS                                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  RESOURCE               KIND      TEST FUNCTION                                                 MATCH TYPE
+  ────────               ────      ─────────────                                                 ──────────
+  group                  resource  TestAccGroupResource                                          inferred_from_config
+  host                   resource  TestAccHostResourceDeleteWithRetry                            inferred_from_config
+  inventory              resource  TestAccInventoryResource                                      inferred_from_config
+                                   TestAccInventoryResourceWithOrganizationDataSource            inferred_from_config
+                                   TestAccHostResource                                           inferred_from_config
+                                   TestAccInventoryDataSource                                    inferred_from_config
+  job                    resource  TestAccAAPJob_basic                                           inferred_from_config
+                                   TestAccAAPJob_UpdateWithSameParameters                        inferred_from_config
+                                   TestAccAAPJob_UpdateWithNewInventoryIdPromptOnLaunch          inferred_from_config
+                                   TestAccAAPJob_UpdateWithTrigger                               inferred_from_config
+                                   TestAccAAPJob_WaitForCompletion                               inferred_from_config
+                                   TestAccAAPJob_disappears                                      inferred_from_config
+  workflow_job           resource  TestAccAAPWorkflowJob_Basic                                   function_name
+                                   TestAccAAPWorkflowJobWithNoInventoryID                        file_proximity
+                                   TestAccAAPWorkflowJob_UpdateWithSameParameters                function_name
+                                   TestAccAAPWorkflowJob_UpdateWithNewInventoryIdPromptOnLaunch  function_name
+                                   TestAccAAPWorkflowJob_UpdateWithTrigger                       function_name
+                                   TestAccAAPWorkflowJob_waitForCompletionWithFailure            function_name
+                                   TestAccAAPWorkflowJobDisappears                               file_proximity
+  eda_event_stream       data      -                                                             -
+  eda_eventstream        data      TestAccEDAEventStreamDataSourceRetrievesPostURL               inferred_from_config
+  inventory              data      -                                                             -
+  job_template           data      TestAccJobTemplateDataSource                                  inferred_from_config
+  organization           data      TestAccOrganizationDataSource                                 inferred_from_config
+                                   TestAccOrganizationDataSourceBadConfig                        inferred_from_config
+                                   TestAccOrganizationDataSourceWithIdAndName                    inferred_from_config
+                                   TestAccOrganizationDataSourceNonExistentValues                inferred_from_config
+  workflow_job_template  data      TestAccWorkflowJobTemplateDataSource                          inferred_from_config
+  eda_eventstream_post   action    TestAccEDAEventStreamAfterCreateAction                        inferred_from_config
+                                   TestAccEDAEventStreamUnrelatedActionDoesNotTrigger            inferred_from_config
+                                   TestAccEDAEventStreamAfterUpdateAction                        inferred_from_config
+  job_launch             action    TestAccAAPJobAction_basic                                     inferred_from_config
+                                   TestAccAAPJobAction_fail                                      inferred_from_config
+                                   TestAccAAPJobAction_failIgnore                                inferred_from_config
+  workflow_job_launch    action    TestAccAAPWorkflowJobAction_Basic                             inferred_from_config
+                                   TestAccAAPWorkflowJobAction_fail                              inferred_from_config
+                                   TestAccAAPWorkflowJobAction_failIgnore                        inferred_from_config
+

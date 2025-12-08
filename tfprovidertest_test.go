@@ -5,8 +5,14 @@ import (
 	"go/parser"
 	"go/token"
 	"testing"
+	"time"
 
-	tfprovidertest "github.com/example/tfprovidertest"
+	"github.com/example/tfprovidertest"
+	"github.com/example/tfprovidertest/internal/analysis"
+	"github.com/example/tfprovidertest/internal/discovery"
+	"github.com/example/tfprovidertest/internal/matching"
+	"github.com/example/tfprovidertest/internal/registry"
+	"github.com/example/tfprovidertest/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +20,7 @@ import (
 // T006: Test for Settings defaults
 func TestSettings_Defaults(t *testing.T) {
 	t.Run("default settings should enable all analyzers", func(t *testing.T) {
-		settings := tfprovidertest.DefaultSettings()
+		settings := config.DefaultSettings()
 		assert.True(t, settings.EnableBasicTest)
 		assert.True(t, settings.EnableUpdateTest)
 		assert.True(t, settings.EnableImportTest)
@@ -31,34 +37,35 @@ func TestSettings_Defaults(t *testing.T) {
 // T007: Test for ResourceRegistry operations
 func TestResourceRegistry_Operations(t *testing.T) {
 	t.Run("should register resources and retrieve them", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/test/resource_widget.go",
+		resource := &registry.ResourceInfo{
+			Name:     "widget",
+			Kind:     registry.KindResource,
+			FilePath: "/test/resource_widget.go",
 		}
-		registry.RegisterResource(resource)
+		reg.RegisterResource(resource)
 
-		retrieved := registry.GetResourceOrDataSource("widget")
+		retrieved := reg.GetResourceOrDataSource("widget")
 		require.NotNil(t, retrieved)
 		assert.Equal(t, "widget", retrieved.Name)
 	})
 
 	t.Run("should track untested resources", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "tested", IsDataSource: false})
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "untested", IsDataSource: false})
+		reg := registry.NewResourceRegistry()
+		reg.RegisterResource(&registry.ResourceInfo{Name: "tested", Kind: registry.KindResource})
+		reg.RegisterResource(&registry.ResourceInfo{Name: "untested", Kind: registry.KindResource})
 
 		// Link a test function to the "tested" resource
-		testFunc := &tfprovidertest.TestFunctionInfo{
+		testFunc := &registry.TestFunctionInfo{
 			Name:     "TestAccTested_basic",
 			FilePath: "/path/to/tested_test.go",
 		}
-		registry.RegisterTestFunction(testFunc)
-		registry.LinkTestToResource("tested", testFunc)
+		reg.RegisterTestFunction(testFunc)
+		reg.LinkTestToResource("tested", testFunc)
 
-		untested := registry.GetUntestedResources()
+		calculator := analysis.NewCoverageCalculator(reg)
+		untested := calculator.GetUntestedResources()
 		assert.Len(t, untested, 1)
 		assert.Equal(t, "untested", untested[0].Name)
 	})
@@ -90,10 +97,10 @@ func (r *WidgetResource) Schema(ctx context.Context, req resource.SchemaRequest,
 		file, err := parser.ParseFile(fset, "resource_widget.go", sourceCode, parser.ParseComments)
 		require.NoError(t, err)
 
-		resources := tfprovidertest.ParseResources(file, fset, "resource_widget.go")
+		resources := discovery.ParseResources(file, fset, "resource_widget.go")
 		require.Len(t, resources, 1)
 		assert.Equal(t, "widget", resources[0].Name)
-		assert.False(t, resources[0].IsDataSource)
+		assert.Equal(t, registry.KindResource, resources[0].Kind)
 	})
 
 	t.Run("should detect resources with multiple attributes", func(t *testing.T) {
@@ -122,10 +129,10 @@ func (r *ServerResource) Schema(ctx context.Context, req resource.SchemaRequest,
 		file, err := parser.ParseFile(fset, "resource_server.go", sourceCode, parser.ParseComments)
 		require.NoError(t, err)
 
-		resources := tfprovidertest.ParseResources(file, fset, "resource_server.go")
+		resources := discovery.ParseResources(file, fset, "resource_server.go")
 		require.Len(t, resources, 1)
 		assert.Equal(t, "server", resources[0].Name)
-		assert.False(t, resources[0].IsDataSource)
+		assert.Equal(t, registry.KindResource, resources[0].Kind)
 		assert.Len(t, resources[0].Attributes, 3)
 	})
 }
@@ -156,10 +163,10 @@ func (d *AccountDataSource) Schema(ctx context.Context, req datasource.SchemaReq
 		file, err := parser.ParseFile(fset, "data_source_account.go", sourceCode, parser.ParseComments)
 		require.NoError(t, err)
 
-		resources := tfprovidertest.ParseResources(file, fset, "data_source_account.go")
+		resources := discovery.ParseResources(file, fset, "data_source_account.go")
 		require.Len(t, resources, 1)
 		assert.Equal(t, "account", resources[0].Name)
-		assert.True(t, resources[0].IsDataSource)
+		assert.Equal(t, registry.KindDataSource, resources[0].Kind)
 	})
 }
 
@@ -191,7 +198,7 @@ func TestAccResourceWidget_basic(t *testing.T) {
 		file, err := parser.ParseFile(fset, "resource_widget_test.go", sourceCode, parser.ParseComments)
 		require.NoError(t, err)
 
-		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_widget_test.go")
+		testFile := discovery.ParseTestFile(file, fset, "resource_widget_test.go")
 		require.NotNil(t, testFile)
 		assert.Equal(t, "widget", testFile.ResourceName)
 		require.Len(t, testFile.TestFunctions, 1)
@@ -221,7 +228,7 @@ func TestAccResourceConfig_update(t *testing.T) {
 		file, err := parser.ParseFile(fset, "resource_config_test.go", sourceCode, parser.ParseComments)
 		require.NoError(t, err)
 
-		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_config_test.go")
+		testFile := discovery.ParseTestFile(file, fset, "resource_config_test.go")
 		require.NotNil(t, testFile)
 		require.Len(t, testFile.TestFunctions, 1)
 		testFunc := testFile.TestFunctions[0]
@@ -255,7 +262,7 @@ func TestAccResourceServer_import(t *testing.T) {
 		file, err := parser.ParseFile(fset, "resource_server_test.go", sourceCode, parser.ParseComments)
 		require.NoError(t, err)
 
-		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_server_test.go")
+		testFile := discovery.ParseTestFile(file, fset, "resource_server_test.go")
 		require.NotNil(t, testFile)
 		require.Len(t, testFile.TestFunctions, 1)
 		require.Len(t, testFile.TestFunctions[0].TestSteps, 1)
@@ -290,7 +297,7 @@ func TestAccResourceValidated_error(t *testing.T) {
 		file, err := parser.ParseFile(fset, "resource_validated_test.go", sourceCode, parser.ParseComments)
 		require.NoError(t, err)
 
-		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_validated_test.go")
+		testFile := discovery.ParseTestFile(file, fset, "resource_validated_test.go")
 		require.NotNil(t, testFile)
 		require.Len(t, testFile.TestFunctions, 1)
 		require.Len(t, testFile.TestFunctions[0].TestSteps, 1)
@@ -323,7 +330,7 @@ func TestPlugin_BuildAnalyzers(t *testing.T) {
 
 		analyzers, err := plugin.BuildAnalyzers()
 		require.NoError(t, err)
-		require.Len(t, analyzers, 5, "should return exactly 5 analyzers when all are enabled")
+		require.Len(t, analyzers, 7, "should return exactly 7 analyzers when all are enabled (5 main + drift-check + sweepers)")
 
 		// Verify analyzer names
 		expectedNames := map[string]bool{
@@ -332,6 +339,8 @@ func TestPlugin_BuildAnalyzers(t *testing.T) {
 			"tfprovider-resource-import-test": false,
 			"tfprovider-test-error-cases":     false,
 			"tfprovider-test-check-functions": false,
+			"tfprovider-test-drift-check":     false,
+			"tfprovider-test-sweepers":        false,
 		}
 
 		for _, analyzer := range analyzers {
@@ -365,7 +374,7 @@ func TestPlugin_Settings(t *testing.T) {
 
 		analyzers, err := plugin.BuildAnalyzers()
 		require.NoError(t, err)
-		require.Len(t, analyzers, 3, "should return only 3 enabled analyzers")
+		require.Len(t, analyzers, 5, "should return 5 analyzers (3 enabled main + drift-check + sweepers)")
 
 		// Verify only enabled analyzers are returned
 		enabledNames := make(map[string]bool)
@@ -403,7 +412,7 @@ func TestPlugin_Settings(t *testing.T) {
 
 		analyzers, err := plugin.BuildAnalyzers()
 		require.NoError(t, err)
-		require.Len(t, analyzers, 5, "default settings should enable all 5 analyzers")
+		require.Len(t, analyzers, 7, "default settings should enable all 7 analyzers (5 main + drift-check + sweepers)")
 	})
 }
 
@@ -430,7 +439,7 @@ func TestAccWidget_parallel(t *testing.T) {
 		file, err := parser.ParseFile(fset, "resource_widget_test.go", sourceCode, parser.ParseComments)
 		require.NoError(t, err)
 
-		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_widget_test.go")
+		testFile := discovery.ParseTestFile(file, fset, "resource_widget_test.go")
 		require.NotNil(t, testFile)
 		require.Len(t, testFile.TestFunctions, 1)
 		assert.Equal(t, "TestAccWidget_parallel", testFile.TestFunctions[0].Name)
@@ -459,11 +468,11 @@ func TestAccWidget_custom(t *testing.T) {
 		require.NoError(t, err)
 
 		// Without custom helpers, should not find test
-		testFile := tfprovidertest.ParseTestFile(file, fset, "resource_widget_test.go")
+		testFile := discovery.ParseTestFile(file, fset, "resource_widget_test.go")
 		assert.Nil(t, testFile) // No test found without custom helper
 
 		// With custom helpers, should find test
-		testFile = tfprovidertest.ParseTestFileWithHelpers(file, fset, "resource_widget_test.go", []string{"testhelper.AccTest"})
+		testFile = discovery.ParseTestFileWithHelpers(file, fset, "resource_widget_test.go", []string{"testhelper.AccTest"})
 		require.NotNil(t, testFile)
 		require.Len(t, testFile.TestFunctions, 1)
 		assert.Equal(t, "TestAccWidget_custom", testFile.TestFunctions[0].Name)
@@ -473,7 +482,7 @@ func TestAccWidget_custom(t *testing.T) {
 // T302: Test for Settings.CustomTestHelpers
 func TestSettings_CustomTestHelpers(t *testing.T) {
 	t.Run("default settings should have empty custom test helpers", func(t *testing.T) {
-		settings := tfprovidertest.DefaultSettings()
+		settings := config.DefaultSettings()
 		assert.Empty(t, settings.CustomTestHelpers)
 	})
 
@@ -490,63 +499,64 @@ func TestSettings_CustomTestHelpers(t *testing.T) {
 
 // T091: Performance benchmarks
 func BenchmarkResourceRegistry_Register(b *testing.B) {
-	registry := tfprovidertest.NewResourceRegistry()
+	reg := registry.NewResourceRegistry()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "benchmark_resource",
-			IsDataSource: false,
-			FilePath:     "/test/resource_benchmark.go",
+		resource := &registry.ResourceInfo{
+			Name:     "benchmark_resource",
+			Kind:     registry.KindResource,
+			FilePath: "/test/resource_benchmark.go",
 		}
-		registry.RegisterResource(resource)
+		reg.RegisterResource(resource)
 	}
 }
 
 func BenchmarkResourceRegistry_GetResourceOrDataSource(b *testing.B) {
-	registry := tfprovidertest.NewResourceRegistry()
+	reg := registry.NewResourceRegistry()
 
 	// Setup: register 100 resources
 	for i := 0; i < 100; i++ {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         fmt.Sprintf("resource_%d", i),
-			IsDataSource: false,
-			FilePath:     "/test/resource.go",
+		resource := &registry.ResourceInfo{
+			Name:     fmt.Sprintf("resource_%d", i),
+			Kind:     registry.KindResource,
+			FilePath: "/test/resource.go",
 		}
-		registry.RegisterResource(resource)
+		reg.RegisterResource(resource)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		registry.GetResourceOrDataSource("resource_50")
+		reg.GetResourceOrDataSource("resource_50")
 	}
 }
 
 func BenchmarkResourceRegistry_GetUntestedResources(b *testing.B) {
-	registry := tfprovidertest.NewResourceRegistry()
+	reg := registry.NewResourceRegistry()
 
 	// Setup: register 50 resources and 25 test files
 	for i := 0; i < 50; i++ {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         fmt.Sprintf("resource_%d", i),
-			IsDataSource: false,
-			FilePath:     "/test/resource.go",
+		resource := &registry.ResourceInfo{
+			Name:     fmt.Sprintf("resource_%d", i),
+			Kind:     registry.KindResource,
+			FilePath: "/test/resource.go",
 		}
-		registry.RegisterResource(resource)
+		reg.RegisterResource(resource)
 	}
 
 	for i := 0; i < 25; i++ {
-		testFunc := &tfprovidertest.TestFunctionInfo{
+		testFunc := &registry.TestFunctionInfo{
 			Name:     fmt.Sprintf("TestAccResource%d_basic", i),
 			FilePath: "/test/resource_test.go",
 		}
-		registry.RegisterTestFunction(testFunc)
-		registry.LinkTestToResource(fmt.Sprintf("resource_%d", i), testFunc)
+		reg.RegisterTestFunction(testFunc)
+		reg.LinkTestToResource(fmt.Sprintf("resource_%d", i), testFunc)
 	}
 
+	calculator := analysis.NewCoverageCalculator(reg)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		registry.GetUntestedResources()
+		calculator.GetUntestedResources()
 	}
 }
 
@@ -589,7 +599,7 @@ func TestIsSweeperFile(t *testing.T) {
 
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				result := tfprovidertest.IsSweeperFile(tc.filePath)
+				result := matching.IsSweeperFile(tc.filePath)
 				assert.Equal(t, tc.expected, result, "isSweeperFile(%q) should be %v", tc.filePath, tc.expected)
 			})
 		}
@@ -599,7 +609,7 @@ func TestIsSweeperFile(t *testing.T) {
 // T101: Test for ExcludeSweeperFiles setting
 func TestSettings_ExcludeSweeperFiles(t *testing.T) {
 	t.Run("default settings should exclude sweeper files", func(t *testing.T) {
-		settings := tfprovidertest.DefaultSettings()
+		settings := config.DefaultSettings()
 		assert.True(t, settings.ExcludeSweeperFiles, "ExcludeSweeperFiles should be true by default")
 	})
 
@@ -622,47 +632,47 @@ func TestSettings_ExcludeSweeperFiles(t *testing.T) {
 // T151: Test for BuildExpectedTestPath helper function
 func TestBuildExpectedTestPath(t *testing.T) {
 	t.Run("should build expected test path for resource", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/provider/resource_widget.go",
+		resource := &registry.ResourceInfo{
+			Name:     "widget",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/provider/resource_widget.go",
 		}
 		expected := "/path/to/provider/resource_widget_test.go"
-		actual := tfprovidertest.BuildExpectedTestPath(resource)
+		actual := analysis.BuildExpectedTestPath(resource)
 		assert.Equal(t, expected, actual)
 	})
 
 	t.Run("should build expected test path for data source", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "http",
-			IsDataSource: true,
-			FilePath:     "/path/to/provider/data_source_http.go",
+		resource := &registry.ResourceInfo{
+			Name:     "http",
+			Kind:     registry.KindDataSource,
+			FilePath: "/path/to/provider/data_source_http.go",
 		}
 		expected := "/path/to/provider/data_source_http_test.go"
-		actual := tfprovidertest.BuildExpectedTestPath(resource)
+		actual := analysis.BuildExpectedTestPath(resource)
 		assert.Equal(t, expected, actual)
 	})
 
 	t.Run("should handle nested directories", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "complex_resource",
-			IsDataSource: false,
-			FilePath:     "/home/user/projects/terraform-provider-example/internal/provider/resource_complex_resource.go",
+		resource := &registry.ResourceInfo{
+			Name:     "complex_resource",
+			Kind:     registry.KindResource,
+			FilePath: "/home/user/projects/terraform-provider-example/internal/provider/resource_complex_resource.go",
 		}
 		expected := "/home/user/projects/terraform-provider-example/internal/provider/resource_complex_resource_test.go"
-		actual := tfprovidertest.BuildExpectedTestPath(resource)
+		actual := analysis.BuildExpectedTestPath(resource)
 		assert.Equal(t, expected, actual)
 	})
 
 	t.Run("should handle file without .go extension gracefully", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/provider/resource_widget",
+		resource := &registry.ResourceInfo{
+			Name:     "widget",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/provider/resource_widget",
 		}
 		// Should append _test.go even if original doesn't have .go
 		expected := "/path/to/provider/resource_widget_test.go"
-		actual := tfprovidertest.BuildExpectedTestPath(resource)
+		actual := analysis.BuildExpectedTestPath(resource)
 		assert.Equal(t, expected, actual)
 	})
 }
@@ -670,57 +680,57 @@ func TestBuildExpectedTestPath(t *testing.T) {
 // T152: Test for BuildExpectedTestFunc helper function
 func TestBuildExpectedTestFunc(t *testing.T) {
 	t.Run("should build expected test function name for resource", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/provider/resource_widget.go",
+		resource := &registry.ResourceInfo{
+			Name:     "widget",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/provider/resource_widget.go",
 		}
 		expected := "TestAccWidget_basic"
-		actual := tfprovidertest.BuildExpectedTestFunc(resource)
+		actual := analysis.BuildExpectedTestFunc(resource)
 		assert.Equal(t, expected, actual)
 	})
 
 	t.Run("should build expected test function name for data source", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "http",
-			IsDataSource: true,
-			FilePath:     "/path/to/provider/data_source_http.go",
+		resource := &registry.ResourceInfo{
+			Name:     "http",
+			Kind:     registry.KindDataSource,
+			FilePath: "/path/to/provider/data_source_http.go",
 		}
 		expected := "TestAccDataSourceHttp_basic"
-		actual := tfprovidertest.BuildExpectedTestFunc(resource)
+		actual := analysis.BuildExpectedTestFunc(resource)
 		assert.Equal(t, expected, actual)
 	})
 
 	t.Run("should handle snake_case resource names", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "complex_resource",
-			IsDataSource: false,
-			FilePath:     "/path/to/provider/resource_complex_resource.go",
+		resource := &registry.ResourceInfo{
+			Name:     "complex_resource",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/provider/resource_complex_resource.go",
 		}
 		expected := "TestAccComplexResource_basic"
-		actual := tfprovidertest.BuildExpectedTestFunc(resource)
+		actual := analysis.BuildExpectedTestFunc(resource)
 		assert.Equal(t, expected, actual)
 	})
 
 	t.Run("should handle snake_case data source names", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "private_key",
-			IsDataSource: true,
-			FilePath:     "/path/to/provider/data_source_private_key.go",
+		resource := &registry.ResourceInfo{
+			Name:     "private_key",
+			Kind:     registry.KindDataSource,
+			FilePath: "/path/to/provider/data_source_private_key.go",
 		}
 		expected := "TestAccDataSourcePrivateKey_basic"
-		actual := tfprovidertest.BuildExpectedTestFunc(resource)
+		actual := analysis.BuildExpectedTestFunc(resource)
 		assert.Equal(t, expected, actual)
 	})
 
 	t.Run("should handle single word resource name", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "server",
-			IsDataSource: false,
-			FilePath:     "/path/to/provider/resource_server.go",
+		resource := &registry.ResourceInfo{
+			Name:     "server",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/provider/resource_server.go",
 		}
 		expected := "TestAccServer_basic"
-		actual := tfprovidertest.BuildExpectedTestFunc(resource)
+		actual := analysis.BuildExpectedTestFunc(resource)
 		assert.Equal(t, expected, actual)
 	})
 }
@@ -794,7 +804,7 @@ func TestIsMigrationFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := tfprovidertest.IsMigrationFile(tt.filePath)
+			result := matching.IsMigrationFile(tt.filePath)
 			assert.Equal(t, tt.expected, result, "IsMigrationFile(%q) should return %v", tt.filePath, tt.expected)
 		})
 	}
@@ -803,7 +813,7 @@ func TestIsMigrationFile(t *testing.T) {
 // T103: Test for ExcludeMigrationFiles setting in DefaultSettings
 func TestSettings_ExcludeMigrationFilesDefault(t *testing.T) {
 	t.Run("ExcludeMigrationFiles should be true by default", func(t *testing.T) {
-		settings := tfprovidertest.DefaultSettings()
+		settings := config.DefaultSettings()
 		assert.True(t, settings.ExcludeMigrationFiles, "ExcludeMigrationFiles should be true by default")
 	})
 }
@@ -841,17 +851,17 @@ func TestParseTestFile_FilenameBasedResourceExtraction(t *testing.T) {
 // T107: Test for isTestFunction with various non-standard patterns
 func TestIsTestFunction_NonStandardPatterns(t *testing.T) {
 	t.Run("should match TestDataSource_<number> pattern", func(t *testing.T) {
-		result := tfprovidertest.IsTestFunctionExported("TestDataSource_200", nil)
+		result := matching.IsTestFunctionExported("TestDataSource_200", nil)
 		assert.True(t, result, "TestDataSource_200 should be recognized as a test function")
 	})
 
 	t.Run("should match TestDataSource_<description> pattern", func(t *testing.T) {
-		result := tfprovidertest.IsTestFunctionExported("TestDataSource_withAuthorizationRequestHeader_200", nil)
+		result := matching.IsTestFunctionExported("TestDataSource_withAuthorizationRequestHeader_200", nil)
 		assert.True(t, result, "TestDataSource_withAuthorizationRequestHeader_200 should be recognized")
 	})
 
 	t.Run("should match TestDataSource_<status> pattern", func(t *testing.T) {
-		result := tfprovidertest.IsTestFunctionExported("TestDataSource_404", nil)
+		result := matching.IsTestFunctionExported("TestDataSource_404", nil)
 		assert.True(t, result, "TestDataSource_404 should be recognized as a test function")
 	})
 }
@@ -863,22 +873,22 @@ func TestIsTestFunction_NonStandardPatterns(t *testing.T) {
 // T109: Test for isTestFunction with TestResource* patterns (without Acc)
 func TestIsTestFunction_TestResourceWithoutAcc(t *testing.T) {
 	t.Run("should match TestPrivateKeyRSA pattern", func(t *testing.T) {
-		result := tfprovidertest.IsTestFunctionExported("TestPrivateKeyRSA", nil)
+		result := matching.IsTestFunctionExported("TestPrivateKeyRSA", nil)
 		assert.True(t, result, "TestPrivateKeyRSA should be recognized as a test function")
 	})
 
 	t.Run("should match TestResourceLocallySignedCert pattern", func(t *testing.T) {
-		result := tfprovidertest.IsTestFunctionExported("TestResourceLocallySignedCert", nil)
+		result := matching.IsTestFunctionExported("TestResourceLocallySignedCert", nil)
 		assert.True(t, result, "TestResourceLocallySignedCert should be recognized as a test function")
 	})
 
 	t.Run("should match TestPrivateKeyECDSA pattern", func(t *testing.T) {
-		result := tfprovidertest.IsTestFunctionExported("TestPrivateKeyECDSA", nil)
+		result := matching.IsTestFunctionExported("TestPrivateKeyECDSA", nil)
 		assert.True(t, result, "TestPrivateKeyECDSA should be recognized as a test function")
 	})
 
 	t.Run("should not match helper functions", func(t *testing.T) {
-		result := tfprovidertest.IsTestFunctionExported("testHelper", nil)
+		result := matching.IsTestFunctionExported("testHelper", nil)
 		assert.False(t, result, "testHelper should NOT be recognized as a test function")
 	})
 }
@@ -886,29 +896,29 @@ func TestIsTestFunction_TestResourceWithoutAcc(t *testing.T) {
 // T110: Test for CamelCase to snake_case conversion for resource names
 func TestCamelCaseToSnakeCase(t *testing.T) {
 	t.Run("should convert PrivateKey to private_key", func(t *testing.T) {
-		result := tfprovidertest.CamelCaseToSnakeCaseExported("PrivateKey")
+		result := matching.CamelCaseToSnakeCaseExported("PrivateKey")
 		assert.Equal(t, "private_key", result)
 	})
 
 	t.Run("should convert LocallySignedCert to locally_signed_cert", func(t *testing.T) {
-		result := tfprovidertest.CamelCaseToSnakeCaseExported("LocallySignedCert")
+		result := matching.CamelCaseToSnakeCaseExported("LocallySignedCert")
 		assert.Equal(t, "locally_signed_cert", result)
 	})
 
 	t.Run("should convert SelfSignedCert to self_signed_cert", func(t *testing.T) {
-		result := tfprovidertest.CamelCaseToSnakeCaseExported("SelfSignedCert")
+		result := matching.CamelCaseToSnakeCaseExported("SelfSignedCert")
 		assert.Equal(t, "self_signed_cert", result)
 	})
 
 	t.Run("should handle acronyms like RSA", func(t *testing.T) {
 		// RSA alone should become "rsa" (all lowercase)
-		result := tfprovidertest.CamelCaseToSnakeCaseExported("RSA")
+		result := matching.CamelCaseToSnakeCaseExported("RSA")
 		assert.Equal(t, "rsa", result)
 	})
 
 	t.Run("should handle PrivateKeyRSA", func(t *testing.T) {
 		// PrivateKeyRSA should become "private_key_rsa"
-		result := tfprovidertest.CamelCaseToSnakeCaseExported("PrivateKeyRSA")
+		result := matching.CamelCaseToSnakeCaseExported("PrivateKeyRSA")
 		assert.Equal(t, "private_key_rsa", result)
 	})
 }
@@ -920,82 +930,82 @@ func TestCamelCaseToSnakeCase(t *testing.T) {
 // T111: Test for HasMatchingTestFile function
 func TestHasMatchingTestFile(t *testing.T) {
 	t.Run("should return true when resource has test file with Test* functions", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		// Register a resource
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/resource_widget.go",
+		resource := &registry.ResourceInfo{
+			Name:     "widget",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/resource_widget.go",
 		}
-		registry.RegisterResource(resource)
+		reg.RegisterResource(resource)
 
 		// Register a matching test function
-		testFunc := &tfprovidertest.TestFunctionInfo{
+		testFunc := &registry.TestFunctionInfo{
 			Name:             "TestWidgetSomething",
 			FilePath:         "/path/to/resource_widget_test.go",
 			UsesResourceTest: true,
 		}
-		registry.RegisterTestFunction(testFunc)
-		registry.LinkTestToResource("widget", testFunc)
+		reg.RegisterTestFunction(testFunc)
+		reg.LinkTestToResource("widget", testFunc)
 
-		result := tfprovidertest.HasMatchingTestFile("widget", false, registry)
+		result := analysis.HasMatchingTestFile("widget", false, reg)
 		assert.True(t, result, "Should return true when test functions are linked to resource")
 	})
 
 	t.Run("should return false when test file has no Test* functions", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		// Register a resource
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/resource_widget.go",
+		resource := &registry.ResourceInfo{
+			Name:     "widget",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/resource_widget.go",
 		}
-		registry.RegisterResource(resource)
+		reg.RegisterResource(resource)
 
 		// Don't register any test functions for this resource
 
-		result := tfprovidertest.HasMatchingTestFile("widget", false, registry)
+		result := analysis.HasMatchingTestFile("widget", false, reg)
 		assert.False(t, result, "Should return false when no test functions are linked")
 	})
 
 	t.Run("should return false when no test file exists", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		// Register only the resource, no test file
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/resource_widget.go",
+		resource := &registry.ResourceInfo{
+			Name:     "widget",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/resource_widget.go",
 		}
-		registry.RegisterResource(resource)
+		reg.RegisterResource(resource)
 
-		result := tfprovidertest.HasMatchingTestFile("widget", false, registry)
+		result := analysis.HasMatchingTestFile("widget", false, reg)
 		assert.False(t, result, "Should return false when no test file exists")
 	})
 
 	t.Run("should work for data sources", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		// Register a data source
-		dataSource := &tfprovidertest.ResourceInfo{
-			Name:         "http",
-			IsDataSource: true,
-			FilePath:     "/path/to/data_source_http.go",
+		dataSource := &registry.ResourceInfo{
+			Name:     "http",
+			Kind:     registry.KindDataSource,
+			FilePath: "/path/to/data_source_http.go",
 		}
-		registry.RegisterResource(dataSource)
+		reg.RegisterResource(dataSource)
 
 		// Register a matching test function for the data source
-		testFunc := &tfprovidertest.TestFunctionInfo{
+		testFunc := &registry.TestFunctionInfo{
 			Name:             "TestDataSource_200",
 			FilePath:         "/path/to/data_source_http_test.go",
 			UsesResourceTest: true,
 		}
-		registry.RegisterTestFunction(testFunc)
-		registry.LinkTestToResource("http", testFunc)
+		reg.RegisterTestFunction(testFunc)
+		reg.LinkTestToResource("http", testFunc)
 
-		result := tfprovidertest.HasMatchingTestFile("http", true, registry)
+		result := analysis.HasMatchingTestFile("http", true, reg)
 		assert.True(t, result, "Should return true for data source with linked test functions")
 	})
 }
@@ -1012,7 +1022,7 @@ func TestBuildRegistry_FileBasedMatching(t *testing.T) {
 // T200: Test for Verbose setting in Settings struct
 func TestSettings_Verbose(t *testing.T) {
 	t.Run("default settings should have Verbose disabled", func(t *testing.T) {
-		settings := tfprovidertest.DefaultSettings()
+		settings := config.DefaultSettings()
 		assert.False(t, settings.Verbose, "Verbose should be false by default")
 	})
 
@@ -1030,13 +1040,13 @@ func TestSettings_Verbose(t *testing.T) {
 // T201: Test for VerboseDiagnosticInfo struct
 func TestVerboseDiagnosticInfo(t *testing.T) {
 	t.Run("should hold all required fields for verbose output", func(t *testing.T) {
-		info := tfprovidertest.VerboseDiagnosticInfo{
+		info := registry.VerboseDiagnosticInfo{
 			ResourceName:       "private_key",
 			ResourceType:       "resource",
 			ResourceFile:       "/path/to/resource_private_key.go",
 			ResourceLine:       89,
-			TestFilesSearched:  []tfprovidertest.TestFileSearchResult{{FilePath: "/path/to/resource_private_key_test.go", Found: true}},
-			TestFunctionsFound: []tfprovidertest.TestFunctionMatchInfo{{Name: "TestPrivateKeyRSA", Line: 45, MatchStatus: "not_matched", MatchReason: "missing 'Acc' prefix"}},
+			TestFilesSearched:  []registry.TestFileSearchResult{{FilePath: "/path/to/resource_private_key_test.go", Found: true}},
+			TestFunctionsFound: []registry.TestFunctionMatchInfo{{Name: "TestPrivateKeyRSA", Line: 45, MatchStatus: "not_matched", MatchReason: "missing 'Acc' prefix"}},
 			ExpectedPatterns:   []string{"TestAccResource*", "TestAcc*PrivateKey*"},
 			FoundPattern:       "TestPrivateKey* (non-standard)",
 			SuggestedFixes:     []string{"Rename tests to follow convention", "Configure custom test patterns"},
@@ -1055,7 +1065,7 @@ func TestVerboseDiagnosticInfo(t *testing.T) {
 // T202: Test for TestFileSearchResult struct
 func TestTestFileSearchResult(t *testing.T) {
 	t.Run("should track searched test files with found status", func(t *testing.T) {
-		result := tfprovidertest.TestFileSearchResult{
+		result := registry.TestFileSearchResult{
 			FilePath: "/path/to/resource_widget_test.go",
 			Found:    true,
 		}
@@ -1065,7 +1075,7 @@ func TestTestFileSearchResult(t *testing.T) {
 	})
 
 	t.Run("should handle not found test files", func(t *testing.T) {
-		result := tfprovidertest.TestFileSearchResult{
+		result := registry.TestFileSearchResult{
 			FilePath: "/path/to/resource_widget_test.go",
 			Found:    false,
 		}
@@ -1077,7 +1087,7 @@ func TestTestFileSearchResult(t *testing.T) {
 // T203: Test for TestFunctionMatchInfo struct
 func TestTestFunctionMatchInfo(t *testing.T) {
 	t.Run("should track match status for test functions", func(t *testing.T) {
-		matchedFunc := tfprovidertest.TestFunctionMatchInfo{
+		matchedFunc := registry.TestFunctionMatchInfo{
 			Name:        "TestAccWidget_basic",
 			Line:        45,
 			MatchStatus: "matched",
@@ -1089,7 +1099,7 @@ func TestTestFunctionMatchInfo(t *testing.T) {
 	})
 
 	t.Run("should provide reason for unmatched functions", func(t *testing.T) {
-		unmatchedFunc := tfprovidertest.TestFunctionMatchInfo{
+		unmatchedFunc := registry.TestFunctionMatchInfo{
 			Name:        "TestPrivateKeyRSA",
 			Line:        45,
 			MatchStatus: "not_matched",
@@ -1104,15 +1114,15 @@ func TestTestFunctionMatchInfo(t *testing.T) {
 // T204: Test for BuildVerboseDiagnostic function
 func TestBuildVerboseDiagnostic(t *testing.T) {
 	t.Run("should build verbose diagnostic for resource with no test file", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/resource_widget.go",
+		resource := &registry.ResourceInfo{
+			Name:     "widget",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/resource_widget.go",
 		}
-		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(resource)
+		reg := registry.NewResourceRegistry()
+		reg.RegisterResource(resource)
 
-		info := tfprovidertest.BuildVerboseDiagnosticInfo(resource, registry)
+		info := analysis.BuildVerboseDiagnosticInfo(resource, reg)
 
 		assert.Equal(t, "widget", info.ResourceName)
 		assert.Equal(t, "resource", info.ResourceType)
@@ -1122,32 +1132,32 @@ func TestBuildVerboseDiagnostic(t *testing.T) {
 	})
 
 	t.Run("should build verbose diagnostic for resource with test functions", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "private_key",
-			IsDataSource: false,
-			FilePath:     "/path/to/resource_private_key.go",
+		resource := &registry.ResourceInfo{
+			Name:     "private_key",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/resource_private_key.go",
 		}
 
-		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(resource)
+		reg := registry.NewResourceRegistry()
+		reg.RegisterResource(resource)
 
 		// Register test functions
-		testFunc1 := &tfprovidertest.TestFunctionInfo{
+		testFunc1 := &registry.TestFunctionInfo{
 			Name:             "TestPrivateKeyRSA",
 			FilePath:         "/path/to/resource_private_key_test.go",
 			UsesResourceTest: true,
 		}
-		testFunc2 := &tfprovidertest.TestFunctionInfo{
+		testFunc2 := &registry.TestFunctionInfo{
 			Name:             "TestPrivateKeyECDSA",
 			FilePath:         "/path/to/resource_private_key_test.go",
 			UsesResourceTest: true,
 		}
-		registry.RegisterTestFunction(testFunc1)
-		registry.RegisterTestFunction(testFunc2)
-		registry.LinkTestToResource("private_key", testFunc1)
-		registry.LinkTestToResource("private_key", testFunc2)
+		reg.RegisterTestFunction(testFunc1)
+		reg.RegisterTestFunction(testFunc2)
+		reg.LinkTestToResource("private_key", testFunc1)
+		reg.LinkTestToResource("private_key", testFunc2)
 
-		info := tfprovidertest.BuildVerboseDiagnosticInfo(resource, registry)
+		info := analysis.BuildVerboseDiagnosticInfo(resource, reg)
 
 		assert.Equal(t, "private_key", info.ResourceName)
 		assert.Equal(t, "resource", info.ResourceType)
@@ -1157,15 +1167,15 @@ func TestBuildVerboseDiagnostic(t *testing.T) {
 	})
 
 	t.Run("should include suggested fixes", func(t *testing.T) {
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/resource_widget.go",
+		resource := &registry.ResourceInfo{
+			Name:     "widget",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/resource_widget.go",
 		}
-		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(resource)
+		reg := registry.NewResourceRegistry()
+		reg.RegisterResource(resource)
 
-		info := tfprovidertest.BuildVerboseDiagnosticInfo(resource, registry)
+		info := analysis.BuildVerboseDiagnosticInfo(resource, reg)
 
 		assert.NotEmpty(t, info.SuggestedFixes)
 	})
@@ -1174,13 +1184,13 @@ func TestBuildVerboseDiagnostic(t *testing.T) {
 // T205: Test for FormatVerboseDiagnostic function
 func TestFormatVerboseDiagnostic(t *testing.T) {
 	t.Run("should format verbose diagnostic with all sections", func(t *testing.T) {
-		info := tfprovidertest.VerboseDiagnosticInfo{
+		info := registry.VerboseDiagnosticInfo{
 			ResourceName:      "private_key",
 			ResourceType:      "resource",
 			ResourceFile:      "/path/to/resource_private_key.go",
 			ResourceLine:      89,
-			TestFilesSearched: []tfprovidertest.TestFileSearchResult{{FilePath: "/path/to/resource_private_key_test.go", Found: true}},
-			TestFunctionsFound: []tfprovidertest.TestFunctionMatchInfo{
+			TestFilesSearched: []registry.TestFileSearchResult{{FilePath: "/path/to/resource_private_key_test.go", Found: true}},
+			TestFunctionsFound: []registry.TestFunctionMatchInfo{
 				{Name: "TestPrivateKeyRSA", Line: 45, MatchStatus: "not_matched", MatchReason: "missing 'Acc' prefix"},
 			},
 			ExpectedPatterns: []string{"TestAccResource*", "TestAcc*PrivateKey*"},
@@ -1188,7 +1198,7 @@ func TestFormatVerboseDiagnostic(t *testing.T) {
 			SuggestedFixes:   []string{"Rename tests to follow convention (TestAccResourcePrivateKey_RSA)", "Configure custom test patterns in .golangci.yml"},
 		}
 
-		output := tfprovidertest.FormatVerboseDiagnostic(info)
+		output := analysis.FormatVerboseDiagnostic(info)
 
 		// Check that output contains expected sections
 		assert.Contains(t, output, "Resource Location:")
@@ -1203,35 +1213,35 @@ func TestFormatVerboseDiagnostic(t *testing.T) {
 	})
 
 	t.Run("should format verbose diagnostic for data source", func(t *testing.T) {
-		info := tfprovidertest.VerboseDiagnosticInfo{
+		info := registry.VerboseDiagnosticInfo{
 			ResourceName:      "http",
 			ResourceType:      "data source",
 			ResourceFile:      "/path/to/data_source_http.go",
 			ResourceLine:      45,
-			TestFilesSearched: []tfprovidertest.TestFileSearchResult{{FilePath: "/path/to/data_source_http_test.go", Found: false}},
+			TestFilesSearched: []registry.TestFileSearchResult{{FilePath: "/path/to/data_source_http_test.go", Found: false}},
 			ExpectedPatterns:  []string{"TestAccDataSource*"},
 			SuggestedFixes:    []string{"Create test file data_source_http_test.go"},
 		}
 
-		output := tfprovidertest.FormatVerboseDiagnostic(info)
+		output := analysis.FormatVerboseDiagnostic(info)
 
 		assert.Contains(t, output, "data source")
 		assert.Contains(t, output, "data_source_http_test.go (not found)")
 	})
 
 	t.Run("should handle empty test functions gracefully", func(t *testing.T) {
-		info := tfprovidertest.VerboseDiagnosticInfo{
+		info := registry.VerboseDiagnosticInfo{
 			ResourceName:       "widget",
 			ResourceType:       "resource",
 			ResourceFile:       "/path/to/resource_widget.go",
 			ResourceLine:       10,
-			TestFilesSearched:  []tfprovidertest.TestFileSearchResult{{FilePath: "/path/to/resource_widget_test.go", Found: false}},
-			TestFunctionsFound: []tfprovidertest.TestFunctionMatchInfo{},
+			TestFilesSearched:  []registry.TestFileSearchResult{{FilePath: "/path/to/resource_widget_test.go", Found: false}},
+			TestFunctionsFound: []registry.TestFunctionMatchInfo{},
 			ExpectedPatterns:   []string{"TestAccWidget_basic"},
 			SuggestedFixes:     []string{"Create acceptance test"},
 		}
 
-		output := tfprovidertest.FormatVerboseDiagnostic(info)
+		output := analysis.FormatVerboseDiagnostic(info)
 
 		// Should not contain Test Functions Found section when empty
 		assert.Contains(t, output, "Resource Location:")
@@ -1242,31 +1252,31 @@ func TestFormatVerboseDiagnostic(t *testing.T) {
 // T206: Test for ClassifyTestFunctionMatch function
 func TestClassifyTestFunctionMatch(t *testing.T) {
 	t.Run("should classify matching TestAcc function", func(t *testing.T) {
-		status, reason := tfprovidertest.ClassifyTestFunctionMatch("TestAccWidget_basic", "widget")
+		status, reason := analysis.ClassifyTestFunctionMatch("TestAccWidget_basic", "widget")
 		assert.Equal(t, "matched", status)
 		assert.Empty(t, reason)
 	})
 
 	t.Run("should classify non-matching function with missing Acc prefix", func(t *testing.T) {
-		status, reason := tfprovidertest.ClassifyTestFunctionMatch("TestPrivateKeyRSA", "private_key")
+		status, reason := analysis.ClassifyTestFunctionMatch("TestPrivateKeyRSA", "private_key")
 		assert.Equal(t, "not_matched", status)
 		assert.Contains(t, reason, "missing 'Acc' prefix")
 	})
 
 	t.Run("should classify function with different resource name", func(t *testing.T) {
-		status, reason := tfprovidertest.ClassifyTestFunctionMatch("TestAccOtherResource_basic", "widget")
+		status, reason := analysis.ClassifyTestFunctionMatch("TestAccOtherResource_basic", "widget")
 		assert.Equal(t, "not_matched", status)
 		assert.Contains(t, reason, "does not match resource")
 	})
 
 	t.Run("should classify matching TestResource function", func(t *testing.T) {
-		status, reason := tfprovidertest.ClassifyTestFunctionMatch("TestResourceWidget_basic", "widget")
+		status, reason := analysis.ClassifyTestFunctionMatch("TestResourceWidget_basic", "widget")
 		assert.Equal(t, "matched", status)
 		assert.Empty(t, reason)
 	})
 
 	t.Run("should classify matching TestDataSource function", func(t *testing.T) {
-		status, reason := tfprovidertest.ClassifyTestFunctionMatch("TestDataSourceHttp_basic", "http")
+		status, reason := analysis.ClassifyTestFunctionMatch("TestDataSourceHttp_basic", "http")
 		assert.Equal(t, "matched", status)
 		assert.Empty(t, reason)
 	})
@@ -1286,12 +1296,12 @@ func TestRegistryCache_BuildOnlyOnce(t *testing.T) {
 		// The key improvement is that buildRegistry is now called via getOrBuildRegistry
 		// which uses sync.Once to ensure it's only called once per pass
 
-		// Verify that the caching mechanism exists
-		assert.NotNil(t, tfprovidertest.BasicTestAnalyzer)
-		assert.NotNil(t, tfprovidertest.UpdateTestAnalyzer)
-		assert.NotNil(t, tfprovidertest.ImportTestAnalyzer)
-		assert.NotNil(t, tfprovidertest.ErrorTestAnalyzer)
-		assert.NotNil(t, tfprovidertest.StateCheckAnalyzer)
+		// Verify that the caching mechanism exists by creating analyzers via plugin
+		plugin, err := tfprovidertest.New(nil)
+		assert.NoError(t, err)
+		analyzers, err := plugin.BuildAnalyzers()
+		assert.NoError(t, err)
+		assert.NotEmpty(t, analyzers)
 	})
 }
 
@@ -1302,64 +1312,66 @@ func TestRegistryCache_ThreadSafety(t *testing.T) {
 		// This is verified through the implementation in analyzer.go
 		// Real thread-safety testing would require running actual analysis
 
-		// Verify all analyzers are properly defined and have Run functions
-		assert.NotNil(t, tfprovidertest.BasicTestAnalyzer.Run)
-		assert.NotNil(t, tfprovidertest.UpdateTestAnalyzer.Run)
-		assert.NotNil(t, tfprovidertest.ImportTestAnalyzer.Run)
-		assert.NotNil(t, tfprovidertest.ErrorTestAnalyzer.Run)
-		assert.NotNil(t, tfprovidertest.StateCheckAnalyzer.Run)
+		// Verify all analyzers are properly defined and have Run functions via plugin
+		plugin, err := tfprovidertest.New(nil)
+		assert.NoError(t, err)
+		analyzers, err := plugin.BuildAnalyzers()
+		assert.NoError(t, err)
+		for _, analyzer := range analyzers {
+			assert.NotNil(t, analyzer.Run)
+		}
 	})
 }
 
 // T701: Test for unified GetAllDefinitions() method
 func TestRegistry_GetAllDefinitions(t *testing.T) {
 	t.Run("should return all resources and data sources in unified map", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		// Register a resource
-		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/resource_widget.go",
+		resource := &registry.ResourceInfo{
+			Name:     "widget",
+			Kind:     registry.KindResource,
+			FilePath: "/path/to/resource_widget.go",
 		}
-		registry.RegisterResource(resource)
+		reg.RegisterResource(resource)
 
 		// Register a data source
-		dataSource := &tfprovidertest.ResourceInfo{
-			Name:         "http",
-			IsDataSource: true,
-			FilePath:     "/path/to/data_source_http.go",
+		dataSource := &registry.ResourceInfo{
+			Name:     "http",
+			Kind:     registry.KindDataSource,
+			FilePath: "/path/to/data_source_http.go",
 		}
-		registry.RegisterResource(dataSource)
+		reg.RegisterResource(dataSource)
 
 		// Get unified definitions
-		definitions := registry.GetAllDefinitions()
+		definitions := reg.GetAllDefinitions()
 
 		assert.Len(t, definitions, 2)
 		// Use GetResourceOrDataSource for lookups (handles compound keys internally)
-		widgetInfo := registry.GetResourceOrDataSource("widget")
-		httpInfo := registry.GetResourceOrDataSource("http")
+		widgetInfo := reg.GetResourceOrDataSource("widget")
+		httpInfo := reg.GetResourceOrDataSource("http")
 		assert.NotNil(t, widgetInfo)
 		assert.NotNil(t, httpInfo)
-		assert.False(t, widgetInfo.IsDataSource)
-		assert.True(t, httpInfo.IsDataSource)
+		assert.Equal(t, registry.KindResource, widgetInfo.Kind)
+		assert.Equal(t, registry.KindDataSource, httpInfo.Kind)
 	})
 
 	t.Run("should return empty map when no resources registered", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
-		definitions := registry.GetAllDefinitions()
+		reg := registry.NewResourceRegistry()
+		definitions := reg.GetAllDefinitions()
 		assert.Len(t, definitions, 0)
 	})
 
 	t.Run("should be thread-safe", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
+		reg := registry.NewResourceRegistry()
+		reg.RegisterResource(&registry.ResourceInfo{Name: "widget", Kind: registry.KindResource})
 
 		// Multiple concurrent reads should not panic
 		done := make(chan bool, 10)
 		for i := 0; i < 10; i++ {
 			go func() {
-				_ = registry.GetAllDefinitions()
+				_ = reg.GetAllDefinitions()
 				done <- true
 			}()
 		}
@@ -1372,32 +1384,173 @@ func TestRegistry_GetAllDefinitions(t *testing.T) {
 // T703: Test GetResourceOrDataSource unified lookup
 func TestRegistry_GetResourceOrDataSource(t *testing.T) {
 	t.Run("should find resource by name", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", IsDataSource: true})
+		reg := registry.NewResourceRegistry()
+		reg.RegisterResource(&registry.ResourceInfo{Name: "widget", Kind: registry.KindResource})
+		reg.RegisterResource(&registry.ResourceInfo{Name: "http", Kind: registry.KindDataSource})
 
-		found := registry.GetResourceOrDataSource("widget")
+		found := reg.GetResourceOrDataSource("widget")
 		assert.NotNil(t, found)
 		assert.Equal(t, "widget", found.Name)
-		assert.False(t, found.IsDataSource)
+		assert.Equal(t, registry.KindResource, found.Kind)
 	})
 
 	t.Run("should find data source by name", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", IsDataSource: true})
+		reg := registry.NewResourceRegistry()
+		reg.RegisterResource(&registry.ResourceInfo{Name: "widget", Kind: registry.KindResource})
+		reg.RegisterResource(&registry.ResourceInfo{Name: "http", Kind: registry.KindDataSource})
 
-		found := registry.GetResourceOrDataSource("http")
+		found := reg.GetResourceOrDataSource("http")
 		assert.NotNil(t, found)
 		assert.Equal(t, "http", found.Name)
-		assert.True(t, found.IsDataSource)
+		assert.Equal(t, registry.KindDataSource, found.Kind)
 	})
 
 	t.Run("should return nil when not found", func(t *testing.T) {
-		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
+		reg := registry.NewResourceRegistry()
+		reg.RegisterResource(&registry.ResourceInfo{Name: "widget", Kind: registry.KindResource})
 
-		found := registry.GetResourceOrDataSource("unknown")
+		found := reg.GetResourceOrDataSource("unknown")
 		assert.Nil(t, found)
+	})
+}
+
+// TestCacheManagement tests the global cache management functions
+func TestCacheManagement(t *testing.T) {
+	// Clean up before and after tests
+	defer analysis.ClearAllRegistryCaches()
+
+	t.Run("GetCacheSize returns correct count", func(t *testing.T) {
+		// Start with clean slate
+		analysis.ClearAllRegistryCaches()
+		assert.Equal(t, 0, analysis.GetCacheSize(), "Cache should be empty after clearing")
+	})
+
+	t.Run("ClearAllRegistryCaches is idempotent", func(t *testing.T) {
+		// Clear once
+		analysis.ClearAllRegistryCaches()
+		size1 := analysis.GetCacheSize()
+
+		// Clear again
+		analysis.ClearAllRegistryCaches()
+		size2 := analysis.GetCacheSize()
+
+		// Both should be 0
+		assert.Equal(t, 0, size1, "Cache should be empty after first clear")
+		assert.Equal(t, 0, size2, "Cache should be empty after second clear")
+		assert.Equal(t, size1, size2, "Multiple clears should have same result")
+	})
+
+	t.Run("cache functions are thread-safe", func(t *testing.T) {
+		analysis.ClearAllRegistryCaches()
+
+		// Run concurrent operations to ensure no race conditions
+		done := make(chan bool)
+		for i := 0; i < 10; i++ {
+			go func() {
+				// Call GetCacheSize concurrently - should not panic
+				_ = analysis.GetCacheSize()
+				done <- true
+			}()
+		}
+
+		// Wait for all goroutines to complete
+		for i := 0; i < 10; i++ {
+			<-done
+		}
+
+		// Verify cache operations work correctly
+		size := analysis.GetCacheSize()
+		assert.GreaterOrEqual(t, size, 0, "Cache size should be non-negative")
+	})
+
+	t.Run("concurrent clear operations are safe", func(t *testing.T) {
+		// Run multiple concurrent clear operations
+		done := make(chan bool)
+		for i := 0; i < 5; i++ {
+			go func() {
+				analysis.ClearAllRegistryCaches()
+				done <- true
+			}()
+		}
+
+		// Wait for all clears to complete
+		for i := 0; i < 5; i++ {
+			<-done
+		}
+
+		// Cache should be empty
+		assert.Equal(t, 0, analysis.GetCacheSize(), "Cache should be empty after concurrent clears")
+	})
+}
+
+// TestCacheTTL tests TTL-based cache expiration (Phase 2)
+func TestCacheTTL(t *testing.T) {
+	defer analysis.ClearAllRegistryCaches()
+
+	t.Run("GetCacheStats returns correct statistics", func(t *testing.T) {
+		analysis.ClearAllRegistryCaches()
+
+		// Get stats on empty cache
+		stats := analysis.GetCacheStats(5 * time.Minute)
+		assert.Equal(t, 0, stats.TotalEntries, "Empty cache should have 0 entries")
+		assert.Equal(t, 0, stats.ExpiredEntries, "Empty cache should have 0 expired entries")
+		assert.Equal(t, time.Duration(0), stats.OldestEntryAge, "Empty cache should have 0 oldest age")
+	})
+
+	t.Run("Settings validates CacheTTL format", func(t *testing.T) {
+		// Valid TTL formats
+		validSettings := []string{"5m", "1h", "30s", "2h30m", "0"}
+		for _, ttl := range validSettings {
+			settings := config.DefaultSettings()
+			settings.CacheTTL = ttl
+			err := settings.Validate()
+			assert.NoError(t, err, "Valid TTL format should pass validation: %s", ttl)
+		}
+
+		// Invalid TTL formats
+		invalidSettings := []string{"5", "invalid", "5x", "m5"}
+		for _, ttl := range invalidSettings {
+			settings := config.DefaultSettings()
+			settings.CacheTTL = ttl
+			err := settings.Validate()
+			assert.Error(t, err, "Invalid TTL format should fail validation: %s", ttl)
+		}
+	})
+
+	t.Run("GetCacheTTLDuration returns correct duration", func(t *testing.T) {
+		settings := config.DefaultSettings()
+
+		// Default 5 minutes
+		assert.Equal(t, 5*time.Minute, settings.GetCacheTTLDuration(), "Default should be 5 minutes")
+
+		// Custom duration
+		settings.CacheTTL = "10m"
+		assert.Equal(t, 10*time.Minute, settings.GetCacheTTLDuration())
+
+		// Zero disables TTL
+		settings.CacheTTL = "0"
+		assert.Equal(t, time.Duration(0), settings.GetCacheTTLDuration(), "0 should disable TTL")
+
+		// Invalid falls back to default
+		settings.CacheTTL = "invalid"
+		assert.Equal(t, 5*time.Minute, settings.GetCacheTTLDuration(), "Invalid should fall back to 5 minutes")
+	})
+
+	t.Run("GetCacheStats is thread-safe", func(t *testing.T) {
+		analysis.ClearAllRegistryCaches()
+
+		// Run concurrent GetCacheStats calls
+		done := make(chan bool)
+		for i := 0; i < 10; i++ {
+			go func() {
+				_ = analysis.GetCacheStats(5 * time.Minute)
+				done <- true
+			}()
+		}
+
+		// Wait for all to complete
+		for i := 0; i < 10; i++ {
+			<-done
+		}
 	})
 }

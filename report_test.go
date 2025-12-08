@@ -6,32 +6,34 @@ import (
 	"go/token"
 	"strings"
 	"testing"
+
+	"github.com/example/tfprovidertest/internal/analysis"
 )
 
 func TestSeverityString(t *testing.T) {
 	tests := []struct {
 		name     string
-		severity Severity
+		severity analysis.Severity
 		want     string
 	}{
 		{
 			name:     "SeverityInfo",
-			severity: SeverityInfo,
+			severity: analysis.SeverityInfo,
 			want:     "INFO",
 		},
 		{
 			name:     "SeverityWarning",
-			severity: SeverityWarning,
+			severity: analysis.SeverityWarning,
 			want:     "WARNING",
 		},
 		{
 			name:     "SeverityError",
-			severity: SeverityError,
+			severity: analysis.SeverityError,
 			want:     "ERROR",
 		},
 		{
 			name:     "Unknown severity",
-			severity: Severity(99),
+			severity: analysis.Severity(99),
 			want:     "UNKNOWN",
 		},
 	}
@@ -51,55 +53,55 @@ func TestDetermineSeverity(t *testing.T) {
 		name       string
 		confidence float64
 		hasIssue   bool
-		want       Severity
+		want       analysis.Severity
 	}{
 		{
 			name:       "no issue returns info",
 			confidence: 1.0,
 			hasIssue:   false,
-			want:       SeverityInfo,
+			want:       analysis.SeverityInfo,
 		},
 		{
 			name:       "high confidence issue returns error",
 			confidence: 0.95,
 			hasIssue:   true,
-			want:       SeverityError,
+			want:       analysis.SeverityError,
 		},
 		{
 			name:       "exactly 0.9 confidence returns error",
 			confidence: 0.9,
 			hasIssue:   true,
-			want:       SeverityError,
+			want:       analysis.SeverityError,
 		},
 		{
 			name:       "medium confidence issue returns warning",
 			confidence: 0.8,
 			hasIssue:   true,
-			want:       SeverityWarning,
+			want:       analysis.SeverityWarning,
 		},
 		{
 			name:       "exactly 0.7 confidence returns warning",
 			confidence: 0.7,
 			hasIssue:   true,
-			want:       SeverityWarning,
+			want:       analysis.SeverityWarning,
 		},
 		{
 			name:       "low confidence issue returns info",
 			confidence: 0.5,
 			hasIssue:   true,
-			want:       SeverityInfo,
+			want:       analysis.SeverityInfo,
 		},
 		{
 			name:       "zero confidence issue returns info",
 			confidence: 0.0,
 			hasIssue:   true,
-			want:       SeverityInfo,
+			want:       analysis.SeverityInfo,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := DetermineSeverity(tt.confidence, tt.hasIssue)
+			got := analysis.DetermineSeverity(tt.confidence, tt.hasIssue)
 			if got != tt.want {
 				t.Errorf("DetermineSeverity(%f, %v) = %v, want %v", tt.confidence, tt.hasIssue, got, tt.want)
 			}
@@ -110,15 +112,15 @@ func TestDetermineSeverity(t *testing.T) {
 func TestFormatReport(t *testing.T) {
 	tests := []struct {
 		name     string
-		report   Report
+		report   analysis.Report
 		contains []string // Strings that should be in the output
 	}{
 		{
 			name: "basic error report",
-			report: Report{
+			report: analysis.Report{
 				Pos:          token.Pos(1),
 				Message:      "test message",
-				Severity:     SeverityError,
+				Severity:     analysis.SeverityError,
 				Confidence:   1.0,
 				ResourceName: "widget",
 			},
@@ -126,10 +128,10 @@ func TestFormatReport(t *testing.T) {
 		},
 		{
 			name: "warning with confidence",
-			report: Report{
+			report: analysis.Report{
 				Pos:          token.Pos(1),
 				Message:      "partial match",
-				Severity:     SeverityWarning,
+				Severity:     analysis.SeverityWarning,
 				Confidence:   0.75,
 				MatchType:    "fuzzy",
 				ResourceName: "widget",
@@ -138,10 +140,10 @@ func TestFormatReport(t *testing.T) {
 		},
 		{
 			name: "report with suggestions",
-			report: Report{
+			report: analysis.Report{
 				Pos:      token.Pos(1),
 				Message:  "missing test",
-				Severity: SeverityError,
+				Severity: analysis.SeverityError,
 				Suggestions: []string{
 					"Create test file",
 					"Add TestAcc function",
@@ -151,20 +153,20 @@ func TestFormatReport(t *testing.T) {
 		},
 		{
 			name: "info report no confidence shown",
-			report: Report{
+			report: analysis.Report{
 				Pos:        token.Pos(1),
 				Message:    "info message",
-				Severity:   SeverityInfo,
+				Severity:   analysis.SeverityInfo,
 				Confidence: 1.0, // Full confidence should not show percentage
 			},
 			contains: []string{"[INFO]", "info message"},
 		},
 		{
 			name: "zero confidence not shown",
-			report: Report{
+			report: analysis.Report{
 				Pos:        token.Pos(1),
 				Message:    "zero confidence",
-				Severity:   SeverityInfo,
+				Severity:   analysis.SeverityInfo,
 				Confidence: 0.0,
 			},
 			contains: []string{"[INFO]", "zero confidence"},
@@ -173,7 +175,7 @@ func TestFormatReport(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := FormatReport(tt.report)
+			got := analysis.FormatReport(tt.report)
 			for _, want := range tt.contains {
 				if !strings.Contains(got, want) {
 					t.Errorf("FormatReport() = %q, want to contain %q", got, want)
@@ -184,30 +186,30 @@ func TestFormatReport(t *testing.T) {
 }
 
 func TestFormatReportNoConfidenceForFullMatch(t *testing.T) {
-	report := Report{
+	report := analysis.Report{
 		Pos:        token.Pos(1),
 		Message:    "test message",
-		Severity:   SeverityError,
+		Severity:   analysis.SeverityError,
 		Confidence: 1.0, // Full confidence
 		MatchType:  "function_name",
 	}
 
-	got := FormatReport(report)
+	got := analysis.FormatReport(report)
 	if strings.Contains(got, "confidence") {
 		t.Errorf("FormatReport() should not show confidence for 1.0 confidence, got: %q", got)
 	}
 }
 
 func TestFormatReportShowsPartialConfidence(t *testing.T) {
-	report := Report{
+	report := analysis.Report{
 		Pos:        token.Pos(1),
 		Message:    "test message",
-		Severity:   SeverityWarning,
+		Severity:   analysis.SeverityWarning,
 		Confidence: 0.8,
 		MatchType:  "file_proximity",
 	}
 
-	got := FormatReport(report)
+	got := analysis.FormatReport(report)
 	if !strings.Contains(got, "80% confidence") {
 		t.Errorf("FormatReport() should show confidence for 0.8 confidence, got: %q", got)
 	}

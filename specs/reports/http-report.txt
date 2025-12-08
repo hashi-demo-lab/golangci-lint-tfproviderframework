@@ -1,0 +1,66 @@
+Analyzing provider at: /workspace/validation/terraform-provider-http (3 directories)
+
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                        TERRAFORM PROVIDER TEST COVERAGE REPORT                 ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ SUMMARY                                                                         │
+├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤
+│ Category     │ Total │ Untested │ Issues                                          │
+├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤
+│ Resources    │     0 │        0 │ 0 without CheckDestroy                          │
+│ Data Sources │     1 │        0 │ -                                               │
+│ Actions      │     0 │        0 │ 0 without Check func                            │
+│ Orphan Tests │     0 │        - │ -                                               │
+└──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ DATA SOURCES                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME  TESTS  Check  ConfigStateChecks  FILE                 TEST FILE
+  ────  ─────  ─────  ─────────────────  ────                 ─────────
+  http  30     ✓      ✗                  data_source_http.go  data_source_http_test.go
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ ORPHAN TESTS                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  ✓ All test functions are associated with resources!
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ TEST ASSOCIATIONS                                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  RESOURCE  KIND  TEST FUNCTION                                      MATCH TYPE
+  ────────  ────  ─────────────                                      ──────────
+  http      data  TestDataSource_200                                 inferred_from_config
+                  TestDataSource_200_SlashInPath                     inferred_from_config
+                  TestDataSource_404                                 inferred_from_config
+                  TestDataSource_withAuthorizationRequestHeader_200  inferred_from_config
+                  TestDataSource_withAuthorizationRequestHeader_403  inferred_from_config
+                  TestDataSource_utf8_200                            inferred_from_config
+                  TestDataSource_utf16_200                           inferred_from_config
+                  TestDataSource_x509cert                            inferred_from_config
+                  TestDataSource_UpgradeFromVersion2_2_0             inferred_from_config
+                  TestDataSource_Provisioner                         inferred_from_config
+                  TestDataSource_POST_200                            inferred_from_config
+                  TestDataSource_HEAD_204                            inferred_from_config
+                  TestDataSource_UnsupportedMethod                   inferred_from_config
+                  TestDataSource_WithCACertificate                   inferred_from_config
+                  TestDataSource_WithClientCert                      inferred_from_config
+                  TestDataSource_WithCACertificateFalse              inferred_from_config
+                  TestDataSource_InsecureTrue                        inferred_from_config
+                  TestDataSource_InsecureFalse                       inferred_from_config
+                  TestDataSource_InsecureUnconfigured                inferred_from_config
+                  TestDataSource_UnsupportedInsecureCaCert           inferred_from_config
+                  TestDataSource_HostRequestHeaderOverride_200       inferred_from_config
+                  TestDataSource_HTTPViaProxyWithEnv                 inferred_from_config
+                  TestDataSource_Timeout                             inferred_from_config
+                  TestDataSource_Retry                               inferred_from_config
+                  TestDataSource_MinDelay                            inferred_from_config
+                  TestDataSource_MaxDelay                            inferred_from_config
+                  TestDataSource_MaxDelayAtLeastEqualToMinDelay      inferred_from_config
+                  TestDataSource_RequestBody                         inferred_from_config
+                  TestDataSource_ResponseBodyText                    inferred_from_config
+                  TestDataSource_ResponseBodyBinary                  inferred_from_config
+

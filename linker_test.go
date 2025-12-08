@@ -5,24 +5,29 @@ package tfprovidertest
 import (
 	"strings"
 	"testing"
+
+	"github.com/example/tfprovidertest/internal/analysis"
+	"github.com/example/tfprovidertest/internal/matching"
+	"github.com/example/tfprovidertest/internal/registry"
+	"github.com/example/tfprovidertest/pkg/config"
 )
 
 func TestLinkerFunctionNameMatching(t *testing.T) {
-	reg := NewResourceRegistry()
+	reg := registry.NewResourceRegistry()
 
 	// Register resources
-	reg.RegisterResource(&ResourceInfo{Name: "widget"})
-	reg.RegisterResource(&ResourceInfo{Name: "instance"})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "widget"})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "instance"})
 
 	// Register test functions
-	fn1 := &TestFunctionInfo{Name: "TestAccWidget_basic", FilePath: "/test.go"}
-	fn2 := &TestFunctionInfo{Name: "TestAccInstance_update", FilePath: "/test.go"}
+	fn1 := &registry.TestFunctionInfo{Name: "TestAccWidget_basic", FilePath: "/test.go"}
+	fn2 := &registry.TestFunctionInfo{Name: "TestAccInstance_update", FilePath: "/test.go"}
 	reg.RegisterTestFunction(fn1)
 	reg.RegisterTestFunction(fn2)
 
 	// Run linker
-	settings := DefaultSettings()
-	linker := NewLinker(reg, settings)
+	settings := config.DefaultSettings()
+	linker := matching.NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
 	// Verify matches
@@ -31,11 +36,11 @@ func TestLinkerFunctionNameMatching(t *testing.T) {
 		t.Errorf("expected 1 widget test, got %d", len(widgetTests))
 	}
 	if len(widgetTests) > 0 {
-		if widgetTests[0].MatchType != MatchTypeFunctionName {
+		if widgetTests[0].MatchType != registry.MatchTypeFunctionName {
 			t.Errorf("expected MatchTypeFunctionName, got %v", widgetTests[0].MatchType)
 		}
-		if widgetTests[0].MatchConfidence != 1.0 {
-			t.Errorf("expected confidence 1.0, got %f", widgetTests[0].MatchConfidence)
+		if widgetTests[0].MatchConfidence != 0.95 {
+			t.Errorf("expected confidence 0.95, got %f", widgetTests[0].MatchConfidence)
 		}
 	}
 
@@ -46,18 +51,18 @@ func TestLinkerFunctionNameMatching(t *testing.T) {
 }
 
 func TestLinkerFileProximityMatching(t *testing.T) {
-	reg := NewResourceRegistry()
-	reg.RegisterResource(&ResourceInfo{Name: "widget"})
+	reg := registry.NewResourceRegistry()
+	reg.RegisterResource(&registry.ResourceInfo{Name: "widget"})
 
 	// Test function with non-standard name but matching file
-	fn := &TestFunctionInfo{
+	fn := &registry.TestFunctionInfo{
 		Name:     "TestWidgetOperations_all", // Doesn't follow TestAcc pattern
 		FilePath: "/path/to/resource_widget_test.go",
 	}
 	reg.RegisterTestFunction(fn)
 
-	settings := DefaultSettings()
-	linker := NewLinker(reg, settings)
+	settings := config.DefaultSettings()
+	linker := matching.NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
 	widgetTests := reg.GetResourceTests("widget")
@@ -65,28 +70,28 @@ func TestLinkerFileProximityMatching(t *testing.T) {
 		t.Errorf("expected 1 widget test, got %d", len(widgetTests))
 	}
 	if len(widgetTests) > 0 {
-		if widgetTests[0].MatchType != MatchTypeFileProximity {
+		if widgetTests[0].MatchType != registry.MatchTypeFileProximity {
 			t.Errorf("expected MatchTypeFileProximity, got %v", widgetTests[0].MatchType)
 		}
-		if widgetTests[0].MatchConfidence != 0.8 {
-			t.Errorf("expected confidence 0.8, got %f", widgetTests[0].MatchConfidence)
+		if widgetTests[0].MatchConfidence != 0.9 {
+			t.Errorf("expected confidence 0.9, got %f", widgetTests[0].MatchConfidence)
 		}
 	}
 }
 
 func TestLinkerFileProximityDataSource(t *testing.T) {
-	reg := NewResourceRegistry()
-	reg.RegisterResource(&ResourceInfo{Name: "http", IsDataSource: true})
+	reg := registry.NewResourceRegistry()
+	reg.RegisterResource(&registry.ResourceInfo{Name: "http", Kind: registry.KindDataSource})
 
 	// Test function in data source file
-	fn := &TestFunctionInfo{
+	fn := &registry.TestFunctionInfo{
 		Name:     "TestHTTPDataSource_basic",
 		FilePath: "/path/to/data_source_http_test.go",
 	}
 	reg.RegisterTestFunction(fn)
 
-	settings := DefaultSettings()
-	linker := NewLinker(reg, settings)
+	settings := config.DefaultSettings()
+	linker := matching.NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
 	httpTests := reg.GetResourceTests("http")
@@ -96,27 +101,27 @@ func TestLinkerFileProximityDataSource(t *testing.T) {
 }
 
 func TestLinkerFuzzyMatching(t *testing.T) {
-	reg := NewResourceRegistry()
-	reg.RegisterResource(&ResourceInfo{Name: "widget"})
+	reg := registry.NewResourceRegistry()
+	reg.RegisterResource(&registry.ResourceInfo{Name: "widget"})
 
 	// Test function with slightly different name
-	fn := &TestFunctionInfo{
+	fn := &registry.TestFunctionInfo{
 		Name:     "TestAccWidgets_basic", // "widgets" instead of "widget"
 		FilePath: "/path/to/test.go",
 	}
 	reg.RegisterTestFunction(fn)
 
-	settings := DefaultSettings()
+	settings := config.DefaultSettings()
 	settings.EnableFuzzyMatching = true
 	settings.FuzzyMatchThreshold = 0.7
-	linker := NewLinker(reg, settings)
+	linker := matching.NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
 	widgetTests := reg.GetResourceTests("widget")
 	if len(widgetTests) != 1 {
 		t.Errorf("expected 1 widget test from fuzzy match, got %d", len(widgetTests))
 	}
-	if len(widgetTests) > 0 && widgetTests[0].MatchType != MatchTypeFuzzy {
+	if len(widgetTests) > 0 && widgetTests[0].MatchType != registry.MatchTypeFuzzy {
 		t.Errorf("expected MatchTypeFuzzy, got %v", widgetTests[0].MatchType)
 	}
 }
@@ -139,9 +144,9 @@ func TestLevenshteinDistance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.a+"_"+tt.b, func(t *testing.T) {
-			got := levenshteinDistance(tt.a, tt.b)
+			got := matching.LevenshteinDistance(tt.a, tt.b)
 			if got != tt.expected {
-				t.Errorf("levenshteinDistance(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.expected)
+				t.Errorf("LevenshteinDistance(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.expected)
 			}
 		})
 	}
@@ -163,30 +168,30 @@ func TestCalculateSimilarity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.a+"_"+tt.b, func(t *testing.T) {
-			got := calculateSimilarity(tt.a, tt.b)
+			got := matching.CalculateSimilarity(tt.a, tt.b)
 			if got < tt.minExpected {
-				t.Errorf("calculateSimilarity(%q, %q) = %f, want >= %f", tt.a, tt.b, got, tt.minExpected)
+				t.Errorf("CalculateSimilarity(%q, %q) = %f, want >= %f", tt.a, tt.b, got, tt.minExpected)
 			}
 			if got > tt.maxExpected {
-				t.Errorf("calculateSimilarity(%q, %q) = %f, want <= %f", tt.a, tt.b, got, tt.maxExpected)
+				t.Errorf("CalculateSimilarity(%q, %q) = %f, want <= %f", tt.a, tt.b, got, tt.maxExpected)
 			}
 		})
 	}
 }
 
 func TestLinkerNoMatch(t *testing.T) {
-	reg := NewResourceRegistry()
-	reg.RegisterResource(&ResourceInfo{Name: "widget"})
+	reg := registry.NewResourceRegistry()
+	reg.RegisterResource(&registry.ResourceInfo{Name: "widget"})
 
 	// Test function that doesn't match any resource
-	fn := &TestFunctionInfo{
+	fn := &registry.TestFunctionInfo{
 		Name:     "TestAccOrphanResource_basic",
 		FilePath: "/path/to/orphan_test.go",
 	}
 	reg.RegisterTestFunction(fn)
 
-	settings := DefaultSettings()
-	linker := NewLinker(reg, settings)
+	settings := config.DefaultSettings()
+	linker := matching.NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
 	// Should have no matches for widget since function doesn't match
@@ -203,21 +208,21 @@ func TestLinkerNoMatch(t *testing.T) {
 }
 
 func TestLinkerMultipleResources(t *testing.T) {
-	reg := NewResourceRegistry()
-	reg.RegisterResource(&ResourceInfo{Name: "widget"})
-	reg.RegisterResource(&ResourceInfo{Name: "gadget"})
-	reg.RegisterResource(&ResourceInfo{Name: "device"})
+	reg := registry.NewResourceRegistry()
+	reg.RegisterResource(&registry.ResourceInfo{Name: "widget"})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "gadget"})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "device"})
 
 	// Register test functions
-	fn1 := &TestFunctionInfo{Name: "TestAccWidget_basic", FilePath: "/test.go"}
-	fn2 := &TestFunctionInfo{Name: "TestAccWidget_update", FilePath: "/test.go"}
-	fn3 := &TestFunctionInfo{Name: "TestAccGadget_basic", FilePath: "/test.go"}
+	fn1 := &registry.TestFunctionInfo{Name: "TestAccWidget_basic", FilePath: "/test.go"}
+	fn2 := &registry.TestFunctionInfo{Name: "TestAccWidget_update", FilePath: "/test.go"}
+	fn3 := &registry.TestFunctionInfo{Name: "TestAccGadget_basic", FilePath: "/test.go"}
 	reg.RegisterTestFunction(fn1)
 	reg.RegisterTestFunction(fn2)
 	reg.RegisterTestFunction(fn3)
 
-	settings := DefaultSettings()
-	linker := NewLinker(reg, settings)
+	settings := config.DefaultSettings()
+	linker := matching.NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
 	widgetTests := reg.GetResourceTests("widget")
@@ -237,14 +242,14 @@ func TestLinkerMultipleResources(t *testing.T) {
 }
 
 func TestLinkerDataSourceMatching(t *testing.T) {
-	reg := NewResourceRegistry()
-	reg.RegisterResource(&ResourceInfo{Name: "ami", IsDataSource: true})
+	reg := registry.NewResourceRegistry()
+	reg.RegisterResource(&registry.ResourceInfo{Name: "ami", Kind: registry.KindDataSource})
 
-	fn := &TestFunctionInfo{Name: "TestAccDataSourceAmi_basic", FilePath: "/test.go"}
+	fn := &registry.TestFunctionInfo{Name: "TestAccDataSourceAmi_basic", FilePath: "/test.go"}
 	reg.RegisterTestFunction(fn)
 
-	settings := DefaultSettings()
-	linker := NewLinker(reg, settings)
+	settings := config.DefaultSettings()
+	linker := matching.NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
 	amiTests := reg.GetResourceTests("ami")
@@ -254,14 +259,14 @@ func TestLinkerDataSourceMatching(t *testing.T) {
 }
 
 func TestLinkerInferredMatching(t *testing.T) {
-	reg := NewResourceRegistry()
+	reg := registry.NewResourceRegistry()
 
 	// Register a resource named "example_widget"
-	reg.RegisterResource(&ResourceInfo{Name: "example_widget"})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "example_widget"})
 
 	// Create a test function with InferredResources (simulating what extractTestSteps would populate
 	// when parsing a Config string containing `resource "example_widget" "test" {`)
-	fn := &TestFunctionInfo{
+	fn := &registry.TestFunctionInfo{
 		Name:              "TestSomeArbitraryName_basic",
 		FilePath:          "/path/to/arbitrary_test.go",
 		InferredResources: []string{"example_widget"},
@@ -269,8 +274,8 @@ func TestLinkerInferredMatching(t *testing.T) {
 	reg.RegisterTestFunction(fn)
 
 	// Run linker
-	settings := DefaultSettings()
-	linker := NewLinker(reg, settings)
+	settings := config.DefaultSettings()
+	linker := matching.NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
 	// Verify the test is linked to "example_widget" with MatchTypeInferred
@@ -279,67 +284,71 @@ func TestLinkerInferredMatching(t *testing.T) {
 		t.Fatalf("expected 1 example_widget test, got %d", len(widgetTests))
 	}
 
-	if widgetTests[0].MatchType != MatchTypeInferred {
+	if widgetTests[0].MatchType != registry.MatchTypeInferred {
 		t.Errorf("expected MatchTypeInferred, got %v", widgetTests[0].MatchType)
 	}
-	if widgetTests[0].MatchConfidence != 1.0 {
-		t.Errorf("expected confidence 1.0, got %f", widgetTests[0].MatchConfidence)
+	if widgetTests[0].MatchConfidence != 0.85 {
+		t.Errorf("expected confidence 0.85, got %f", widgetTests[0].MatchConfidence)
 	}
 }
 
 func TestLinkerInferredMatchingPriority(t *testing.T) {
-	// Test that inferred matching takes priority over function name matching
-	reg := NewResourceRegistry()
+	// Test that function name matching takes priority over inferred matching
+	// This ensures that when a test's function name clearly indicates the resource,
+	// we use that even if the config references other resources as dependencies
+	reg := registry.NewResourceRegistry()
 
 	// Register two resources
-	reg.RegisterResource(&ResourceInfo{Name: "widget"})
-	reg.RegisterResource(&ResourceInfo{Name: "gadget"})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "widget"})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "gadget"})
 
 	// Create a test function whose name suggests "widget" but has "gadget" inferred from config
-	fn := &TestFunctionInfo{
+	// Priority: function name > file proximity > inferred
+	fn := &registry.TestFunctionInfo{
 		Name:              "TestAccWidget_basic",                  // Function name suggests "widget"
 		FilePath:          "/path/to/resource_widget_test.go",     // File suggests "widget"
-		InferredResources: []string{"gadget"},                     // Config actually tests "gadget"
+		InferredResources: []string{"gadget"},                     // Config references "gadget" as dependency
 	}
 	reg.RegisterTestFunction(fn)
 
 	// Run linker
-	settings := DefaultSettings()
-	linker := NewLinker(reg, settings)
+	settings := config.DefaultSettings()
+	linker := matching.NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
-	// Verify the test is linked to "gadget" (inferred), not "widget" (function name)
-	gadgetTests := reg.GetResourceTests("gadget")
-	if len(gadgetTests) != 1 {
-		t.Errorf("expected 1 gadget test (inferred priority), got %d", len(gadgetTests))
-	}
-
+	// Verify the test is linked to "widget" (function name), not "gadget" (inferred)
+	// Function name matching has highest priority
 	widgetTests := reg.GetResourceTests("widget")
-	if len(widgetTests) != 0 {
-		t.Errorf("expected 0 widget tests (inferred should take priority), got %d", len(widgetTests))
+	if len(widgetTests) != 1 {
+		t.Errorf("expected 1 widget test (function name priority), got %d", len(widgetTests))
 	}
 
-	// Verify match type
-	if len(gadgetTests) > 0 && gadgetTests[0].MatchType != MatchTypeInferred {
-		t.Errorf("expected MatchTypeInferred, got %v", gadgetTests[0].MatchType)
+	gadgetTests := reg.GetResourceTests("gadget")
+	if len(gadgetTests) != 0 {
+		t.Errorf("expected 0 gadget tests (function name should take priority over inferred), got %d", len(gadgetTests))
+	}
+
+	// Verify match type is function_name since that has highest priority
+	if len(widgetTests) > 0 && widgetTests[0].MatchType != registry.MatchTypeFunctionName {
+		t.Errorf("expected MatchTypeFunctionName, got %v", widgetTests[0].MatchType)
 	}
 }
 
 func TestLinkerPriorityMatching(t *testing.T) {
 	// Test that function name matching takes priority over file proximity
-	reg := NewResourceRegistry()
-	reg.RegisterResource(&ResourceInfo{Name: "widget"})
-	reg.RegisterResource(&ResourceInfo{Name: "gadget"})
+	reg := registry.NewResourceRegistry()
+	reg.RegisterResource(&registry.ResourceInfo{Name: "widget"})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "gadget"})
 
 	// Test function with name matching "widget" but in file matching "gadget"
-	fn := &TestFunctionInfo{
+	fn := &registry.TestFunctionInfo{
 		Name:     "TestAccWidget_basic",
 		FilePath: "/path/to/resource_gadget_test.go",
 	}
 	reg.RegisterTestFunction(fn)
 
-	settings := DefaultSettings()
-	linker := NewLinker(reg, settings)
+	settings := config.DefaultSettings()
+	linker := matching.NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 
 	// Should match widget (function name) not gadget (file proximity)
@@ -355,8 +364,11 @@ func TestLinkerPriorityMatching(t *testing.T) {
 }
 
 func TestMatchByFileProximity(t *testing.T) {
-	linker := &Linker{settings: DefaultSettings()}
+	reg := registry.NewResourceRegistry()
+	linker := matching.NewLinker(reg, config.DefaultSettings())
 
+	// Test now returns compound keys (kind:name) to properly distinguish
+	// resources from data sources when they have the same name
 	tests := []struct {
 		filePath      string
 		resourceNames map[string]bool
@@ -365,24 +377,25 @@ func TestMatchByFileProximity(t *testing.T) {
 		{
 			filePath:      "/path/to/resource_widget_test.go",
 			resourceNames: map[string]bool{"widget": true},
-			expected:      "widget",
+			expected:      "resource:widget",
 		},
 		{
 			filePath:      "/path/to/data_source_http_test.go",
 			resourceNames: map[string]bool{"http": true},
-			expected:      "http",
+			expected:      "data source:http",
 		},
 		{
 			filePath:      "/path/to/widget_resource_test.go",
 			resourceNames: map[string]bool{"widget": true},
-			expected:      "widget",
+			expected:      "resource:widget",
 		},
 		{
 			filePath:      "/path/to/widget_data_source_test.go",
 			resourceNames: map[string]bool{"widget": true},
-			expected:      "widget",
+			expected:      "data source:widget",
 		},
 		{
+			// Fallback: plain name without suffix returns simple name
 			filePath:      "/path/to/widget_test.go",
 			resourceNames: map[string]bool{"widget": true},
 			expected:      "widget",
@@ -401,9 +414,9 @@ func TestMatchByFileProximity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.filePath, func(t *testing.T) {
-			got := linker.matchByFileProximity(tt.filePath, tt.resourceNames)
+			got := linker.MatchByFileProximity(tt.filePath, tt.resourceNames)
 			if got != tt.expected {
-				t.Errorf("matchByFileProximity(%q) = %q, want %q", tt.filePath, got, tt.expected)
+				t.Errorf("MatchByFileProximity(%q) = %q, want %q", tt.filePath, got, tt.expected)
 			}
 		})
 	}
@@ -423,30 +436,30 @@ func TestMinInt(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := minInt(tt.nums...)
+		got := matching.MinInt(tt.nums...)
 		if got != tt.expected {
-			t.Errorf("minInt(%v) = %d, want %d", tt.nums, got, tt.expected)
+			t.Errorf("MinInt(%v) = %d, want %d", tt.nums, got, tt.expected)
 		}
 	}
 }
 
 func TestMinIntEmpty(t *testing.T) {
-	got := minInt()
+	got := matching.MinInt()
 	if got != 0 {
-		t.Errorf("minInt() = %d, want 0", got)
+		t.Errorf("MinInt() = %d, want 0", got)
 	}
 }
 
 func TestMatchTypeString(t *testing.T) {
 	tests := []struct {
-		matchType MatchType
+		matchType registry.MatchType
 		expected  string
 	}{
-		{MatchTypeNone, "none"},
-		{MatchTypeInferred, "inferred_from_config"},
-		{MatchTypeFunctionName, "function_name"},
-		{MatchTypeFileProximity, "file_proximity"},
-		{MatchTypeFuzzy, "fuzzy"},
+		{registry.MatchTypeNone, "none"},
+		{registry.MatchTypeInferred, "inferred_from_config"},
+		{registry.MatchTypeFunctionName, "function_name"},
+		{registry.MatchTypeFileProximity, "file_proximity"},
+		{registry.MatchTypeFuzzy, "fuzzy"},
 	}
 
 	for _, tt := range tests {
@@ -562,7 +575,7 @@ func TestMatchResourceByName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			match, found := MatchResourceByName(tt.funcName, tt.resourceNames)
+			match, found := matching.MatchResourceByName(tt.funcName, tt.resourceNames)
 			if match != tt.expectedMatch {
 				t.Errorf("MatchResourceByName(%q) match = %q, want %q",
 					tt.funcName, match, tt.expectedMatch)
@@ -605,7 +618,7 @@ func TestLinkerClassifyConsistency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test with Linker's MatchResourceByName
 			resourceNames := map[string]bool{tt.resourceName: true}
-			matched, found := MatchResourceByName(tt.funcName, resourceNames)
+			matched, found := matching.MatchResourceByName(tt.funcName, resourceNames)
 
 			if !found || matched != tt.resourceName {
 				t.Fatalf("MatchResourceByName(%q, %q) failed: matched=%q, found=%v",
@@ -613,7 +626,7 @@ func TestLinkerClassifyConsistency(t *testing.T) {
 			}
 
 			// Test with ClassifyTestFunctionMatch - should also return "matched"
-			status, reason := ClassifyTestFunctionMatch(tt.funcName, tt.resourceName)
+			status, reason := analysis.ClassifyTestFunctionMatch(tt.funcName, tt.resourceName)
 			if status != "matched" {
 				t.Errorf("CONSISTENCY ERROR: Linker matched %q to %q, but ClassifyTestFunctionMatch returned status=%q, reason=%q",
 					tt.funcName, tt.resourceName, status, reason)
@@ -658,7 +671,7 @@ func TestClassifyNonMatchingFunctions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			status, reason := ClassifyTestFunctionMatch(tt.funcName, tt.resourceName)
+			status, reason := analysis.ClassifyTestFunctionMatch(tt.funcName, tt.resourceName)
 			if status != tt.expectedStatus {
 				t.Errorf("ClassifyTestFunctionMatch(%q, %q) status = %q, want %q",
 					tt.funcName, tt.resourceName, status, tt.expectedStatus)

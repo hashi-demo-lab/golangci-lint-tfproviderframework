@@ -7,6 +7,8 @@ import (
 	"go/parser"
 	"go/token"
 	"testing"
+
+	"github.com/example/tfprovidertest/internal/discovery"
 )
 
 func TestFindLocalTestHelpers(t *testing.T) {
@@ -153,7 +155,7 @@ func Helper2(t *testing.T, tc resource.TestCase) {
 				t.Fatalf("failed to parse source: %v", err)
 			}
 
-			helpers := FindLocalTestHelpers([]*ast.File{file}, fset)
+			helpers := discovery.FindLocalTestHelpers([]*ast.File{file}, fset)
 
 			if len(helpers) != len(tt.expectedHelpers) {
 				t.Errorf("expected %d helpers, got %d", len(tt.expectedHelpers), len(helpers))
@@ -254,7 +256,7 @@ func MyFunc(t testing.T) {}
 				t.Fatal("could not find function declaration")
 			}
 
-			result := AcceptsTestingT(funcDecl)
+			result := discovery.AcceptsTestingT(funcDecl)
 			if result != tt.expected {
 				t.Errorf("AcceptsTestingT() = %v, want %v", result, tt.expected)
 			}
@@ -323,7 +325,7 @@ func TestMatchesExcludePattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := MatchesExcludePattern(tt.filePath, tt.patterns)
+			result := discovery.MatchesExcludePattern(tt.filePath, tt.patterns)
 
 			if result.Excluded != tt.expectExcluded {
 				t.Errorf("MatchesExcludePattern(%q).Excluded = %v, want %v",
@@ -348,7 +350,7 @@ func TestCheckUsesResourceTestWithLocalHelpers(t *testing.T) {
 		name          string
 		src           string
 		customHelpers []string
-		localHelpers  []LocalHelper
+		localHelpers  []discovery.LocalHelper
 		expected      bool
 	}{
 		{
@@ -396,7 +398,7 @@ func TestFunc() {
 }
 `,
 			customHelpers: nil,
-			localHelpers:  []LocalHelper{{Name: "AccTestHelper"}},
+			localHelpers:  []discovery.LocalHelper{{Name: "AccTestHelper"}},
 			expected:      true,
 		},
 		{
@@ -447,7 +449,7 @@ func TestFunc() {
 				t.Fatal("could not find function body")
 			}
 
-			result := CheckUsesResourceTestWithLocalHelpers(body, tt.customHelpers, tt.localHelpers)
+			result := discovery.CheckUsesResourceTestWithLocalHelpers(body, tt.customHelpers, tt.localHelpers)
 			if result != tt.expected {
 				t.Errorf("CheckUsesResourceTestWithLocalHelpers() = %v, want %v", result, tt.expected)
 			}
@@ -459,7 +461,7 @@ func TestDetectHelperUsed(t *testing.T) {
 	tests := []struct {
 		name         string
 		src          string
-		localHelpers []LocalHelper
+		localHelpers []discovery.LocalHelper
 		expected     string
 	}{
 		{
@@ -492,7 +494,7 @@ func TestFunc() {
 	AccTestHelper(t, tc)
 }
 `,
-			localHelpers: []LocalHelper{{Name: "AccTestHelper"}},
+			localHelpers: []discovery.LocalHelper{{Name: "AccTestHelper"}},
 			expected:     "AccTestHelper",
 		},
 		{
@@ -542,7 +544,7 @@ func TestFunc() {
 				t.Fatal("could not find function body")
 			}
 
-			result := DetectHelperUsed(body, tt.localHelpers)
+			result := discovery.DetectHelperUsed(body, tt.localHelpers)
 			if result != tt.expected {
 				t.Errorf("DetectHelperUsed() = %q, want %q", result, tt.expected)
 			}
@@ -552,13 +554,13 @@ func TestFunc() {
 
 func TestAcceptsTestingT_NilCases(t *testing.T) {
 	// Test nil function declaration
-	if AcceptsTestingT(nil) {
+	if discovery.AcceptsTestingT(nil) {
 		t.Error("AcceptsTestingT(nil) should return false")
 	}
 
 	// Test function declaration with nil Type
 	funcDecl := &ast.FuncDecl{Name: ast.NewIdent("test")}
-	if AcceptsTestingT(funcDecl) {
+	if discovery.AcceptsTestingT(funcDecl) {
 		t.Error("AcceptsTestingT with nil Type should return false")
 	}
 
@@ -567,7 +569,7 @@ func TestAcceptsTestingT_NilCases(t *testing.T) {
 		Name: ast.NewIdent("test"),
 		Type: &ast.FuncType{},
 	}
-	if AcceptsTestingT(funcDecl) {
+	if discovery.AcceptsTestingT(funcDecl) {
 		t.Error("AcceptsTestingT with nil Params should return false")
 	}
 }
@@ -586,7 +588,7 @@ func Helper(t *testing.T) { resource.Test(t, resource.TestCase{}) }
 		t.Fatalf("failed to parse source: %v", err)
 	}
 
-	helpers := FindLocalTestHelpers([]*ast.File{file}, fset)
+	helpers := discovery.FindLocalTestHelpers([]*ast.File{file}, fset)
 	if len(helpers) != 1 {
 		t.Fatalf("expected 1 helper, got %d", len(helpers))
 	}
@@ -605,7 +607,7 @@ func Helper(t *testing.T) { resource.Test(t, resource.TestCase{}) }
 
 func TestExclusionResult_Fields(t *testing.T) {
 	// Test excluded file
-	result := MatchesExcludePattern("/path/to/sweeper.go", []string{"*sweeper.go"})
+	result := discovery.MatchesExcludePattern("/path/to/sweeper.go", []string{"*sweeper.go"})
 	if !result.Excluded {
 		t.Error("should be excluded")
 	}
@@ -620,7 +622,7 @@ func TestExclusionResult_Fields(t *testing.T) {
 	}
 
 	// Test non-excluded file
-	result = MatchesExcludePattern("/path/to/resource.go", []string{"*sweeper.go"})
+	result = discovery.MatchesExcludePattern("/path/to/resource.go", []string{"*sweeper.go"})
 	if result.Excluded {
 		t.Error("should not be excluded")
 	}
@@ -631,8 +633,8 @@ func TestExclusionResult_Fields(t *testing.T) {
 
 func TestExclusionDiagnostics_Fields(t *testing.T) {
 	// Just verify the struct can be used
-	diag := ExclusionDiagnostics{
-		ExcludedFiles: []ExclusionResult{
+	diag := discovery.ExclusionDiagnostics{
+		ExcludedFiles: []discovery.ExclusionResult{
 			{FilePath: "a.go", Excluded: true, Reason: "test", MatchedPattern: "*"},
 			{FilePath: "b.go", Excluded: true, Reason: "test", MatchedPattern: "*"},
 		},
@@ -648,7 +650,7 @@ func TestExclusionDiagnostics_Fields(t *testing.T) {
 }
 
 func TestParserConfig_DefaultConfig(t *testing.T) {
-	config := DefaultParserConfig()
+	config := discovery.DefaultParserConfig()
 
 	if config.CustomHelpers != nil {
 		t.Errorf("DefaultParserConfig().CustomHelpers = %v, want nil", config.CustomHelpers)
@@ -686,8 +688,8 @@ func TestAccWidget_basic(t *testing.T) {
 		t.Fatalf("failed to parse source: %v", err)
 	}
 
-	config := DefaultParserConfig()
-	testFileInfo := ParseTestFileWithConfig(file, fset, "resource_widget_test.go", config)
+	config := discovery.DefaultParserConfig()
+	testFileInfo := discovery.ParseTestFileWithConfig(file, fset, "resource_widget_test.go", config)
 
 	if testFileInfo == nil {
 		t.Fatal("ParseTestFileWithConfig returned nil")
@@ -727,10 +729,10 @@ func TestAccWidget_basic(t *testing.T) {
 		t.Fatalf("failed to parse source: %v", err)
 	}
 
-	config := ParserConfig{
+	config := discovery.ParserConfig{
 		CustomHelpers: []string{"testhelper.AccTest"},
 	}
-	testFileInfo := ParseTestFileWithConfig(file, fset, "resource_widget_test.go", config)
+	testFileInfo := discovery.ParseTestFileWithConfig(file, fset, "resource_widget_test.go", config)
 
 	if testFileInfo == nil {
 		t.Fatal("ParseTestFileWithConfig returned nil")
@@ -765,7 +767,7 @@ func AccTestHelper(t *testing.T, tc resource.TestCase) {
 		t.Fatalf("failed to parse helper source: %v", err)
 	}
 
-	localHelpers := FindLocalTestHelpers([]*ast.File{helperFile}, fset)
+	localHelpers := discovery.FindLocalTestHelpers([]*ast.File{helperFile}, fset)
 	if len(localHelpers) != 1 {
 		t.Fatalf("expected 1 local helper, got %d", len(localHelpers))
 	}
@@ -785,10 +787,10 @@ func TestAccWidget_basic(t *testing.T) {
 		t.Fatalf("failed to parse test source: %v", err)
 	}
 
-	config := ParserConfig{
+	config := discovery.ParserConfig{
 		LocalHelpers: localHelpers,
 	}
-	testFileInfo := ParseTestFileWithConfig(testFile, fset, "resource_widget_test.go", config)
+	testFileInfo := discovery.ParseTestFileWithConfig(testFile, fset, "resource_widget_test.go", config)
 
 	if testFileInfo == nil {
 		t.Fatal("ParseTestFileWithConfig returned nil")
@@ -843,10 +845,10 @@ func TestAcc_Widget(t *testing.T) {
 	}
 
 	// Test with custom pattern that only matches TestIntegration*
-	config := ParserConfig{
+	config := discovery.ParserConfig{
 		TestNamePatterns: []string{"TestIntegration*"},
 	}
-	testFileInfo := ParseTestFileWithConfig(file, fset, "resource_widget_test.go", config)
+	testFileInfo := discovery.ParseTestFileWithConfig(file, fset, "resource_widget_test.go", config)
 
 	if testFileInfo == nil {
 		t.Fatal("ParseTestFileWithConfig returned nil")
@@ -881,7 +883,7 @@ func MyTestHelper(t *testing.T, tc resource.TestCase) {
 		t.Fatalf("failed to parse helper source: %v", err)
 	}
 
-	localHelpers := FindLocalTestHelpers([]*ast.File{helperFile}, fset)
+	localHelpers := discovery.FindLocalTestHelpers([]*ast.File{helperFile}, fset)
 
 	// Test file with custom test name pattern
 	testSrc := `
@@ -910,12 +912,12 @@ func TestIgnored_Widget(t *testing.T) {
 	}
 
 	// Config with all options set
-	config := ParserConfig{
+	config := discovery.ParserConfig{
 		CustomHelpers:    []string{"testhelper.ParallelTest"},
 		LocalHelpers:     localHelpers,
 		TestNamePatterns: []string{"TestCustom*"},
 	}
-	testFileInfo := ParseTestFileWithConfig(testFile, fset, "resource_widget_test.go", config)
+	testFileInfo := discovery.ParseTestFileWithConfig(testFile, fset, "resource_widget_test.go", config)
 
 	if testFileInfo == nil {
 		t.Fatal("ParseTestFileWithConfig returned nil")
@@ -978,8 +980,8 @@ func TestAccWidget_basic(t *testing.T) {
 	}
 
 	// Test that old functions still work
-	oldResult := ParseTestFile(file, fset, "resource_widget_test.go")
-	newResult := ParseTestFileWithConfig(file, fset, "resource_widget_test.go", DefaultParserConfig())
+	oldResult := discovery.ParseTestFile(file, fset, "resource_widget_test.go")
+	newResult := discovery.ParseTestFileWithConfig(file, fset, "resource_widget_test.go", discovery.DefaultParserConfig())
 
 	if oldResult == nil || newResult == nil {
 		t.Fatal("one of the parse functions returned nil")
@@ -1016,8 +1018,8 @@ func TestAccWidget_basic(t *testing.T) {
 	customHelpers := []string{"testhelper.AccTest"}
 
 	// Test that old function still works
-	oldResult := ParseTestFileWithHelpers(file, fset, "resource_widget_test.go", customHelpers)
-	newResult := ParseTestFileWithConfig(file, fset, "resource_widget_test.go", ParserConfig{
+	oldResult := discovery.ParseTestFileWithHelpers(file, fset, "resource_widget_test.go", customHelpers)
+	newResult := discovery.ParseTestFileWithConfig(file, fset, "resource_widget_test.go", discovery.ParserConfig{
 		CustomHelpers: customHelpers,
 	})
 
@@ -1031,6 +1033,130 @@ func TestAccWidget_basic(t *testing.T) {
 
 	if oldResult.TestFunctions[0].Name != newResult.TestFunctions[0].Name {
 		t.Errorf("function names differ: old=%q, new=%q", oldResult.TestFunctions[0].Name, newResult.TestFunctions[0].Name)
+	}
+}
+
+func TestExtractResourcePackageAliases(t *testing.T) {
+	tests := []struct {
+		name     string
+		src      string
+		expected map[string]bool
+	}{
+		{
+			name: "standard resource import",
+			src: `
+package provider_test
+import "github.com/hashicorp/terraform-plugin-testing/helper/resource"
+`,
+			expected: map[string]bool{"resource": true},
+		},
+		{
+			name: "aliased resource import",
+			src: `
+package provider_test
+import r "github.com/hashicorp/terraform-plugin-testing/helper/resource"
+`,
+			expected: map[string]bool{"r": true},
+		},
+		{
+			name: "sdk v2 import",
+			src: `
+package provider_test
+import "github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+`,
+			expected: map[string]bool{"resource": true},
+		},
+		{
+			name: "sdk v1 import with alias",
+			src: `
+package provider_test
+import acc "github.com/hashicorp/terraform-plugin-sdk/helper/resource"
+`,
+			expected: map[string]bool{"acc": true},
+		},
+		{
+			name: "multiple imports with resource aliased",
+			src: `
+package provider_test
+import (
+	"testing"
+	r "github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/example/other"
+)
+`,
+			expected: map[string]bool{"r": true},
+		},
+		{
+			name: "no resource import",
+			src: `
+package provider_test
+import "testing"
+`,
+			expected: map[string]bool{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "test.go", tt.src, parser.ParseComments)
+			if err != nil {
+				t.Fatalf("failed to parse source: %v", err)
+			}
+
+			result := discovery.ExtractResourcePackageAliases(file)
+
+			if len(result) != len(tt.expected) {
+				t.Errorf("expected %d aliases, got %d", len(tt.expected), len(result))
+			}
+
+			for alias := range tt.expected {
+				if !result[alias] {
+					t.Errorf("expected alias %q not found", alias)
+				}
+			}
+		})
+	}
+}
+
+func TestParseTestFileWithConfig_AliasedImport(t *testing.T) {
+	// Test that aliased imports are correctly detected
+	src := `
+package provider_test
+
+import (
+	"testing"
+	r "github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func TestWidget_basic(t *testing.T) {
+	r.Test(t, r.TestCase{
+		Steps: []r.TestStep{
+			{
+				Config: "resource \"example_widget\" \"test\" {}",
+			},
+		},
+	})
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "resource_widget_test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("failed to parse source: %v", err)
+	}
+
+	result := discovery.ParseTestFileWithConfig(file, fset, "resource_widget_test.go", discovery.DefaultParserConfig())
+
+	if result == nil {
+		t.Fatal("ParseTestFileWithConfig returned nil")
+	}
+
+	if len(result.TestFunctions) != 1 {
+		t.Fatalf("expected 1 test function, got %d", len(result.TestFunctions))
+	}
+
+	if result.TestFunctions[0].Name != "TestWidget_basic" {
+		t.Errorf("expected TestWidget_basic, got %s", result.TestFunctions[0].Name)
 	}
 }
 
@@ -1070,9 +1196,9 @@ resource "aws_instance" "example" {
 			expected: []string{"example_widget"},
 		},
 		{
-			name:     "no resource block - data source only",
+			name:     "data source block",
 			input:    `data "example_widget" "test" {`,
-			expected: []string{},
+			expected: []string{"example_widget"},
 		},
 		{
 			name:     "no resource block - empty string",
@@ -1117,7 +1243,7 @@ resource "example_thing" "third" {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			matches := resourceTypeRegex.FindAllStringSubmatch(tt.input, -1)
+			matches := discovery.ResourceTypeRegex.FindAllStringSubmatch(tt.input, -1)
 			var extracted []string
 			for _, match := range matches {
 				if len(match) > 1 {

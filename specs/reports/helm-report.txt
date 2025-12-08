@@ -1,0 +1,99 @@
+Analyzing provider at: /workspace/validation/terraform-provider-helm (4 directories)
+
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                        TERRAFORM PROVIDER TEST COVERAGE REPORT                 ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ SUMMARY                                                                         │
+├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤
+│ Category     │ Total │ Untested │ Issues                                          │
+├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤
+│ Resources    │     1 │        0 │ 1 without CheckDestroy                          │
+│ Data Sources │     1 │        0 │ -                                               │
+│ Actions      │     0 │        0 │ 0 without Check func                            │
+│ Orphan Tests │     1 │        - │ -                                               │
+└──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ RESOURCES                                                                       │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME     TESTS  Update  ImportState  CheckDestroy  ExpectError  Check  ConfigStateChecks  PlanChecks  FILE                      TEST FILE
+  ────     ─────  ──────  ───────────  ────────────  ───────────  ─────  ─────────────────  ──────────  ────                      ─────────
+  release  49     ✓       ✓            ✗             ✓            ✓      ✓                  ✗           resource_helm_release.go  (2 files)
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ DATA SOURCES                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME      TESTS  Check  ConfigStateChecks  FILE                   TEST FILE
+  ────      ─────  ─────  ─────────────────  ────                   ─────────
+  template  5      ✓      ✗                  data_helm_template.go  data_helm_template_test.go
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ ORPHAN TESTS                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  TEST FUNCTION                 FILE                      INFERRED RESOURCES
+  ─────────────                 ────                      ──────────────────
+  TestAccDeferredActions_basic  deferred_actions_test.go  -
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ TEST ASSOCIATIONS                                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  RESOURCE  KIND      TEST FUNCTION                                               MATCH TYPE
+  ────────  ────      ─────────────                                               ──────────
+  release   resource  TestAccHelmRelease_Upgrade_MetadataStructure                inferred_from_config
+                      TestAccHelmRelease_Upgrade_values                           inferred_from_config
+                      TestAccHelmRelease_Upgrade_PostrenderStructure              inferred_from_config
+                      TestAccResourceRelease_basic                                inferred_from_config
+                      TestAccResourceRelease_set_wo                               inferred_from_config
+                      TestAccResourceRelease_emptyVersion                         inferred_from_config
+                      TestAccResourceRelease_import                               inferred_from_config
+                      TestAccResourceRelease_inconsistentVersionRegression        inferred_from_config
+                      TestAccResourceRelease_multiple_releases                    function_name
+                      TestAccResourceRelease_parallel                             inferred_from_config
+                      TestAccResourceRelease_update                               inferred_from_config
+                      TestAccResourceRelease_emptyValuesList                      inferred_from_config
+                      TestAccResourceRelease_updateValues                         inferred_from_config
+                      TestAccResourceRelease_cloakValues                          inferred_from_config
+                      TestAccResourceRelease_updateMultipleValues                 inferred_from_config
+                      TestAccResourceRelease_identity                             inferred_from_config
+                      TestAccResourceRelease_repository_url                       function_name
+                      TestAccResourceRelease_updateAfterFail                      function_name
+                      TestAccResourceRelease_upgradeInstall_coldstart             inferred_from_config
+                      TestAccResourceRelease_upgradeInstall_warmstart             inferred_from_config
+                      TestAccResourceRelease_upgradeInstall_warmstart_no_version  inferred_from_config
+                      TestAccResourceRelease_updateExistingFailed                 inferred_from_config
+                      TestAccResourceRelease_SetNull                              inferred_from_config
+                      TestAccResourceRelease_updateSetValue                       inferred_from_config
+                      TestAccResourceRelease_validation                           inferred_from_config
+                      TestAccResourceRelease_postrender                           inferred_from_config
+                      TestAccResourceRelease_namespaceDoesNotExist                function_name
+                      TestAccResourceRelease_invalidName                          function_name
+                      TestAccResourceRelease_createNamespace                      function_name
+                      TestAccResourceRelease_LocalVersion                         function_name
+                      TestAccResourceRelease_LintFailValues                       function_name
+                      TestAccResourceRelease_takeOwnership                        inferred_from_config
+                      TestAccResourceRelease_LintFailChart                        function_name
+                      TestAccResourceRelease_FailedDeployFailsApply               function_name
+                      TestAccResourceRelease_dependency                           inferred_from_config
+                      TestAccResourceRelease_chartURL                             inferred_from_config
+                      TestAccResourceRelease_helm_repo_add                        inferred_from_config
+                      TestAccResourceRelease_delete_regression                    inferred_from_config
+                      TestAccResourceRelease_manifest                             inferred_from_config
+                      TestAccResourceRelease_manifestUnknownValues                inferred_from_config
+                      TestAccResourceRelease_set_list_chart                       inferred_from_config
+                      TestAccResourceRelease_update_set_list_chart                inferred_from_config
+                      TestAccResourceRelease_literalSet                           inferred_from_config
+                      TestAccResourceRelease_Timeouts                             inferred_from_config
+                      TestAccResourceRelease_OCI_repository                       inferred_from_config
+                      TestAccResourceRelease_OCI_registry_login                   inferred_from_config
+                      TestAccResourceRelease_OCI_login                            inferred_from_config
+                      TestAccResourceRelease_recomputeMetadata                    inferred_from_config
+                      TestAccResourceRelease_manifestServerDiff                   function_name
+  template  data      TestAccDataTemplate_basic                                   inferred_from_config
+                      TestAccDataTemplate_crds                                    inferred_from_config
+                      TestAccDataTemplate_templates                               inferred_from_config
+                      TestAccDataTemplate_kubeVersion                             inferred_from_config
+                      TestAccDataTemplate_configSetNull                           inferred_from_config
+

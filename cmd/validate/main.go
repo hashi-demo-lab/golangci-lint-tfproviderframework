@@ -14,7 +14,11 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	tfprovidertest "github.com/example/tfprovidertest"
+	"github.com/example/tfprovidertest"
+	"github.com/example/tfprovidertest/internal/discovery"
+	"github.com/example/tfprovidertest/internal/matching"
+	"github.com/example/tfprovidertest/internal/registry"
+	"github.com/example/tfprovidertest/pkg/config"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -31,6 +35,8 @@ func main() {
 	// Basic flags
 	providerPath := flag.String("provider", "", "Path to the Terraform provider directory")
 	verbose := flag.Bool("verbose", false, "Enable verbose output")
+	recursive := flag.Bool("recursive", false, "Recursively scan all subdirectories for Go packages")
+	scanPath := flag.String("scan-path", "", "Explicit path within provider to scan (overrides auto-detection)")
 
 	// Diagnostic flags
 	showMatches := flag.Bool("show-matches", false, "Show all resource -> test function associations")
@@ -53,21 +59,49 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Find provider code directory
-	providerCodeDir := findProviderCodeDir(*providerPath)
-	if providerCodeDir == "" {
-		fmt.Printf("Error: Could not find provider code directory in %s\n", *providerPath)
-		fmt.Println("\nTried the following locations:")
-		fmt.Println("  - internal/provider")
-		fmt.Println("  - internal")
-		fmt.Println("  - <provider-name> (extracted from directory name)")
-		os.Exit(1)
+	// Determine directories to scan
+	var scanDirs []string
+
+	if *scanPath != "" {
+		// Explicit scan path provided
+		fullPath := filepath.Join(*providerPath, *scanPath)
+		if stat, err := os.Stat(fullPath); err != nil || !stat.IsDir() {
+			fmt.Printf("Error: Specified scan path does not exist: %s\n", fullPath)
+			os.Exit(1)
+		}
+		scanDirs = []string{fullPath}
+	} else if *recursive {
+		// Recursive scanning - find all directories with Go files
+		scanDirs = findAllGoPackageDirs(*providerPath)
+		if len(scanDirs) == 0 {
+			fmt.Printf("Error: No Go packages found in %s (recursive scan)\n", *providerPath)
+			os.Exit(1)
+		}
+	} else {
+		// Standard auto-detection
+		providerCodeDir := findProviderCodeDir(*providerPath)
+		if providerCodeDir == "" {
+			fmt.Printf("Error: Could not find provider code directory in %s\n", *providerPath)
+			fmt.Println("\nTried the following locations:")
+			fmt.Println("  - internal/provider")
+			fmt.Println("  - internal")
+			fmt.Println("  - <provider-name> (extracted from directory name)")
+			fmt.Println("\nTip: Use -recursive flag to scan all subdirectories")
+			fmt.Println("     Use -scan-path to specify an explicit path")
+			os.Exit(1)
+		}
+		scanDirs = []string{providerCodeDir}
 	}
 
-	fmt.Printf("Analyzing provider at: %s\n\n", providerCodeDir)
+	// Display what we're scanning
+	if len(scanDirs) == 1 {
+		fmt.Printf("Analyzing provider at: %s\n\n", scanDirs[0])
+	} else {
+		fmt.Printf("Analyzing provider at: %s (%d directories)\n\n", *providerPath, len(scanDirs))
+	}
 
 	// Build settings from flags
-	settings := tfprovidertest.DefaultSettings()
+	settings := config.DefaultSettings()
 	settings.Verbose = *verbose
 	settings.ShowMatchConfidence = *showMatches
 	settings.ShowUnmatchedTests = *showUnmatched
@@ -95,25 +129,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Parse all Go files in the provider directory
+	// Parse all Go files from all scan directories
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, providerCodeDir, nil, parser.ParseComments)
-	if err != nil {
-		fmt.Printf("Error parsing provider directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	if len(pkgs) == 0 {
-		fmt.Printf("Error: No Go packages found in %s\n", providerCodeDir)
-		os.Exit(1)
-	}
-
-	// Collect all files from all packages
 	var allFiles []*ast.File
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			allFiles = append(allFiles, file)
+
+	for _, dir := range scanDirs {
+		pkgs, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
+		if err != nil {
+			if *verbose {
+				fmt.Printf("Warning: Error parsing %s: %v\n", dir, err)
+			}
+			continue
 		}
+
+		for _, pkg := range pkgs {
+			for _, file := range pkg.Files {
+				allFiles = append(allFiles, file)
+			}
+		}
+	}
+
+	if len(allFiles) == 0 {
+		fmt.Printf("Error: No Go files found in scanned directories\n")
+		os.Exit(1)
 	}
 
 	// Handle report command - comprehensive coverage report
@@ -190,7 +228,7 @@ func printUsage() {
 }
 
 // validateSettings performs validation on the settings configuration
-func validateSettings(settings tfprovidertest.Settings) error {
+func validateSettings(settings config.Settings) error {
 	// Validate confidence threshold range
 	if settings.FuzzyMatchThreshold < 0.0 || settings.FuzzyMatchThreshold > 1.0 {
 		return fmt.Errorf("confidence-threshold must be between 0.0 and 1.0, got %f", settings.FuzzyMatchThreshold)
@@ -201,7 +239,7 @@ func validateSettings(settings tfprovidertest.Settings) error {
 }
 
 // runDiagnostics handles diagnostic output modes
-func runDiagnostics(fset *token.FileSet, files []*ast.File, settings tfprovidertest.Settings, format string, showMatches, showUnmatched, showOrphaned bool) {
+func runDiagnostics(fset *token.FileSet, files []*ast.File, settings config.Settings, format string, showMatches, showUnmatched, showOrphaned bool) {
 	// Validate output format
 	if format != "text" && format != "json" && format != "table" {
 		fmt.Printf("Error: Invalid format '%s'. Must be one of: text, json, table\n", format)
@@ -299,7 +337,7 @@ func outputMatches(matches []MatchInfo, format string) {
 }
 
 // runAnalyzers executes the standard analysis workflow
-func runAnalyzers(fset *token.FileSet, files []*ast.File, settings tfprovidertest.Settings) {
+func runAnalyzers(fset *token.FileSet, files []*ast.File, settings config.Settings) {
 	// Create plugin with settings map
 	settingsMap := map[string]interface{}{
 		"Verbose":               settings.Verbose,
@@ -386,61 +424,61 @@ func findProviderCodeDir(providerPath string) string {
 }
 
 // buildRegistryFromFiles creates a registry from parsed AST files
-func buildRegistryFromFiles(fset *token.FileSet, files []*ast.File, settings tfprovidertest.Settings) *tfprovidertest.ResourceRegistry {
-	registry := tfprovidertest.NewResourceRegistry()
-	config := tfprovidertest.DefaultParserConfig()
+func buildRegistryFromFiles(fset *token.FileSet, files []*ast.File, settings config.Settings) *registry.ResourceRegistry {
+	reg := registry.NewResourceRegistry()
+	parserConfig := discovery.DefaultParserConfig()
 
 	for _, file := range files {
 		filePath := fset.Position(file.Pos()).Filename
 
 		// Apply exclusion settings
-		if settings.ExcludeBaseClasses && tfprovidertest.IsBaseClassFile(filePath) {
+		if settings.ExcludeBaseClasses && discovery.IsBaseClassFile(filePath) {
 			continue
 		}
-		if settings.ExcludeSweeperFiles && tfprovidertest.IsSweeperFile(filePath) {
+		if settings.ExcludeSweeperFiles && discovery.IsSweeperFile(filePath) {
 			continue
 		}
-		if settings.ExcludeMigrationFiles && tfprovidertest.IsMigrationFile(filePath) {
+		if settings.ExcludeMigrationFiles && discovery.IsMigrationFile(filePath) {
 			continue
 		}
 
 		if strings.HasSuffix(filePath, "_test.go") {
-			testInfo := tfprovidertest.ParseTestFileWithConfig(file, fset, filePath, config)
+			testInfo := discovery.ParseTestFileWithConfig(file, fset, filePath, parserConfig)
 			if testInfo == nil {
 				continue
 			}
 			for i := range testInfo.TestFunctions {
-				registry.RegisterTestFunction(&testInfo.TestFunctions[i])
+				reg.RegisterTestFunction(&testInfo.TestFunctions[i])
 			}
 		} else {
-			resources := tfprovidertest.ParseResources(file, fset, filePath)
+			resources := discovery.ParseResources(file, fset, filePath)
 			for _, resource := range resources {
-				registry.RegisterResource(resource)
+				reg.RegisterResource(resource)
 			}
 		}
 	}
 
 	// Run linking
-	linker := tfprovidertest.NewLinker(registry, settings)
+	linker := matching.NewLinker(reg, &settings)
 	linker.LinkTestsToResources()
 
-	return registry
+	return reg
 }
 
 // runReport generates a comprehensive coverage report with table views
-func runReport(fset *token.FileSet, files []*ast.File, settings tfprovidertest.Settings, format string) {
-	registry := buildRegistryFromFiles(fset, files, settings)
-	allDefs := registry.GetAllDefinitions()
+func runReport(fset *token.FileSet, files []*ast.File, settings config.Settings, format string) {
+	reg := buildRegistryFromFiles(fset, files, settings)
+	allDefs := reg.GetAllDefinitions()
 
 	// Group definitions by kind
-	var resources, dataSources, actions []*tfprovidertest.ResourceInfo
+	var resources, dataSources, actions []*registry.ResourceInfo
 	for _, info := range allDefs {
 		switch info.Kind {
-		case tfprovidertest.KindResource:
+		case registry.KindResource:
 			resources = append(resources, info)
-		case tfprovidertest.KindDataSource:
+		case registry.KindDataSource:
 			dataSources = append(dataSources, info)
-		case tfprovidertest.KindAction:
+		case registry.KindAction:
 			actions = append(actions, info)
 		}
 	}
@@ -450,15 +488,15 @@ func runReport(fset *token.FileSet, files []*ast.File, settings tfprovidertest.S
 	sort.Slice(dataSources, func(i, j int) bool { return dataSources[i].Name < dataSources[j].Name })
 	sort.Slice(actions, func(i, j int) bool { return actions[i].Name < actions[j].Name })
 
-	orphans := registry.GetUnmatchedTestFunctions()
+	orphans := reg.GetUnmatchedTestFunctions()
 
 	switch format {
 	case "json":
-		outputReportJSON(registry, resources, dataSources, actions, orphans)
+		outputReportJSON(reg, resources, dataSources, actions, orphans)
 	case "table":
-		outputReportTable(registry, resources, dataSources, actions, orphans)
+		outputReportTable(reg, resources, dataSources, actions, orphans)
 	default:
-		outputReportTable(registry, resources, dataSources, actions, orphans)
+		outputReportTable(reg, resources, dataSources, actions, orphans)
 	}
 }
 
@@ -484,21 +522,24 @@ type ReportSummary struct {
 }
 
 type ResourceReport struct {
-	Name            string       `json:"name"`
-	File            string       `json:"file"`
-	TestCount       int          `json:"test_count"`
-	HasCheckDestroy bool         `json:"has_check_destroy"`
-	HasStateCheck   bool         `json:"has_state_check"`
-	HasPlanCheck    bool         `json:"has_plan_check"`
-	HasImportTest   bool         `json:"has_import_test"`
-	HasUpdateTest   bool         `json:"has_update_test"`
-	HasExpectError  bool         `json:"has_expect_error"`
-	HasPreCheck     bool         `json:"has_pre_check"`
-	Tests           []TestReport `json:"tests"`
+	Name                 string       `json:"name"`
+	File                 string       `json:"file"`
+	TestFile             string       `json:"test_file"`
+	TestCount            int          `json:"test_count"`
+	HasCheckDestroy      bool         `json:"has_check_destroy"`
+	HasCheck             bool         `json:"has_check"`              // Legacy Check field
+	HasConfigStateChecks bool         `json:"has_config_state_checks"` // Modern ConfigStateChecks field
+	HasPlanCheck         bool         `json:"has_plan_check"`
+	HasImportTest        bool         `json:"has_import_test"`
+	HasUpdateTest        bool         `json:"has_update_test"`
+	HasExpectError       bool         `json:"has_expect_error"`
+	HasPreCheck          bool         `json:"has_pre_check"`
+	Tests                []TestReport `json:"tests"`
 }
 
 type TestReport struct {
 	Name      string `json:"name"`
+	File      string `json:"file"`
 	MatchType string `json:"match_type"`
 }
 
@@ -508,9 +549,9 @@ type OrphanReport struct {
 	InferredResources []string `json:"inferred_resources,omitempty"`
 }
 
-func buildResourceReport(registry *tfprovidertest.ResourceRegistry, info *tfprovidertest.ResourceInfo) ResourceReport {
+func buildResourceReport(reg *registry.ResourceRegistry, info *registry.ResourceInfo) ResourceReport {
 	key := info.Kind.String() + ":" + info.Name
-	tests := registry.GetResourceTests(key)
+	tests := reg.GetResourceTests(key)
 
 	report := ResourceReport{
 		Name:      info.Name,
@@ -518,16 +559,19 @@ func buildResourceReport(registry *tfprovidertest.ResourceRegistry, info *tfprov
 		TestCount: len(tests),
 	}
 
+	// Track unique test files
+	testFiles := make(map[string]bool)
+
 	for _, t := range tests {
+		testFile := filepath.Base(t.FilePath)
+		testFiles[testFile] = true
 		report.Tests = append(report.Tests, TestReport{
 			Name:      t.Name,
+			File:      testFile,
 			MatchType: t.MatchType.String(),
 		})
 		if t.HasCheckDestroy {
 			report.HasCheckDestroy = true
-		}
-		if t.HasStateOrPlanCheck() {
-			report.HasStateCheck = true
 		}
 		if t.HasImportStep {
 			report.HasImportTest = true
@@ -542,16 +586,35 @@ func buildResourceReport(registry *tfprovidertest.ResourceRegistry, info *tfprov
 			if step.HasPlanCheck {
 				report.HasPlanCheck = true
 			}
+			// Track legacy Check vs modern ConfigStateChecks separately
+			if step.HasCheck {
+				report.HasCheck = true
+			}
+			if step.HasConfigStateChecks {
+				report.HasConfigStateChecks = true
+			}
 		}
+	}
+
+	// Consolidate test files into a single string
+	if len(testFiles) == 1 {
+		for f := range testFiles {
+			report.TestFile = f
+		}
+	} else if len(testFiles) > 1 {
+		// Multiple test files - show count
+		report.TestFile = fmt.Sprintf("(%d files)", len(testFiles))
+	} else {
+		report.TestFile = "-"
 	}
 
 	return report
 }
 
 // buildActionReport creates a report for an action, focusing on action-relevant test patterns
-func buildActionReport(registry *tfprovidertest.ResourceRegistry, info *tfprovidertest.ResourceInfo) ResourceReport {
+func buildActionReport(reg *registry.ResourceRegistry, info *registry.ResourceInfo) ResourceReport {
 	key := info.Kind.String() + ":" + info.Name
-	tests := registry.GetResourceTests(key)
+	tests := reg.GetResourceTests(key)
 
 	report := ResourceReport{
 		Name:      info.Name,
@@ -559,14 +622,17 @@ func buildActionReport(registry *tfprovidertest.ResourceRegistry, info *tfprovid
 		TestCount: len(tests),
 	}
 
+	// Track unique test files
+	testFiles := make(map[string]bool)
+
 	for _, t := range tests {
+		testFile := filepath.Base(t.FilePath)
+		testFiles[testFile] = true
 		report.Tests = append(report.Tests, TestReport{
 			Name:      t.Name,
+			File:      testFile,
 			MatchType: t.MatchType.String(),
 		})
-		if t.HasStateOrPlanCheck() {
-			report.HasStateCheck = true
-		}
 		if t.HasPreCheck {
 			report.HasPreCheck = true
 		}
@@ -577,18 +643,36 @@ func buildActionReport(registry *tfprovidertest.ResourceRegistry, info *tfprovid
 			if step.ExpectError {
 				report.HasExpectError = true
 			}
+			// Track legacy Check vs modern ConfigStateChecks separately
+			if step.HasCheck {
+				report.HasCheck = true
+			}
+			if step.HasConfigStateChecks {
+				report.HasConfigStateChecks = true
+			}
 		}
+	}
+
+	// Consolidate test files into a single string
+	if len(testFiles) == 1 {
+		for f := range testFiles {
+			report.TestFile = f
+		}
+	} else if len(testFiles) > 1 {
+		report.TestFile = fmt.Sprintf("(%d files)", len(testFiles))
+	} else {
+		report.TestFile = "-"
 	}
 
 	return report
 }
 
-func outputReportJSON(registry *tfprovidertest.ResourceRegistry, resources, dataSources, actions []*tfprovidertest.ResourceInfo, orphans []*tfprovidertest.TestFunctionInfo) {
+func outputReportJSON(reg *registry.ResourceRegistry, resources, dataSources, actions []*registry.ResourceInfo, orphans []*registry.TestFunctionInfo) {
 	data := ReportData{}
 
 	// Build resource reports
 	for _, info := range resources {
-		report := buildResourceReport(registry, info)
+		report := buildResourceReport(reg, info)
 		data.Resources = append(data.Resources, report)
 		if report.TestCount == 0 {
 			data.Summary.UntestedResources++
@@ -600,7 +684,7 @@ func outputReportJSON(registry *tfprovidertest.ResourceRegistry, resources, data
 
 	// Build data source reports
 	for _, info := range dataSources {
-		report := buildResourceReport(registry, info)
+		report := buildResourceReport(reg, info)
 		data.DataSources = append(data.DataSources, report)
 		if report.TestCount == 0 {
 			data.Summary.UntestedDataSources++
@@ -610,11 +694,11 @@ func outputReportJSON(registry *tfprovidertest.ResourceRegistry, resources, data
 
 	// Build action reports
 	for _, info := range actions {
-		report := buildResourceReport(registry, info)
+		report := buildActionReport(reg, info)
 		data.Actions = append(data.Actions, report)
 		if report.TestCount == 0 {
 			data.Summary.UntestedActions++
-		} else if !report.HasStateCheck {
+		} else if !report.HasCheck && !report.HasConfigStateChecks {
 			data.Summary.MissingStateChecks++
 		}
 	}
@@ -637,14 +721,14 @@ func outputReportJSON(registry *tfprovidertest.ResourceRegistry, resources, data
 	}
 }
 
-func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dataSources, actions []*tfprovidertest.ResourceInfo, orphans []*tfprovidertest.TestFunctionInfo) {
+func outputReportTable(reg *registry.ResourceRegistry, resources, dataSources, actions []*registry.ResourceInfo, orphans []*registry.TestFunctionInfo) {
 	// Calculate summary stats first
 	var untestedResources, untestedDataSources, untestedActions int
 	var missingCheckDestroy, missingStateCheck int
 
 	for _, info := range resources {
-		key := tfprovidertest.KindResource.String() + ":" + info.Name
-		tests := registry.GetResourceTests(key)
+		key := registry.KindResource.String() + ":" + info.Name
+		tests := reg.GetResourceTests(key)
 		if len(tests) == 0 {
 			untestedResources++
 		} else {
@@ -662,16 +746,16 @@ func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dat
 	}
 
 	for _, info := range dataSources {
-		key := tfprovidertest.KindDataSource.String() + ":" + info.Name
-		tests := registry.GetResourceTests(key)
+		key := registry.KindDataSource.String() + ":" + info.Name
+		tests := reg.GetResourceTests(key)
 		if len(tests) == 0 {
 			untestedDataSources++
 		}
 	}
 
 	for _, info := range actions {
-		key := tfprovidertest.KindAction.String() + ":" + info.Name
-		tests := registry.GetResourceTests(key)
+		key := registry.KindAction.String() + ":" + info.Name
+		tests := reg.GetResourceTests(key)
 		if len(tests) == 0 {
 			untestedActions++
 		} else {
@@ -714,20 +798,22 @@ func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dat
 		fmt.Println("│ RESOURCES                                                                       │")
 		fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  NAME\tTESTS\tSteps>1\tImportState\tCheckDestroy\tExpectError\tCheck\tPlanChecks\tFILE")
-		fmt.Fprintln(w, "  ────\t─────\t───────\t───────────\t────────────\t───────────\t─────\t──────────\t────")
+		fmt.Fprintln(w, "  NAME\tTESTS\tUpdate\tImportState\tCheckDestroy\tExpectError\tCheck\tConfigStateChecks\tPlanChecks\tFILE\tTEST FILE")
+		fmt.Fprintln(w, "  ────\t─────\t──────\t───────────\t────────────\t───────────\t─────\t─────────────────\t──────────\t────\t─────────")
 		for _, info := range resources {
-			report := buildResourceReport(registry, info)
-			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			report := buildResourceReport(reg, info)
+			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				info.Name,
 				report.TestCount,
 				checkMark(report.HasUpdateTest),
 				checkMark(report.HasImportTest),
 				checkMark(report.HasCheckDestroy),
 				checkMark(report.HasExpectError),
-				checkMark(report.HasStateCheck),
+				checkMark(report.HasCheck),
+				checkMark(report.HasConfigStateChecks),
 				checkMark(report.HasPlanCheck),
 				report.File,
+				report.TestFile,
 			)
 		}
 		w.Flush()
@@ -740,15 +826,17 @@ func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dat
 		fmt.Println("│ DATA SOURCES                                                                    │")
 		fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  NAME\tTESTS\tCheck\tFILE")
-		fmt.Fprintln(w, "  ────\t─────\t─────\t────")
+		fmt.Fprintln(w, "  NAME\tTESTS\tCheck\tConfigStateChecks\tFILE\tTEST FILE")
+		fmt.Fprintln(w, "  ────\t─────\t─────\t─────────────────\t────\t─────────")
 		for _, info := range dataSources {
-			report := buildResourceReport(registry, info)
-			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\n",
+			report := buildResourceReport(reg, info)
+			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\t%s\t%s\n",
 				info.Name,
 				report.TestCount,
-				checkMark(report.HasStateCheck),
+				checkMark(report.HasCheck),
+				checkMark(report.HasConfigStateChecks),
 				report.File,
+				report.TestFile,
 			)
 		}
 		w.Flush()
@@ -761,18 +849,20 @@ func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dat
 		fmt.Println("│ ACTIONS                                                                         │")
 		fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  NAME\tTESTS\tSteps>1\tExpectError\tCheck\tPreCheck\tFILE")
-		fmt.Fprintln(w, "  ────\t─────\t───────\t───────────\t─────\t────────\t────")
+		fmt.Fprintln(w, "  NAME\tTESTS\tUpdate\tExpectError\tCheck\tConfigStateChecks\tPreCheck\tFILE\tTEST FILE")
+		fmt.Fprintln(w, "  ────\t─────\t──────\t───────────\t─────\t─────────────────\t────────\t────\t─────────")
 		for _, info := range actions {
-			report := buildActionReport(registry, info)
-			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+			report := buildActionReport(reg, info)
+			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				info.Name,
 				report.TestCount,
 				checkMark(report.HasUpdateTest),
 				checkMark(report.HasExpectError),
-				checkMark(report.HasStateCheck),
+				checkMark(report.HasCheck),
+				checkMark(report.HasConfigStateChecks),
 				checkMark(report.HasPreCheck),
 				report.File,
+				report.TestFile,
 			)
 		}
 		w.Flush()
@@ -810,7 +900,7 @@ func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dat
 
 	// Combine all definitions
 	type defWithKind struct {
-		info *tfprovidertest.ResourceInfo
+		info *registry.ResourceInfo
 		kind string
 	}
 	var allDefs []defWithKind
@@ -826,7 +916,7 @@ func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dat
 
 	for _, def := range allDefs {
 		key := def.info.Kind.String() + ":" + def.info.Name
-		tests := registry.GetResourceTests(key)
+		tests := reg.GetResourceTests(key)
 		if len(tests) == 0 {
 			fmt.Fprintf(w, "  %s\t%s\t-\t-\n", def.info.Name, def.kind)
 		} else {
@@ -850,4 +940,55 @@ func checkMark(b bool) string {
 		return "✓"
 	}
 	return "✗"
+}
+
+// findAllGoPackageDirs recursively finds all directories containing Go files
+func findAllGoPackageDirs(root string) []string {
+	var dirs []string
+	seen := make(map[string]bool)
+
+	// Directories to exclude from scanning
+	excludeDirs := map[string]bool{
+		"vendor":       true,
+		"testdata":     true,
+		".git":         true,
+		".github":      true,
+		"node_modules": true,
+		".terraform":   true,
+	}
+
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // Skip directories we can't access
+		}
+
+		if d.IsDir() {
+			// Skip excluded directories
+			if excludeDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Check if this is a Go file
+		if !strings.HasSuffix(d.Name(), ".go") {
+			return nil
+		}
+
+		// Add the directory containing this Go file
+		dir := filepath.Dir(path)
+		if !seen[dir] {
+			seen[dir] = true
+			dirs = append(dirs, dir)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil
+	}
+
+	// Sort directories for consistent output
+	sort.Strings(dirs)
+	return dirs
 }
