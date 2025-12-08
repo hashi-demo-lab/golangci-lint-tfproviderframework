@@ -1,0 +1,2 @@
+=== terraform-provider-random ===
+Error: No Go packages found in /workspace/validation/terraform-provider-random (recursive scan)

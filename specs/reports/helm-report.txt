@@ -13,7 +13,7 @@ Analyzing provider at: /workspace/validation/terraform-provider-helm (4 director
 │ Resources    │     1 │        0 │ 1 without CheckDestroy                          │
 │ Data Sources │     1 │        0 │ -                                               │
 │ Actions      │     0 │        0 │ 0 without Check func                            │
-│ Orphan Tests │     1 │        - │ -                                               │
+│ Orphan Tests │     0 │        - │ -                                               │
 └──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -33,9 +33,7 @@ Analyzing provider at: /workspace/validation/terraform-provider-helm (4 director
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │ ORPHAN TESTS                                                                    │
 └─────────────────────────────────────────────────────────────────────────────────┘
-  TEST FUNCTION                 FILE                      INFERRED RESOURCES
-  ─────────────                 ────                      ──────────────────
-  TestAccDeferredActions_basic  deferred_actions_test.go  -
+  ✓ All test functions are associated with resources!
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │ TEST ASSOCIATIONS                                                               │

@@ -185,12 +185,18 @@ func (r *ResourceRegistry) GetResourceTests(resourceName string) []*TestFunction
 
 // GetUnmatchedTestFunctions returns test functions that couldn't be associated with any resource.
 // A test is considered unmatched if it has MatchTypeNone (no matching strategy succeeded).
+// Tests classified as provider tests (TestCategoryProvider) or function tests (TestCategoryFunction)
+// are excluded since they don't test resources.
 func (r *ResourceRegistry) GetUnmatchedTestFunctions() []*TestFunctionInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var unmatched []*TestFunctionInfo
 	for _, fn := range r.testFunctions {
 		if fn.MatchType == MatchTypeNone {
+			// Skip provider and function tests - these don't test resources
+			if fn.Category == TestCategoryProvider || fn.Category == TestCategoryFunction {
+				continue
+			}
 			unmatched = append(unmatched, fn)
 		}
 	}

@@ -451,8 +451,16 @@ func buildRegistryFromFiles(fset *token.FileSet, files []*ast.File, settings con
 				reg.RegisterTestFunction(&testInfo.TestFunctions[i])
 			}
 		} else {
+			// Standard resource parsing (from Schema/Metadata methods)
 			resources := discovery.ParseResources(file, fset, filePath)
 			for _, resource := range resources {
+				reg.RegisterResource(resource)
+			}
+
+			// Also check for provider registry maps (e.g., generatedResources, generatedIAMDatasources)
+			// This handles providers like Google that define resources in central map variables
+			registryResources := discovery.ParseProviderRegistryMaps(file, fset, filePath)
+			for _, resource := range registryResources {
 				reg.RegisterResource(resource)
 			}
 		}
@@ -461,6 +469,9 @@ func buildRegistryFromFiles(fset *token.FileSet, files []*ast.File, settings con
 	// Run linking
 	linker := matching.NewLinker(reg, &settings)
 	linker.LinkTestsToResources()
+
+	// Classify all tests to enable filtering of orphans
+	linker.ClassifyAllTests()
 
 	return reg
 }

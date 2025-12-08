@@ -156,6 +156,8 @@ func (l *Linker) LinkTestsToResources() {
 			// Helper to match against a specific kind
 			matchKind := func(kindPrefix string) bool {
 				for _, inferredName := range fn.InferredResources {
+					// First try the full name (e.g., "google_bigquery_table")
+					// This matches resources registered with full names from provider registry maps
 					key := kindPrefix + inferredName
 					if _, exists := allDefinitions[key]; exists {
 						bestMatch = &ResourceMatch{
@@ -165,7 +167,7 @@ func (l *Linker) LinkTestsToResources() {
 						}
 						return true
 					}
-					// Try stripping provider prefix
+					// Try stripping provider prefix (e.g., google_bigquery_table -> bigquery_table)
 					if idx := strings.Index(inferredName, "_"); idx != -1 {
 						shortName := inferredName[idx+1:]
 						key = kindPrefix + shortName
@@ -480,14 +482,10 @@ func MinInt(nums ...int) int {
 }
 
 // DefaultFunctionNameKeywordsToStrip returns the default CamelCase keywords to strip
-// from test function names before matching. This handles IAM tests and generated patterns.
+// from test function names before matching. This handles generated patterns.
 func DefaultFunctionNameKeywordsToStrip() []string {
 	return []string{
-		"IamBinding",  // IAM binding tests
-		"IamMember",   // IAM member tests
-		"IamPolicy",   // IAM policy tests
-		"Iam",         // Generic IAM keyword (must be after specific ones)
-		"Generated",   // Generated test suffix
+		"Generated", // Generated test suffix
 	}
 }
 
@@ -590,6 +588,88 @@ func matchResourceByNameWithKeywords(funcName string, resourceNames map[string]b
 		}
 	}
 
+	// Strategy: Substring matching - try removing middle segments from snake_case
+	// This handles patterns like TestAccBigQueryExternalDataTable -> big_query_table
+	// by trying combinations that skip interior words
+	if match, found := trySubstringMatches(snakeName, resourceNames); found {
+		return match, true
+	}
+
+	// Also try substring matching without provider prefix
+	parts = strings.SplitN(snakeName, "_", 2)
+	if len(parts) == 2 && parts[1] != "" {
+		if match, found := trySubstringMatches(parts[1], resourceNames); found {
+			return match, true
+		}
+	}
+
+	return "", false
+}
+
+// trySubstringMatches tries to match a snake_case name by removing middle segments.
+// For "big_query_external_data_table", it will try:
+// - big_query_table (skip external, data)
+// - big_query_data_table (skip external)
+// - big_query_external_table (skip data)
+// etc.
+func trySubstringMatches(snakeName string, resourceNames map[string]bool) (string, bool) {
+	parts := strings.Split(snakeName, "_")
+	if len(parts) <= 2 {
+		return "", false // Need at least 3 parts for this to be useful
+	}
+
+	// Try keeping first part and last part, progressively adding more parts
+	// This prioritizes shorter names (more likely to be actual resource names)
+	first := parts[0]
+	last := parts[len(parts)-1]
+
+	// Try: first_last
+	candidate := first + "_" + last
+	if resourceNames[candidate] {
+		return candidate, true
+	}
+
+	// Try: first_second_last (keeping first two and last)
+	if len(parts) > 2 {
+		candidate = first + "_" + parts[1] + "_" + last
+		if resourceNames[candidate] {
+			return candidate, true
+		}
+	}
+
+	// Try: first_last_two (keeping first and last two)
+	if len(parts) > 2 {
+		candidate = first + "_" + parts[len(parts)-2] + "_" + last
+		if resourceNames[candidate] {
+			return candidate, true
+		}
+	}
+
+	// Try keeping first two parts and last part
+	if len(parts) > 3 {
+		candidate = first + "_" + parts[1] + "_" + last
+		if resourceNames[candidate] {
+			return candidate, true
+		}
+	}
+
+	// Try more combinations for longer names
+	if len(parts) >= 4 {
+		// first_second_last
+		candidate = strings.Join([]string{parts[0], parts[1], parts[len(parts)-1]}, "_")
+		if resourceNames[candidate] {
+			return candidate, true
+		}
+
+		// first_second_third_last (skip middle)
+		if len(parts) >= 5 {
+			candidate = strings.Join([]string{parts[0], parts[1], parts[2], parts[len(parts)-1]}, "_")
+			if resourceNames[candidate] {
+				return candidate, true
+			}
+		}
+	}
+
 	return "", false
 }
 
@@ -606,13 +686,18 @@ func ClassifyTest(fn *registry.TestFunctionInfo) registry.TestCategory {
 		return registry.TestCategoryResource
 	}
 
-	// Check function name patterns for provider tests
 	name := fn.Name
+	filePath := fn.FilePath
+
+	// Check function name patterns for provider tests
 	if strings.Contains(name, "ProviderConfig") ||
 		strings.Contains(name, "ProviderMeta") ||
 		strings.Contains(name, "ProviderBasePath") ||
 		strings.Contains(name, "ProviderCredentials") ||
-		strings.HasPrefix(name, "TestAccProvider") {
+		strings.Contains(name, "ProviderEmptyStrings") ||
+		strings.Contains(name, "UniverseDomain") ||
+		strings.HasPrefix(name, "TestAccProvider") ||
+		strings.HasPrefix(name, "TestAccFrameworkProvider") {
 		return registry.TestCategoryProvider
 	}
 
@@ -624,16 +709,18 @@ func ClassifyTest(fn *registry.TestFunctionInfo) registry.TestCategory {
 		return registry.TestCategoryFunction
 	}
 
-	// Check file path patterns
-	filePath := fn.FilePath
+	// Check file path patterns for functions
 	if strings.Contains(filePath, "/functions/") ||
-		strings.Contains(filePath, "function_") ||
+		strings.HasSuffix(filePath, "_function_test.go") ||
 		strings.Contains(filePath, "/testing/") {
 		return registry.TestCategoryFunction
 	}
 
+	// Check file path patterns for provider tests
 	if strings.Contains(filePath, "provider_test.go") ||
-		strings.Contains(filePath, "provider_config") {
+		strings.Contains(filePath, "provider_config") ||
+		strings.Contains(filePath, "framework_provider_test.go") ||
+		strings.Contains(filePath, "universe_domain") {
 		return registry.TestCategoryProvider
 	}
 
