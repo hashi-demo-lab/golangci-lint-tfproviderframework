@@ -252,10 +252,17 @@ func ExtractProviderFromFuncName(funcName string) string {
 	return ""
 }
 
-// isBaseClassFile checks if a file is a base class file that should be excluded
-func isBaseClassFile(filePath string) bool {
+// IsBaseClassFile checks if a file is a base class file that should be excluded.
+// Base class files typically follow the naming pattern base_*.go and contain
+// abstract/base implementations that are not actual Terraform resources.
+func IsBaseClassFile(filePath string) bool {
 	base := filepath.Base(filePath)
 	return strings.HasPrefix(base, "base_") || strings.HasPrefix(base, "base.")
+}
+
+// isBaseClassFile is an unexported alias for backward compatibility
+func isBaseClassFile(filePath string) bool {
+	return IsBaseClassFile(filePath)
 }
 
 // IsSweeperFile checks if a file is a sweeper file that should be excluded.
@@ -331,9 +338,10 @@ func CamelCaseToSnakeCaseExported(s string) string {
 	return toSnakeCase(s)
 }
 
-// formatResourceLocation formats the resource location for enhanced issue reporting.
+// FormatResourceLocation formats the resource location for enhanced issue reporting.
 // Returns a string like "Resource: /path/to/file.go:45"
-func formatResourceLocation(pass *analysis.Pass, resource *ResourceInfo) string {
+// Exported for use by external tools that need to format resource locations.
+func FormatResourceLocation(pass *analysis.Pass, resource *ResourceInfo) string {
 	pos := pass.Fset.Position(resource.SchemaPos)
 	return fmt.Sprintf("Resource: %s:%d", pos.Filename, pos.Line)
 }
