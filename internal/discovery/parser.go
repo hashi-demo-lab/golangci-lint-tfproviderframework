@@ -1553,7 +1553,8 @@ func extractPatternsFromExpr(expr ast.Expr, addPattern func(string)) {
 }
 
 // extractTypedPatternsFromExpr extracts typed HCL blocks (resource/data/action) from an expression.
-// It handles string literals, fmt.Sprintf calls, and string concatenation.
+// It handles string literals, any function calls with string arguments (fmt.Sprintf, acctest.Nprintf, etc.),
+// and string concatenation.
 func extractTypedPatternsFromExpr(expr ast.Expr, addBlock func(InferredResource)) {
 	switch e := expr.(type) {
 	case *ast.BasicLit:
@@ -1571,14 +1572,15 @@ func extractTypedPatternsFromExpr(expr ast.Expr, addBlock func(InferredResource)
 			}
 		}
 	case *ast.CallExpr:
-		// Handle fmt.Sprintf and similar
-		if sel, ok := e.Fun.(*ast.SelectorExpr); ok {
-			if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "fmt" {
-				// Look at the format string (first argument)
-				if len(e.Args) > 0 {
-					extractTypedPatternsFromExpr(e.Args[0], addBlock)
-				}
-			}
+		// Handle any function call that takes a string argument containing HCL
+		// This generically handles: fmt.Sprintf, acctest.Nprintf, custom helpers, etc.
+		// Process all arguments - many formatting functions take the template as first arg
+		for _, arg := range e.Args {
+			extractTypedPatternsFromExpr(arg, addBlock)
+		}
+		// Also check if it's a function identifier (simple function call like myConfig())
+		if ident, ok := e.Fun.(*ast.Ident); ok {
+			_ = ident // Function call without selector - still process args above
 		}
 	case *ast.BinaryExpr:
 		// Handle string concatenation
@@ -1605,28 +1607,46 @@ func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string]
 			return true
 		}
 
-		sel, ok := callExpr.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
+		// Check for resource.Test() or resource.ParallelTest()
+		if sel, ok := callExpr.Fun.(*ast.SelectorExpr); ok {
+			if ident, ok := sel.X.(*ast.Ident); ok {
+				if ident.Name == "resource" && (sel.Sel.Name == "Test" || sel.Sel.Name == "ParallelTest" || sel.Sel.Name == "UnitTest") {
+					// Direct resource.Test() call - TestCase is second argument
+					if len(callExpr.Args) >= 2 {
+						testSteps, foundCheckDestroy, foundPreCheck := extractStepsFromTestCaseWithHelpersTyped(callExpr.Args[1], &stepNumber, uniqueInferred, uniqueBlocks, helperPatterns, typedHelperPatterns)
+						steps = append(steps, testSteps...)
+						if foundCheckDestroy {
+							hasCheckDestroy = true
+						}
+						if foundPreCheck {
+							hasPreCheck = true
+						}
+					}
+					return true
+				}
+			}
 		}
 
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok || (ident.Name != "resource" && sel.Sel.Name != "Test" && sel.Sel.Name != "ParallelTest") {
-			return true
-		}
-
-		// Find TestCase argument
-		if len(callExpr.Args) < 2 {
-			return true
-		}
-
-		testSteps, foundCheckDestroy, foundPreCheck := extractStepsFromTestCaseWithHelpersTyped(callExpr.Args[1], &stepNumber, uniqueInferred, uniqueBlocks, helperPatterns, typedHelperPatterns)
-		steps = append(steps, testSteps...)
-		if foundCheckDestroy {
-			hasCheckDestroy = true
-		}
-		if foundPreCheck {
-			hasPreCheck = true
+		// Also check for wrapper functions like acctest.VcrTest(t, resource.TestCase{...})
+		// Look for resource.TestCase composite literals in any function call arguments
+		for _, arg := range callExpr.Args {
+			if compLit, ok := arg.(*ast.CompositeLit); ok {
+				// Check if it's a resource.TestCase type
+				if sel, ok := compLit.Type.(*ast.SelectorExpr); ok {
+					if ident, ok := sel.X.(*ast.Ident); ok {
+						if ident.Name == "resource" && sel.Sel.Name == "TestCase" {
+							testSteps, foundCheckDestroy, foundPreCheck := extractStepsFromTestCaseWithHelpersTyped(compLit, &stepNumber, uniqueInferred, uniqueBlocks, helperPatterns, typedHelperPatterns)
+							steps = append(steps, testSteps...)
+							if foundCheckDestroy {
+								hasCheckDestroy = true
+							}
+							if foundPreCheck {
+								hasPreCheck = true
+							}
+						}
+					}
+				}
+			}
 		}
 
 		return true
@@ -1906,4 +1926,124 @@ func DetectHelperUsed(body *ast.BlockStmt, localHelpers []LocalHelper) string {
 // HashConfigExpr is the public API for hashing config expressions.
 func HashConfigExpr(expr ast.Expr) string {
 	return hashConfigExpr(expr)
+}
+
+// ParseProviderRegistryMaps extracts resource and data source names from provider registry map literals.
+// This is useful for providers like Google that define resources in central map variables like:
+//
+//	var generatedResources = map[string]*schema.Resource{
+//	    "google_compute_instance": compute.ResourceComputeInstance(),
+//	    "google_iap_web_iam_binding": tpgiamresource.ResourceIamBinding(...),
+//	}
+//
+// The function looks for map literals with string keys that look like Terraform resource names
+// (containing underscores, typically prefixed with provider name).
+func ParseProviderRegistryMaps(file *ast.File, fset *token.FileSet, filePath string) []*registry.ResourceInfo {
+	var resources []*registry.ResourceInfo
+	seen := make(map[string]bool)
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		// Look for variable declarations with map literal values
+		genDecl, ok := n.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.VAR {
+			return true
+		}
+
+		for _, spec := range genDecl.Specs {
+			valueSpec, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+
+			// Check if this looks like a resource/datasource map
+			// Variable names like: generatedResources, handwrittenResources, generatedIAMDatasources
+			varName := ""
+			if len(valueSpec.Names) > 0 {
+				varName = valueSpec.Names[0].Name
+			}
+
+			// Determine kind from variable name
+			var kind registry.ResourceKind
+			isResourceMap := false
+			if strings.Contains(strings.ToLower(varName), "datasource") ||
+				strings.Contains(strings.ToLower(varName), "data_source") {
+				kind = registry.KindDataSource
+				isResourceMap = true
+			} else if strings.Contains(strings.ToLower(varName), "resource") {
+				kind = registry.KindResource
+				isResourceMap = true
+			}
+
+			if !isResourceMap {
+				continue
+			}
+
+			// Look for map literal in values
+			for _, value := range valueSpec.Values {
+				compLit, ok := value.(*ast.CompositeLit)
+				if !ok {
+					continue
+				}
+
+				// Check if it's a map type
+				mapType, ok := compLit.Type.(*ast.MapType)
+				if !ok {
+					continue
+				}
+
+				// Verify key type is string
+				keyIdent, ok := mapType.Key.(*ast.Ident)
+				if !ok || keyIdent.Name != "string" {
+					continue
+				}
+
+				// Extract resource names from map keys
+				for _, elt := range compLit.Elts {
+					kv, ok := elt.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+
+					// Get the string key (resource name)
+					keyLit, ok := kv.Key.(*ast.BasicLit)
+					if !ok || keyLit.Kind != token.STRING {
+						continue
+					}
+
+					// Remove quotes from string literal
+					resourceName := strings.Trim(keyLit.Value, `"`)
+
+					// Skip if doesn't look like a resource name (should have underscores)
+					if !strings.Contains(resourceName, "_") {
+						continue
+					}
+
+					// Extract short name by stripping provider prefix
+					// e.g., "google_compute_instance" -> "compute_instance"
+					shortName := resourceName
+					if idx := strings.Index(resourceName, "_"); idx > 0 {
+						shortName = resourceName[idx+1:]
+					}
+
+					// Skip if already seen
+					key := kind.String() + ":" + shortName
+					if seen[key] {
+						continue
+					}
+					seen[key] = true
+
+					resources = append(resources, &registry.ResourceInfo{
+						Name:      shortName,
+						Kind:      kind,
+						FilePath:  filePath,
+						SchemaPos: keyLit.Pos(),
+					})
+				}
+			}
+		}
+
+		return true
+	})
+
+	return resources
 }

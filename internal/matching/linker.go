@@ -153,6 +153,26 @@ func (l *Linker) LinkTestsToResources() {
 
 		// Strategy 3: Legacy Inferred Content Matching (fallback for helper functions without direct HCL)
 		if !matchFound && len(fn.InferredResources) > 0 {
+			// Build a normalized lookup map for resources with compound words
+			// e.g., "big_query_table" -> normalizes to "bigquery_table" for matching
+			normalizedLookup := make(map[string]string) // normalized -> actual
+			for key := range allDefinitions {
+				// Extract resource name from "kind:name"
+				if colonIdx := strings.Index(key, ":"); colonIdx != -1 {
+					name := key[colonIdx+1:]
+					normalized := normalizeCompoundWords(name)
+					if normalized != name {
+						normalizedLookup[key[:colonIdx+1]+normalized] = key
+					}
+				}
+			}
+			for name := range simpleNames {
+				normalized := normalizeCompoundWords(name)
+				if normalized != name {
+					normalizedLookup[normalized] = name
+				}
+			}
+
 			// Helper to match against a specific kind
 			matchKind := func(kindPrefix string) bool {
 				for _, inferredName := range fn.InferredResources {
@@ -172,6 +192,20 @@ func (l *Linker) LinkTestsToResources() {
 						if _, exists := allDefinitions[key]; exists {
 							bestMatch = &ResourceMatch{
 								ResourceName: shortName,
+								Confidence:   0.85,
+								MatchType:    registry.MatchTypeInferred,
+							}
+							return true
+						}
+						// Try normalized compound word lookup
+						// e.g., "bigquery_table" -> matches "big_query_table"
+						if actualKey, exists := normalizedLookup[key]; exists {
+							actualName := actualKey
+							if colonIdx := strings.Index(actualKey, ":"); colonIdx != -1 {
+								actualName = actualKey[colonIdx+1:]
+							}
+							bestMatch = &ResourceMatch{
+								ResourceName: actualName,
 								Confidence:   0.85,
 								MatchType:    registry.MatchTypeInferred,
 							}
@@ -480,14 +514,10 @@ func MinInt(nums ...int) int {
 }
 
 // DefaultFunctionNameKeywordsToStrip returns the default CamelCase keywords to strip
-// from test function names before matching. This handles IAM tests and generated patterns.
+// from test function names before matching. This handles generated patterns.
 func DefaultFunctionNameKeywordsToStrip() []string {
 	return []string{
-		"IamBinding",  // IAM binding tests
-		"IamMember",   // IAM member tests
-		"IamPolicy",   // IAM policy tests
-		"Iam",         // Generic IAM keyword (must be after specific ones)
-		"Generated",   // Generated test suffix
+		"Generated", // Generated test suffix
 	}
 }
 
