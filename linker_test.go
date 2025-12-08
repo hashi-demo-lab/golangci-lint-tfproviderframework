@@ -76,7 +76,7 @@ func TestLinkerFileProximityMatching(t *testing.T) {
 
 func TestLinkerFileProximityDataSource(t *testing.T) {
 	reg := NewResourceRegistry()
-	reg.RegisterResource(&ResourceInfo{Name: "http", IsDataSource: true})
+	reg.RegisterResource(&ResourceInfo{Name: "http", Kind: KindDataSource})
 
 	// Test function in data source file
 	fn := &TestFunctionInfo{
@@ -238,7 +238,7 @@ func TestLinkerMultipleResources(t *testing.T) {
 
 func TestLinkerDataSourceMatching(t *testing.T) {
 	reg := NewResourceRegistry()
-	reg.RegisterResource(&ResourceInfo{Name: "ami", IsDataSource: true})
+	reg.RegisterResource(&ResourceInfo{Name: "ami", Kind: KindDataSource})
 
 	fn := &TestFunctionInfo{Name: "TestAccDataSourceAmi_basic", FilePath: "/test.go"}
 	reg.RegisterTestFunction(fn)

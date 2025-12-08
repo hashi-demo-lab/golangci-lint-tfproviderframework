@@ -48,7 +48,7 @@ func TestRegistry_Module(t *testing.T) {
 		reg := NewResourceRegistry()
 		resource := &ResourceInfo{
 			Name:         "test_resource",
-			IsDataSource: false,
+			Kind: KindResource,
 			FilePath:     "/path/to/resource_test_resource.go",
 		}
 
@@ -64,7 +64,7 @@ func TestRegistry_Module(t *testing.T) {
 		reg := NewResourceRegistry()
 		resource := &ResourceInfo{
 			Name:         "widget",
-			IsDataSource: false,
+			Kind: KindResource,
 			FilePath:     "/path/to/resource_widget.go",
 		}
 
@@ -162,18 +162,24 @@ func TestParser_Module(t *testing.T) {
 
 // Test analyzer.go module
 func TestAnalyzer_Module(t *testing.T) {
-	t.Run("All analyzers are defined", func(t *testing.T) {
-		assert.NotNil(t, BasicTestAnalyzer)
-		assert.NotNil(t, UpdateTestAnalyzer)
-		assert.NotNil(t, ImportTestAnalyzer)
-		assert.NotNil(t, ErrorTestAnalyzer)
-		assert.NotNil(t, StateCheckAnalyzer)
+	t.Run("All analyzers are created by plugin", func(t *testing.T) {
+		plugin, err := New(nil)
+		assert.NoError(t, err)
 
-		assert.Equal(t, "tfprovider-resource-basic-test", BasicTestAnalyzer.Name)
-		assert.Equal(t, "tfprovider-resource-update-test", UpdateTestAnalyzer.Name)
-		assert.Equal(t, "tfprovider-resource-import-test", ImportTestAnalyzer.Name)
-		assert.Equal(t, "tfprovider-test-error-cases", ErrorTestAnalyzer.Name)
-		assert.Equal(t, "tfprovider-test-check-functions", StateCheckAnalyzer.Name)
+		analyzers, err := plugin.BuildAnalyzers()
+		assert.NoError(t, err)
+		assert.NotEmpty(t, analyzers, "Plugin should create analyzers")
+
+		// Verify analyzer names
+		analyzerNames := make(map[string]bool)
+		for _, a := range analyzers {
+			analyzerNames[a.Name] = true
+		}
+		assert.True(t, analyzerNames["tfprovider-resource-basic-test"])
+		assert.True(t, analyzerNames["tfprovider-resource-update-test"])
+		assert.True(t, analyzerNames["tfprovider-resource-import-test"])
+		assert.True(t, analyzerNames["tfprovider-test-error-cases"])
+		assert.True(t, analyzerNames["tfprovider-test-check-functions"])
 	})
 
 	t.Run("Plugin BuildAnalyzers returns enabled analyzers", func(t *testing.T) {
@@ -182,7 +188,8 @@ func TestAnalyzer_Module(t *testing.T) {
 
 		analyzers, err := plugin.BuildAnalyzers()
 		assert.NoError(t, err)
-		assert.Len(t, analyzers, 5, "All 5 analyzers should be enabled by default")
+		// Note: Now includes 7 analyzers (5 main + drift + sweeper)
+		assert.GreaterOrEqual(t, len(analyzers), 5, "Should have at least 5 analyzers enabled by default")
 	})
 
 	t.Run("Plugin respects disabled analyzers", func(t *testing.T) {
@@ -199,8 +206,14 @@ func TestAnalyzer_Module(t *testing.T) {
 
 		analyzers, err := plugin.BuildAnalyzers()
 		assert.NoError(t, err)
-		assert.Len(t, analyzers, 1, "Only BasicTest should be enabled")
-		assert.Equal(t, "tfprovider-resource-basic-test", analyzers[0].Name)
+		assert.Len(t, analyzers, 3, "BasicTest + drift-check + sweepers should be enabled")
+		analyzerNames := make(map[string]bool)
+		for _, a := range analyzers {
+			analyzerNames[a.Name] = true
+		}
+		assert.True(t, analyzerNames["tfprovider-resource-basic-test"])
+		assert.True(t, analyzerNames["tfprovider-test-drift-check"])
+		assert.True(t, analyzerNames["tfprovider-test-sweepers"])
 	})
 }
 
@@ -218,7 +231,7 @@ func TestIntegration_FileBasedMatching(t *testing.T) {
 		// Simulate finding a resource
 		resource := &ResourceInfo{
 			Name:         "widget",
-			IsDataSource: false,
+			Kind: KindResource,
 			FilePath:     "/provider/internal/resource_widget.go",
 		}
 		reg.RegisterResource(resource)
@@ -238,7 +251,8 @@ func TestIntegration_FileBasedMatching(t *testing.T) {
 		assert.Equal(t, "TestAccWidget_basic", linkedTests[0].Name)
 
 		// Verify no untested resources
-		untested := reg.GetUntestedResources()
+		calculator := NewCoverageCalculator(reg)
+		untested := calculator.GetUntestedResources()
 		assert.Empty(t, untested, "Widget has tests, should not be untested")
 	})
 }
@@ -420,7 +434,8 @@ func TestGetUntestedResources_WithResourceTests(t *testing.T) {
 		reg.RegisterTestFunction(fn)
 		reg.LinkTestToResource("tested", fn)
 
-		untested := reg.GetUntestedResources()
+		calculator := NewCoverageCalculator(reg)
+		untested := calculator.GetUntestedResources()
 		assert.Len(t, untested, 1)
 		assert.Equal(t, "untested", untested[0].Name)
 	})
@@ -446,7 +461,8 @@ func TestGetUntestedResources_WithResourceTests(t *testing.T) {
 		reg.LinkTestToResource("tested_multi", testFunc1)
 		reg.LinkTestToResource("tested_multi", testFunc2)
 
-		untested := reg.GetUntestedResources()
+		calculator := NewCoverageCalculator(reg)
+		untested := calculator.GetUntestedResources()
 		assert.Len(t, untested, 1)
 		assert.Equal(t, "untested", untested[0].Name)
 	})

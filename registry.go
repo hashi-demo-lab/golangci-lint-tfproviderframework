@@ -3,9 +3,7 @@
 package tfprovidertest
 
 import (
-	"fmt"
 	"go/token"
-	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -74,14 +72,6 @@ func (r *ResourceRegistry) RegisterResource(info *ResourceInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Infer Kind from deprecated IsDataSource/IsAction fields for backward compatibility
-	if info.IsDataSource && info.Kind == KindResource {
-		info.Kind = KindDataSource
-	}
-	if info.IsAction && info.Kind == KindResource {
-		info.Kind = KindAction
-	}
-
 	key := registryKey(info.Kind, info.Name)
 	r.definitions[key] = info
 	r.fileToResource[info.FilePath] = key
@@ -95,20 +85,6 @@ func (r *ResourceRegistry) GetResourceByFile(filePath string) *ResourceInfo {
 		return r.definitions[resourceName]
 	}
 	return nil
-}
-
-// GetUntestedResources returns all resources and data sources that lack test coverage.
-func (r *ResourceRegistry) GetUntestedResources() []*ResourceInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	var untested []*ResourceInfo
-	for name, info := range r.definitions {
-		if len(r.resourceTests[name]) == 0 {
-			untested = append(untested, info)
-		}
-	}
-	return untested
 }
 
 // GetAllDefinitions returns a copy of all resources and data sources in a single map (thread-safe).
@@ -250,9 +226,7 @@ func (k ResourceKind) String() string {
 // ResourceInfo holds metadata about a Terraform resource, data source, or action.
 type ResourceInfo struct {
 	Name           string
-	Kind           ResourceKind // New: replaces IsDataSource
-	IsDataSource   bool         // Deprecated: use Kind == KindDataSource
-	IsAction       bool         // Deprecated: use Kind == KindAction
+	Kind           ResourceKind
 	FilePath       string
 	SchemaPos      token.Pos
 	Attributes     []AttributeInfo
@@ -393,137 +367,6 @@ type ResourceCoverage struct {
 	ImportStepCount  int
 }
 
-// GetResourceCoverage computes aggregated test coverage for a resource.
-func (r *ResourceRegistry) GetResourceCoverage(resourceName string) *ResourceCoverage {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	resource := r.definitions[resourceName]
-	if resource == nil {
-		return nil
-	}
-
-	tests := r.resourceTests[resourceName]
-	coverage := &ResourceCoverage{
-		Resource:  resource,
-		Tests:     tests,
-		TestCount: len(tests),
-	}
-
-	for _, test := range tests {
-		coverage.HasBasicTest = true
-
-		if test.HasCheckDestroy {
-			coverage.HasCheckDestroy = true
-		}
-		if test.HasImportStep {
-			coverage.HasImportTest = true
-		}
-		if test.HasErrorCase {
-			coverage.HasErrorTest = true
-		}
-
-		for _, step := range test.TestSteps {
-			coverage.StepCount++
-
-			if step.HasCheck || step.HasConfigStateChecks {
-				coverage.HasStateCheck = true
-			}
-			if step.HasPlanCheck {
-				coverage.HasPlanCheck = true
-			}
-			if step.ImportState {
-				coverage.ImportStepCount++
-			}
-			if step.IsRealUpdateStep() {
-				coverage.HasUpdateTest = true
-				coverage.UpdateStepCount++
-			}
-		}
-	}
-
-	return coverage
-}
-
-// GetAllResourceCoverage returns coverage information for all resources and data sources.
-func (r *ResourceRegistry) GetAllResourceCoverage() []*ResourceCoverage {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	var coverages []*ResourceCoverage
-	for name, resource := range r.definitions {
-		tests := r.resourceTests[name]
-		coverage := &ResourceCoverage{
-			Resource:  resource,
-			Tests:     tests,
-			TestCount: len(tests),
-		}
-
-		for _, test := range tests {
-			coverage.HasBasicTest = true
-
-			if test.HasCheckDestroy {
-				coverage.HasCheckDestroy = true
-			}
-			if test.HasImportStep {
-				coverage.HasImportTest = true
-			}
-			if test.HasErrorCase {
-				coverage.HasErrorTest = true
-			}
-
-			for _, step := range test.TestSteps {
-				coverage.StepCount++
-
-				if step.HasCheck || step.HasConfigStateChecks {
-					coverage.HasStateCheck = true
-				}
-				if step.HasPlanCheck {
-					coverage.HasPlanCheck = true
-				}
-				if step.ImportState {
-					coverage.ImportStepCount++
-				}
-				if step.IsRealUpdateStep() {
-					coverage.HasUpdateTest = true
-					coverage.UpdateStepCount++
-				}
-			}
-		}
-
-		coverages = append(coverages, coverage)
-	}
-
-	return coverages
-}
-
-// GetResourcesMissingStateChecks returns resources that have tests but no state/plan checks.
-func (r *ResourceRegistry) GetResourcesMissingStateChecks() []*ResourceCoverage {
-	coverages := r.GetAllResourceCoverage()
-	var missing []*ResourceCoverage
-	for _, cov := range coverages {
-		// Only report resources that have tests but lack validation
-		if cov.HasBasicTest && !cov.HasStateCheck && !cov.HasPlanCheck {
-			missing = append(missing, cov)
-		}
-	}
-	return missing
-}
-
-// GetResourcesMissingCheckDestroy returns resources that have tests but no CheckDestroy.
-func (r *ResourceRegistry) GetResourcesMissingCheckDestroy() []*ResourceCoverage {
-	coverages := r.GetAllResourceCoverage()
-	var missing []*ResourceCoverage
-	for _, cov := range coverages {
-		// Only report resources that have tests but lack CheckDestroy
-		// Data sources typically don't need CheckDestroy
-		if cov.HasBasicTest && !cov.HasCheckDestroy && !cov.Resource.IsDataSource {
-			missing = append(missing, cov)
-		}
-	}
-	return missing
-}
-
 // TestFileSearchResult represents a test file that was searched for a resource.
 type TestFileSearchResult struct {
 	FilePath string
@@ -549,167 +392,4 @@ type VerboseDiagnosticInfo struct {
 	ExpectedPatterns   []string
 	FoundPattern       string
 	SuggestedFixes     []string
-}
-
-// HasMatchingTestFile checks if a resource has matching test functions.
-func HasMatchingTestFile(resourceName string, isDataSource bool, registry *ResourceRegistry) bool {
-	testFunctions := registry.GetResourceTests(resourceName)
-	return len(testFunctions) > 0
-}
-
-// BuildExpectedTestPath constructs the expected test file path for a given resource.
-func BuildExpectedTestPath(resource *ResourceInfo) string {
-	filePath := resource.FilePath
-	if strings.HasSuffix(filePath, ".go") {
-		return strings.TrimSuffix(filePath, ".go") + "_test.go"
-	}
-	return filePath + "_test.go"
-}
-
-// BuildExpectedTestFunc constructs the expected test function name for a given resource.
-func BuildExpectedTestFunc(resource *ResourceInfo) string {
-	titleName := toTitleCase(resource.Name)
-	if resource.IsDataSource {
-		return fmt.Sprintf("TestAccDataSource%s_basic", titleName)
-	}
-	return fmt.Sprintf("TestAcc%s_basic", titleName)
-}
-
-// ClassifyTestFunctionMatch determines if a test function matches a resource.
-// This function uses the same pattern matching logic as the Linker to ensure consistency.
-func ClassifyTestFunctionMatch(funcName string, resourceName string) (status string, reason string) {
-	// Use the same matching logic as the Linker
-	// Create a resource set with just this resource
-	resourceNames := map[string]bool{resourceName: true}
-
-	// Try to match using the same logic as matchResourceByName
-	matched, found := MatchResourceByName(funcName, resourceNames)
-	if found && matched == resourceName {
-		return "matched", ""
-	}
-
-	// If we get here, the function doesn't match
-	// Provide helpful diagnostic reasons
-	if strings.HasPrefix(funcName, "TestAcc") {
-		return "not_matched", "does not match resource '" + resourceName + "'"
-	}
-	if strings.HasPrefix(funcName, "Test") && !strings.HasPrefix(funcName, "TestAcc") {
-		lowerFunc := strings.ToLower(funcName)
-		lowerResource := strings.ReplaceAll(resourceName, "_", "")
-		if strings.Contains(lowerFunc, lowerResource) {
-			return "not_matched", "missing 'Acc' prefix"
-		}
-		return "not_matched", "does not match resource '" + resourceName + "'"
-	}
-	return "not_matched", "does not follow test naming convention"
-}
-
-// BuildVerboseDiagnosticInfo creates a VerboseDiagnosticInfo for a resource.
-func BuildVerboseDiagnosticInfo(resource *ResourceInfo, registry *ResourceRegistry) VerboseDiagnosticInfo {
-	resourceType := "resource"
-	if resource.IsDataSource {
-		resourceType = "data source"
-	}
-	info := VerboseDiagnosticInfo{
-		ResourceName: resource.Name,
-		ResourceType: resourceType,
-		ResourceFile: resource.FilePath,
-		ResourceLine: 0,
-	}
-	expectedTestPath := BuildExpectedTestPath(resource)
-	testFunctions := registry.GetResourceTests(resource.Name)
-
-	// Collect unique test file paths
-	testFilePaths := make(map[string]bool)
-	for _, testFunc := range testFunctions {
-		if testFunc.FilePath != "" {
-			testFilePaths[testFunc.FilePath] = true
-		}
-	}
-
-	if len(testFunctions) > 0 {
-		// Mark test files as found
-		for path := range testFilePaths {
-			info.TestFilesSearched = append(info.TestFilesSearched, TestFileSearchResult{FilePath: path, Found: true})
-		}
-		// Add test function info
-		for _, testFunc := range testFunctions {
-			status, reason := ClassifyTestFunctionMatch(testFunc.Name, resource.Name)
-			info.TestFunctionsFound = append(info.TestFunctionsFound, TestFunctionMatchInfo{
-				Name: testFunc.Name, Line: 0, MatchStatus: status, MatchReason: reason,
-			})
-		}
-	} else {
-		info.TestFilesSearched = []TestFileSearchResult{{FilePath: expectedTestPath, Found: false}}
-	}
-
-	titleName := toTitleCase(resource.Name)
-	if resource.IsDataSource {
-		info.ExpectedPatterns = []string{"TestAccDataSource" + titleName + "*", "TestDataSource" + titleName + "*"}
-	} else {
-		info.ExpectedPatterns = []string{"TestAcc" + titleName + "*", "TestAccResource" + titleName + "*", "TestResource" + titleName + "*"}
-	}
-	info.SuggestedFixes = buildSuggestedFixes(resource, testFunctions)
-	return info
-}
-
-func buildSuggestedFixes(resource *ResourceInfo, testFunctions []*TestFunctionInfo) []string {
-	var fixes []string
-	expectedFunc := BuildExpectedTestFunc(resource)
-	if len(testFunctions) == 0 {
-		expectedPath := BuildExpectedTestPath(resource)
-		fixes = append(fixes, fmt.Sprintf("Create test file %s with function %s", filepath.Base(expectedPath), expectedFunc))
-	} else {
-		// Get first test file path
-		testFilePath := ""
-		if len(testFunctions) > 0 && testFunctions[0].FilePath != "" {
-			testFilePath = testFunctions[0].FilePath
-		}
-		if testFilePath != "" {
-			fixes = append(fixes, fmt.Sprintf("Option 1: Rename tests to follow convention (%s)", expectedFunc))
-			fixes = append(fixes, "Option 2: Configure custom test patterns in .golangci.yml:\n      test-name-patterns:\n        - \"Test"+toTitleCase(resource.Name)+"\"")
-		} else {
-			fixes = append(fixes, fmt.Sprintf("Add acceptance test function %s", expectedFunc))
-		}
-	}
-	return fixes
-}
-
-// FormatVerboseDiagnostic formats a VerboseDiagnosticInfo into a human-readable string.
-func FormatVerboseDiagnostic(info VerboseDiagnosticInfo) string {
-	var sb strings.Builder
-	sb.WriteString("\n  Resource Location:\n")
-	sb.WriteString(fmt.Sprintf("    %s: %s:%d\n", info.ResourceType, info.ResourceFile, info.ResourceLine))
-	sb.WriteString("\n  Test Files Searched:\n")
-	for _, tf := range info.TestFilesSearched {
-		status := "not found"
-		if tf.Found {
-			status = "found"
-		}
-		sb.WriteString(fmt.Sprintf("    - %s (%s)\n", filepath.Base(tf.FilePath), status))
-	}
-	if len(info.TestFunctionsFound) > 0 {
-		sb.WriteString("\n  Test Functions Found:\n")
-		for _, tf := range info.TestFunctionsFound {
-			matchStatus := "MATCHED"
-			if tf.MatchStatus == "not_matched" {
-				matchStatus = fmt.Sprintf("NOT MATCHED (%s)", tf.MatchReason)
-			}
-			sb.WriteString(fmt.Sprintf("    - %s (line %d) - %s\n", tf.Name, tf.Line, matchStatus))
-		}
-	}
-	if len(info.ExpectedPatterns) > 0 {
-		sb.WriteString("\n  Why Not Matched:\n")
-		sb.WriteString(fmt.Sprintf("    Expected pattern: %s\n", strings.Join(info.ExpectedPatterns, " or ")))
-		if info.FoundPattern != "" {
-			sb.WriteString(fmt.Sprintf("    Found pattern: %s\n", info.FoundPattern))
-		}
-	}
-	if len(info.SuggestedFixes) > 0 {
-		sb.WriteString("\n  Suggested Fix:\n")
-		for _, fix := range info.SuggestedFixes {
-			sb.WriteString(fmt.Sprintf("    %s\n", fix))
-		}
-	}
-	return sb.String()
 }

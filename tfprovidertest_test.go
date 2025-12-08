@@ -34,9 +34,9 @@ func TestResourceRegistry_Operations(t *testing.T) {
 		registry := tfprovidertest.NewResourceRegistry()
 
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/test/resource_widget.go",
+			Name:     "widget",
+			Kind:     tfprovidertest.KindResource,
+			FilePath: "/test/resource_widget.go",
 		}
 		registry.RegisterResource(resource)
 
@@ -47,8 +47,8 @@ func TestResourceRegistry_Operations(t *testing.T) {
 
 	t.Run("should track untested resources", func(t *testing.T) {
 		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "tested", IsDataSource: false})
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "untested", IsDataSource: false})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "tested", Kind: tfprovidertest.KindResource})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "untested", Kind: tfprovidertest.KindResource})
 
 		// Link a test function to the "tested" resource
 		testFunc := &tfprovidertest.TestFunctionInfo{
@@ -58,7 +58,8 @@ func TestResourceRegistry_Operations(t *testing.T) {
 		registry.RegisterTestFunction(testFunc)
 		registry.LinkTestToResource("tested", testFunc)
 
-		untested := registry.GetUntestedResources()
+		calculator := tfprovidertest.NewCoverageCalculator(registry)
+		untested := calculator.GetUntestedResources()
 		assert.Len(t, untested, 1)
 		assert.Equal(t, "untested", untested[0].Name)
 	})
@@ -93,7 +94,7 @@ func (r *WidgetResource) Schema(ctx context.Context, req resource.SchemaRequest,
 		resources := tfprovidertest.ParseResources(file, fset, "resource_widget.go")
 		require.Len(t, resources, 1)
 		assert.Equal(t, "widget", resources[0].Name)
-		assert.False(t, resources[0].IsDataSource)
+		assert.Equal(t, tfprovidertest.KindResource, resources[0].Kind)
 	})
 
 	t.Run("should detect resources with multiple attributes", func(t *testing.T) {
@@ -125,7 +126,7 @@ func (r *ServerResource) Schema(ctx context.Context, req resource.SchemaRequest,
 		resources := tfprovidertest.ParseResources(file, fset, "resource_server.go")
 		require.Len(t, resources, 1)
 		assert.Equal(t, "server", resources[0].Name)
-		assert.False(t, resources[0].IsDataSource)
+		assert.Equal(t, tfprovidertest.KindResource, resources[0].Kind)
 		assert.Len(t, resources[0].Attributes, 3)
 	})
 }
@@ -159,7 +160,7 @@ func (d *AccountDataSource) Schema(ctx context.Context, req datasource.SchemaReq
 		resources := tfprovidertest.ParseResources(file, fset, "data_source_account.go")
 		require.Len(t, resources, 1)
 		assert.Equal(t, "account", resources[0].Name)
-		assert.True(t, resources[0].IsDataSource)
+		assert.Equal(t, tfprovidertest.KindDataSource, resources[0].Kind)
 	})
 }
 
@@ -323,7 +324,7 @@ func TestPlugin_BuildAnalyzers(t *testing.T) {
 
 		analyzers, err := plugin.BuildAnalyzers()
 		require.NoError(t, err)
-		require.Len(t, analyzers, 5, "should return exactly 5 analyzers when all are enabled")
+		require.Len(t, analyzers, 7, "should return exactly 7 analyzers when all are enabled (5 main + drift-check + sweepers)")
 
 		// Verify analyzer names
 		expectedNames := map[string]bool{
@@ -332,6 +333,8 @@ func TestPlugin_BuildAnalyzers(t *testing.T) {
 			"tfprovider-resource-import-test": false,
 			"tfprovider-test-error-cases":     false,
 			"tfprovider-test-check-functions": false,
+			"tfprovider-test-drift-check":     false,
+			"tfprovider-test-sweepers":        false,
 		}
 
 		for _, analyzer := range analyzers {
@@ -365,7 +368,7 @@ func TestPlugin_Settings(t *testing.T) {
 
 		analyzers, err := plugin.BuildAnalyzers()
 		require.NoError(t, err)
-		require.Len(t, analyzers, 3, "should return only 3 enabled analyzers")
+		require.Len(t, analyzers, 5, "should return 5 analyzers (3 enabled main + drift-check + sweepers)")
 
 		// Verify only enabled analyzers are returned
 		enabledNames := make(map[string]bool)
@@ -403,7 +406,7 @@ func TestPlugin_Settings(t *testing.T) {
 
 		analyzers, err := plugin.BuildAnalyzers()
 		require.NoError(t, err)
-		require.Len(t, analyzers, 5, "default settings should enable all 5 analyzers")
+		require.Len(t, analyzers, 7, "default settings should enable all 7 analyzers (5 main + drift-check + sweepers)")
 	})
 }
 
@@ -495,9 +498,9 @@ func BenchmarkResourceRegistry_Register(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "benchmark_resource",
-			IsDataSource: false,
-			FilePath:     "/test/resource_benchmark.go",
+			Name:     "benchmark_resource",
+			Kind:     tfprovidertest.KindResource,
+			FilePath: "/test/resource_benchmark.go",
 		}
 		registry.RegisterResource(resource)
 	}
@@ -510,7 +513,7 @@ func BenchmarkResourceRegistry_GetResourceOrDataSource(b *testing.B) {
 	for i := 0; i < 100; i++ {
 		resource := &tfprovidertest.ResourceInfo{
 			Name:         fmt.Sprintf("resource_%d", i),
-			IsDataSource: false,
+			Kind: tfprovidertest.KindResource,
 			FilePath:     "/test/resource.go",
 		}
 		registry.RegisterResource(resource)
@@ -529,7 +532,7 @@ func BenchmarkResourceRegistry_GetUntestedResources(b *testing.B) {
 	for i := 0; i < 50; i++ {
 		resource := &tfprovidertest.ResourceInfo{
 			Name:         fmt.Sprintf("resource_%d", i),
-			IsDataSource: false,
+			Kind: tfprovidertest.KindResource,
 			FilePath:     "/test/resource.go",
 		}
 		registry.RegisterResource(resource)
@@ -544,9 +547,10 @@ func BenchmarkResourceRegistry_GetUntestedResources(b *testing.B) {
 		registry.LinkTestToResource(fmt.Sprintf("resource_%d", i), testFunc)
 	}
 
+	calculator := tfprovidertest.NewCoverageCalculator(registry)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		registry.GetUntestedResources()
+		calculator.GetUntestedResources()
 	}
 }
 
@@ -624,7 +628,7 @@ func TestBuildExpectedTestPath(t *testing.T) {
 	t.Run("should build expected test path for resource", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
 			Name:         "widget",
-			IsDataSource: false,
+			Kind: tfprovidertest.KindResource,
 			FilePath:     "/path/to/provider/resource_widget.go",
 		}
 		expected := "/path/to/provider/resource_widget_test.go"
@@ -635,7 +639,7 @@ func TestBuildExpectedTestPath(t *testing.T) {
 	t.Run("should build expected test path for data source", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
 			Name:         "http",
-			IsDataSource: true,
+			Kind: tfprovidertest.KindDataSource,
 			FilePath:     "/path/to/provider/data_source_http.go",
 		}
 		expected := "/path/to/provider/data_source_http_test.go"
@@ -645,9 +649,9 @@ func TestBuildExpectedTestPath(t *testing.T) {
 
 	t.Run("should handle nested directories", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "complex_resource",
-			IsDataSource: false,
-			FilePath:     "/home/user/projects/terraform-provider-example/internal/provider/resource_complex_resource.go",
+			Name:     "complex_resource",
+			Kind:     tfprovidertest.KindResource,
+			FilePath: "/home/user/projects/terraform-provider-example/internal/provider/resource_complex_resource.go",
 		}
 		expected := "/home/user/projects/terraform-provider-example/internal/provider/resource_complex_resource_test.go"
 		actual := tfprovidertest.BuildExpectedTestPath(resource)
@@ -656,9 +660,9 @@ func TestBuildExpectedTestPath(t *testing.T) {
 
 	t.Run("should handle file without .go extension gracefully", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/provider/resource_widget",
+			Name:     "widget",
+			Kind:     tfprovidertest.KindResource,
+			FilePath: "/path/to/provider/resource_widget",
 		}
 		// Should append _test.go even if original doesn't have .go
 		expected := "/path/to/provider/resource_widget_test.go"
@@ -671,9 +675,9 @@ func TestBuildExpectedTestPath(t *testing.T) {
 func TestBuildExpectedTestFunc(t *testing.T) {
 	t.Run("should build expected test function name for resource", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/provider/resource_widget.go",
+			Name:     "widget",
+			Kind:     tfprovidertest.KindResource,
+			FilePath: "/path/to/provider/resource_widget.go",
 		}
 		expected := "TestAccWidget_basic"
 		actual := tfprovidertest.BuildExpectedTestFunc(resource)
@@ -682,9 +686,9 @@ func TestBuildExpectedTestFunc(t *testing.T) {
 
 	t.Run("should build expected test function name for data source", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "http",
-			IsDataSource: true,
-			FilePath:     "/path/to/provider/data_source_http.go",
+			Name:     "http",
+			Kind:     tfprovidertest.KindDataSource,
+			FilePath: "/path/to/provider/data_source_http.go",
 		}
 		expected := "TestAccDataSourceHttp_basic"
 		actual := tfprovidertest.BuildExpectedTestFunc(resource)
@@ -693,9 +697,9 @@ func TestBuildExpectedTestFunc(t *testing.T) {
 
 	t.Run("should handle snake_case resource names", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "complex_resource",
-			IsDataSource: false,
-			FilePath:     "/path/to/provider/resource_complex_resource.go",
+			Name:     "complex_resource",
+			Kind:     tfprovidertest.KindResource,
+			FilePath: "/path/to/provider/resource_complex_resource.go",
 		}
 		expected := "TestAccComplexResource_basic"
 		actual := tfprovidertest.BuildExpectedTestFunc(resource)
@@ -704,9 +708,9 @@ func TestBuildExpectedTestFunc(t *testing.T) {
 
 	t.Run("should handle snake_case data source names", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "private_key",
-			IsDataSource: true,
-			FilePath:     "/path/to/provider/data_source_private_key.go",
+			Name:     "private_key",
+			Kind:     tfprovidertest.KindDataSource,
+			FilePath: "/path/to/provider/data_source_private_key.go",
 		}
 		expected := "TestAccDataSourcePrivateKey_basic"
 		actual := tfprovidertest.BuildExpectedTestFunc(resource)
@@ -715,9 +719,9 @@ func TestBuildExpectedTestFunc(t *testing.T) {
 
 	t.Run("should handle single word resource name", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "server",
-			IsDataSource: false,
-			FilePath:     "/path/to/provider/resource_server.go",
+			Name:     "server",
+			Kind:     tfprovidertest.KindResource,
+			FilePath: "/path/to/provider/resource_server.go",
 		}
 		expected := "TestAccServer_basic"
 		actual := tfprovidertest.BuildExpectedTestFunc(resource)
@@ -925,7 +929,7 @@ func TestHasMatchingTestFile(t *testing.T) {
 		// Register a resource
 		resource := &tfprovidertest.ResourceInfo{
 			Name:         "widget",
-			IsDataSource: false,
+			Kind: tfprovidertest.KindResource,
 			FilePath:     "/path/to/resource_widget.go",
 		}
 		registry.RegisterResource(resource)
@@ -948,9 +952,9 @@ func TestHasMatchingTestFile(t *testing.T) {
 
 		// Register a resource
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/resource_widget.go",
+			Name:     "widget",
+			Kind:     tfprovidertest.KindResource,
+			FilePath: "/path/to/resource_widget.go",
 		}
 		registry.RegisterResource(resource)
 
@@ -965,9 +969,9 @@ func TestHasMatchingTestFile(t *testing.T) {
 
 		// Register only the resource, no test file
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "widget",
-			IsDataSource: false,
-			FilePath:     "/path/to/resource_widget.go",
+			Name:     "widget",
+			Kind:     tfprovidertest.KindResource,
+			FilePath: "/path/to/resource_widget.go",
 		}
 		registry.RegisterResource(resource)
 
@@ -981,7 +985,7 @@ func TestHasMatchingTestFile(t *testing.T) {
 		// Register a data source
 		dataSource := &tfprovidertest.ResourceInfo{
 			Name:         "http",
-			IsDataSource: true,
+			Kind: tfprovidertest.KindDataSource,
 			FilePath:     "/path/to/data_source_http.go",
 		}
 		registry.RegisterResource(dataSource)
@@ -1106,7 +1110,7 @@ func TestBuildVerboseDiagnostic(t *testing.T) {
 	t.Run("should build verbose diagnostic for resource with no test file", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
 			Name:         "widget",
-			IsDataSource: false,
+			Kind: tfprovidertest.KindResource,
 			FilePath:     "/path/to/resource_widget.go",
 		}
 		registry := tfprovidertest.NewResourceRegistry()
@@ -1123,9 +1127,9 @@ func TestBuildVerboseDiagnostic(t *testing.T) {
 
 	t.Run("should build verbose diagnostic for resource with test functions", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
-			Name:         "private_key",
-			IsDataSource: false,
-			FilePath:     "/path/to/resource_private_key.go",
+			Name:     "private_key",
+			Kind:     tfprovidertest.KindResource,
+			FilePath: "/path/to/resource_private_key.go",
 		}
 
 		registry := tfprovidertest.NewResourceRegistry()
@@ -1159,7 +1163,7 @@ func TestBuildVerboseDiagnostic(t *testing.T) {
 	t.Run("should include suggested fixes", func(t *testing.T) {
 		resource := &tfprovidertest.ResourceInfo{
 			Name:         "widget",
-			IsDataSource: false,
+			Kind: tfprovidertest.KindResource,
 			FilePath:     "/path/to/resource_widget.go",
 		}
 		registry := tfprovidertest.NewResourceRegistry()
@@ -1286,12 +1290,12 @@ func TestRegistryCache_BuildOnlyOnce(t *testing.T) {
 		// The key improvement is that buildRegistry is now called via getOrBuildRegistry
 		// which uses sync.Once to ensure it's only called once per pass
 
-		// Verify that the caching mechanism exists
-		assert.NotNil(t, tfprovidertest.BasicTestAnalyzer)
-		assert.NotNil(t, tfprovidertest.UpdateTestAnalyzer)
-		assert.NotNil(t, tfprovidertest.ImportTestAnalyzer)
-		assert.NotNil(t, tfprovidertest.ErrorTestAnalyzer)
-		assert.NotNil(t, tfprovidertest.StateCheckAnalyzer)
+		// Verify that the caching mechanism exists by creating analyzers via plugin
+		plugin, err := tfprovidertest.New(nil)
+		assert.NoError(t, err)
+		analyzers, err := plugin.BuildAnalyzers()
+		assert.NoError(t, err)
+		assert.NotEmpty(t, analyzers)
 	})
 }
 
@@ -1302,12 +1306,14 @@ func TestRegistryCache_ThreadSafety(t *testing.T) {
 		// This is verified through the implementation in analyzer.go
 		// Real thread-safety testing would require running actual analysis
 
-		// Verify all analyzers are properly defined and have Run functions
-		assert.NotNil(t, tfprovidertest.BasicTestAnalyzer.Run)
-		assert.NotNil(t, tfprovidertest.UpdateTestAnalyzer.Run)
-		assert.NotNil(t, tfprovidertest.ImportTestAnalyzer.Run)
-		assert.NotNil(t, tfprovidertest.ErrorTestAnalyzer.Run)
-		assert.NotNil(t, tfprovidertest.StateCheckAnalyzer.Run)
+		// Verify all analyzers are properly defined and have Run functions via plugin
+		plugin, err := tfprovidertest.New(nil)
+		assert.NoError(t, err)
+		analyzers, err := plugin.BuildAnalyzers()
+		assert.NoError(t, err)
+		for _, analyzer := range analyzers {
+			assert.NotNil(t, analyzer.Run)
+		}
 	})
 }
 
@@ -1319,7 +1325,7 @@ func TestRegistry_GetAllDefinitions(t *testing.T) {
 		// Register a resource
 		resource := &tfprovidertest.ResourceInfo{
 			Name:         "widget",
-			IsDataSource: false,
+			Kind: tfprovidertest.KindResource,
 			FilePath:     "/path/to/resource_widget.go",
 		}
 		registry.RegisterResource(resource)
@@ -1327,7 +1333,7 @@ func TestRegistry_GetAllDefinitions(t *testing.T) {
 		// Register a data source
 		dataSource := &tfprovidertest.ResourceInfo{
 			Name:         "http",
-			IsDataSource: true,
+			Kind: tfprovidertest.KindDataSource,
 			FilePath:     "/path/to/data_source_http.go",
 		}
 		registry.RegisterResource(dataSource)
@@ -1341,8 +1347,8 @@ func TestRegistry_GetAllDefinitions(t *testing.T) {
 		httpInfo := registry.GetResourceOrDataSource("http")
 		assert.NotNil(t, widgetInfo)
 		assert.NotNil(t, httpInfo)
-		assert.False(t, widgetInfo.IsDataSource)
-		assert.True(t, httpInfo.IsDataSource)
+		assert.Equal(t, tfprovidertest.KindResource, widgetInfo.Kind)
+		assert.Equal(t, tfprovidertest.KindDataSource, httpInfo.Kind)
 	})
 
 	t.Run("should return empty map when no resources registered", func(t *testing.T) {
@@ -1353,7 +1359,7 @@ func TestRegistry_GetAllDefinitions(t *testing.T) {
 
 	t.Run("should be thread-safe", func(t *testing.T) {
 		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", Kind: tfprovidertest.KindResource})
 
 		// Multiple concurrent reads should not panic
 		done := make(chan bool, 10)
@@ -1373,29 +1379,29 @@ func TestRegistry_GetAllDefinitions(t *testing.T) {
 func TestRegistry_GetResourceOrDataSource(t *testing.T) {
 	t.Run("should find resource by name", func(t *testing.T) {
 		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", IsDataSource: true})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", Kind: tfprovidertest.KindResource})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", Kind: tfprovidertest.KindDataSource})
 
 		found := registry.GetResourceOrDataSource("widget")
 		assert.NotNil(t, found)
 		assert.Equal(t, "widget", found.Name)
-		assert.False(t, found.IsDataSource)
+		assert.Equal(t, tfprovidertest.KindResource, found.Kind)
 	})
 
 	t.Run("should find data source by name", func(t *testing.T) {
 		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", IsDataSource: true})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", Kind: tfprovidertest.KindResource})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "http", Kind: tfprovidertest.KindDataSource})
 
 		found := registry.GetResourceOrDataSource("http")
 		assert.NotNil(t, found)
 		assert.Equal(t, "http", found.Name)
-		assert.True(t, found.IsDataSource)
+		assert.Equal(t, tfprovidertest.KindDataSource, found.Kind)
 	})
 
 	t.Run("should return nil when not found", func(t *testing.T) {
 		registry := tfprovidertest.NewResourceRegistry()
-		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", IsDataSource: false})
+		registry.RegisterResource(&tfprovidertest.ResourceInfo{Name: "widget", Kind: tfprovidertest.KindResource})
 
 		found := registry.GetResourceOrDataSource("unknown")
 		assert.Nil(t, found)

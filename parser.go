@@ -137,13 +137,11 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 
 		seen[key] = true
 		resource := &ResourceInfo{
-			Name:         name,
-			Kind:         kind,
-			IsDataSource: isDataSource,
-			IsAction:     isAction,
-			FilePath:     filePath,
-			SchemaPos:    funcDecl.Pos(),
-			Attributes:   extractAttributes(funcDecl.Body),
+			Name:       name,
+			Kind:       kind,
+			FilePath:   filePath,
+			SchemaPos:  funcDecl.Pos(),
+			Attributes: extractAttributes(funcDecl.Body),
 		}
 
 		resources = append(resources, resource)
@@ -179,11 +177,10 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 			if name != "" && !seen[key] {
 				seen[key] = true
 				resources = append(resources, &ResourceInfo{
-					Name:         name,
-					Kind:         kind,
-					IsDataSource: isDataSource,
-					FilePath:     filePath,
-					SchemaPos:    funcDecl.Pos(),
+					Name:      name,
+					Kind:      kind,
+					FilePath:  filePath,
+					SchemaPos: funcDecl.Pos(),
 				})
 			}
 		}
@@ -236,11 +233,10 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 				// No Strategy 1 entry, add new resource
 				seen[key] = true
 				resources = append(resources, &ResourceInfo{
-					Name:         name,
-					Kind:         kind,
-					IsDataSource: isDataSource,
-					FilePath:     filePath,
-					SchemaPos:    funcDecl.Pos(),
+					Name:      name,
+					Kind:      kind,
+					FilePath:  filePath,
+					SchemaPos: funcDecl.Pos(),
 				})
 			}
 		}
@@ -315,7 +311,6 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 				resources = append(resources, &ResourceInfo{
 					Name:      name,
 					Kind:      KindAction,
-					IsAction:  true,
 					FilePath:  filePath,
 					SchemaPos: pos,
 				})
@@ -338,7 +333,6 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*Res
 			resources = append(resources, &ResourceInfo{
 				Name:      name,
 				Kind:      KindAction,
-				IsAction:  true,
 				FilePath:  filePath,
 				SchemaPos: pos,
 			})

@@ -55,67 +55,18 @@ func ClearRegistryCache(pass *analysis.Pass) {
 	delete(globalCache, pass)
 }
 
-// BasicTestAnalyzer detects resources and data sources lacking acceptance tests.
-var BasicTestAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-resource-basic-test",
-	Doc:  "Checks that every resource and data source has at least one acceptance test.",
-	Run:  runBasicTestAnalyzer,
-}
-
-// UpdateTestAnalyzer validates that resources with updatable attributes have multi-step tests.
-var UpdateTestAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-resource-update-test",
-	Doc:  "Checks that resources with updatable attributes have multi-step update tests.",
-	Run:  runUpdateTestAnalyzer,
-}
-
-// ImportTestAnalyzer ensures resources with ImportState methods have import tests.
-var ImportTestAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-resource-import-test",
-	Doc:  "Checks that resources implementing ImportState have import tests.",
-	Run:  runImportTestAnalyzer,
-}
-
-// ErrorTestAnalyzer checks that resources with validators have error case tests.
-var ErrorTestAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-test-error-cases",
-	Doc:  "Checks that resources with validation rules have error case tests.",
-	Run:  runErrorTestAnalyzer,
-}
-
-// DriftCheckAnalyzer ensures test functions have CheckDestroy for drift detection.
-var DriftCheckAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-test-drift-check",
-	Doc:  "Checks that acceptance tests include CheckDestroy for drift detection.",
-	Run:  runDriftCheckAnalyzer,
-}
-
-// SweeperAnalyzer ensures packages have sweeper registrations for cleanup.
-var SweeperAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-test-sweepers",
-	Doc:  "Checks that packages have test sweeper registrations for cleanup.",
-	Run:  runSweeperAnalyzer,
-}
-
-// StateCheckAnalyzer validates that test steps include state validation check functions.
-var StateCheckAnalyzer = &analysis.Analyzer{
-	Name: "tfprovider-test-check-functions",
-	Doc:  "Checks that test steps include state validation check functions.",
-	Run:  runStateCheckAnalyzer,
-}
-
 // runBasicTestAnalyzer implements User Story 1: Basic Test Coverage
 // Detects resources and data sources that lack basic acceptance tests
-func runBasicTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	settings := DefaultSettings()
+func runBasicTestAnalyzer(pass *analysis.Pass, settings Settings) (interface{}, error) {
 	registry := getOrBuildRegistry(pass, settings)
+	calculator := NewCoverageCalculator(registry)
 
 	// Report untested resources with enhanced location information
-	untested := registry.GetUntestedResources()
+	untested := calculator.GetUntestedResources()
 	for _, resource := range untested {
 		resourceType := "resource"
 		resourceTypeTitle := "Resource"
-		if resource.IsDataSource {
+		if resource.Kind == KindDataSource {
 			resourceType = "data source"
 			resourceTypeTitle = "Data source"
 		}
@@ -142,14 +93,13 @@ func runBasicTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func runUpdateTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	settings := DefaultSettings()
+func runUpdateTestAnalyzer(pass *analysis.Pass, settings Settings) (interface{}, error) {
 	registry := getOrBuildRegistry(pass, settings)
 
 	// Check for resources with updatable attributes but no update tests
 	// Only check regular resources (not data sources)
 	for name, resource := range registry.GetAllDefinitions() {
-		if resource.IsDataSource {
+		if resource.Kind != KindResource {
 			continue
 		}
 		// Check if resource has updatable attributes using isAttributeUpdatable
@@ -245,14 +195,13 @@ func IsAttributeUpdatable(attr AttributeInfo) bool {
 	return isAttributeUpdatable(attr)
 }
 
-func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	settings := DefaultSettings()
+func runImportTestAnalyzer(pass *analysis.Pass, settings Settings) (interface{}, error) {
 	registry := getOrBuildRegistry(pass, settings)
 
 	// Check for resources with ImportState but no import tests
 	// Only check regular resources (not data sources)
 	for name, resource := range registry.GetAllDefinitions() {
-		if resource.IsDataSource {
+		if resource.Kind != KindResource {
 			continue
 		}
 		// Only check resources that implement ImportState
@@ -289,13 +238,12 @@ func runImportTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	settings := DefaultSettings()
+func runErrorTestAnalyzer(pass *analysis.Pass, settings Settings) (interface{}, error) {
 	registry := getOrBuildRegistry(pass, settings)
 
 	// Check for resources with validation rules but no error tests
 	for name, resource := range registry.GetAllDefinitions() {
-		if resource.IsDataSource {
+		if resource.Kind != KindResource {
 			continue
 		}
 		// Check if resource has validation rules
@@ -344,14 +292,14 @@ func runErrorTestAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func runStateCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	settings := DefaultSettings()
+func runStateCheckAnalyzer(pass *analysis.Pass, settings Settings) (interface{}, error) {
 	registry := getOrBuildRegistry(pass, settings)
+	calculator := NewCoverageCalculator(registry)
 
 	// Report at resource level - only flag resources missing ALL state/plan checks
-	for _, coverage := range registry.GetResourcesMissingStateChecks() {
+	for _, coverage := range calculator.GetResourcesMissingStateChecks() {
 		resourceType := "resource"
-		if coverage.Resource.IsDataSource {
+		if coverage.Resource.Kind == KindDataSource {
 			resourceType = "data source"
 		}
 
@@ -365,13 +313,13 @@ func runStateCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func runDriftCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
-	settings := DefaultSettings()
+func runDriftCheckAnalyzer(pass *analysis.Pass, settings Settings) (interface{}, error) {
 	registry := getOrBuildRegistry(pass, settings)
+	calculator := NewCoverageCalculator(registry)
 
 	// Report at resource level - only flag resources missing CheckDestroy
 	// Data sources are excluded as they don't create resources to destroy
-	for _, coverage := range registry.GetResourcesMissingCheckDestroy() {
+	for _, coverage := range calculator.GetResourcesMissingCheckDestroy() {
 		msg := fmt.Sprintf("resource '%s' has %d test(s) but none include CheckDestroy for drift detection\n"+
 			"  Suggestion: Add CheckDestroy: testAccCheckDestroy to at least one test's resource.TestCase",
 			coverage.Resource.Name, coverage.TestCount)
@@ -382,7 +330,7 @@ func runDriftCheckAnalyzer(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func runSweeperAnalyzer(pass *analysis.Pass) (interface{}, error) {
+func runSweeperAnalyzer(pass *analysis.Pass, settings Settings) (interface{}, error) {
 	// Check if any file in the package has sweeper registrations
 	hasSweepers := false
 	for _, file := range pass.Files {

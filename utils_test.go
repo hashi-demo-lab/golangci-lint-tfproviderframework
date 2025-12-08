@@ -308,26 +308,26 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 		name             string
 		filePath         string
 		wantResourceName string
-		wantIsDataSource bool
+		wantKind ResourceKind
 	}{
 		// Prefix patterns
 		{
 			name:             "resource_ prefix",
 			filePath:         "/path/to/resource_widget_test.go",
 			wantResourceName: "widget",
-			wantIsDataSource: false,
+			wantKind: KindResource,
 		},
 		{
 			name:             "data_source_ prefix",
 			filePath:         "/path/to/data_source_http_test.go",
 			wantResourceName: "http",
-			wantIsDataSource: true,
+			wantKind: KindDataSource,
 		},
 		{
 			name:             "ephemeral_ prefix",
 			filePath:         "/path/to/ephemeral_session_test.go",
 			wantResourceName: "session",
-			wantIsDataSource: false,
+			wantKind: KindResource,
 		},
 
 		// Suffix patterns
@@ -335,19 +335,19 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 			name:             "_resource suffix",
 			filePath:         "/path/to/widget_resource_test.go",
 			wantResourceName: "widget",
-			wantIsDataSource: false,
+			wantKind: KindResource,
 		},
 		{
 			name:             "_data_source suffix",
 			filePath:         "/path/to/http_data_source_test.go",
 			wantResourceName: "http",
-			wantIsDataSource: true,
+			wantKind: KindDataSource,
 		},
 		{
 			name:             "_datasource suffix",
 			filePath:         "/path/to/http_datasource_test.go",
 			wantResourceName: "http",
-			wantIsDataSource: true,
+			wantKind: KindDataSource,
 		},
 
 		// Multi-part names
@@ -355,13 +355,13 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 			name:             "resource with underscores",
 			filePath:         "/path/to/resource_compute_instance_test.go",
 			wantResourceName: "compute_instance",
-			wantIsDataSource: false,
+			wantKind: KindResource,
 		},
 		{
 			name:             "data source with underscores",
 			filePath:         "/path/to/data_source_s3_bucket_test.go",
 			wantResourceName: "s3_bucket",
-			wantIsDataSource: true,
+			wantKind: KindDataSource,
 		},
 
 		// Edge cases
@@ -369,25 +369,25 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 			name:             "not a test file",
 			filePath:         "/path/to/resource_widget.go",
 			wantResourceName: "",
-			wantIsDataSource: false,
+			wantKind: KindResource,
 		},
 		{
 			name:             "no matching pattern",
 			filePath:         "/path/to/helper_test.go",
 			wantResourceName: "",
-			wantIsDataSource: false,
+			wantKind: KindResource,
 		},
 		{
 			name:             "just _test.go",
 			filePath:         "/path/to/_test.go",
 			wantResourceName: "",
-			wantIsDataSource: false,
+			wantKind: KindResource,
 		},
 		{
 			name:             "empty resource name after prefix",
 			filePath:         "/path/to/resource__test.go",
 			wantResourceName: "",
-			wantIsDataSource: false,
+			wantKind: KindResource,
 		},
 
 		// Full path variations
@@ -395,19 +395,19 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 			name:             "absolute path with prefix",
 			filePath:         "/home/user/project/internal/provider/resource_bucket_test.go",
 			wantResourceName: "bucket",
-			wantIsDataSource: false,
+			wantKind: KindResource,
 		},
 		{
 			name:             "relative path with suffix",
 			filePath:         "provider/http_datasource_test.go",
 			wantResourceName: "http",
-			wantIsDataSource: true,
+			wantKind: KindDataSource,
 		},
 		{
 			name:             "basename only",
 			filePath:         "data_source_ami_test.go",
 			wantResourceName: "ami",
-			wantIsDataSource: true,
+			wantKind: KindDataSource,
 		},
 
 		// Priority - prefix patterns should take precedence
@@ -415,7 +415,7 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 			name:             "both prefix and suffix patterns present",
 			filePath:         "/path/to/resource_widget_resource_test.go",
 			wantResourceName: "widget_resource",
-			wantIsDataSource: false,
+			wantKind: KindResource,
 		},
 	}
 
@@ -426,9 +426,10 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 				t.Errorf("ExtractResourceNameFromPath(%q) resourceName = %q, want %q",
 					tt.filePath, gotResourceName, tt.wantResourceName)
 			}
-			if gotIsDataSource != tt.wantIsDataSource {
+			wantIsDataSource := tt.wantKind == KindDataSource
+			if gotIsDataSource != wantIsDataSource {
 				t.Errorf("ExtractResourceNameFromPath(%q) isDataSource = %v, want %v",
-					tt.filePath, gotIsDataSource, tt.wantIsDataSource)
+					tt.filePath, gotIsDataSource, wantIsDataSource)
 			}
 		})
 	}
