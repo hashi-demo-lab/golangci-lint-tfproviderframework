@@ -1196,9 +1196,9 @@ resource "aws_instance" "example" {
 			expected: []string{"example_widget"},
 		},
 		{
-			name:     "no resource block - data source only",
+			name:     "data source block",
 			input:    `data "example_widget" "test" {`,
-			expected: []string{},
+			expected: []string{"example_widget"},
 		},
 		{
 			name:     "no resource block - empty string",

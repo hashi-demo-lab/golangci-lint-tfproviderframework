@@ -99,17 +99,60 @@ func (l *Linker) LinkTestsToResources() {
 			}
 		}
 
-		// Strategy 2: Pure Inferred Content Matching (fallback when function name doesn't match)
-		// Based on actual HCL parsing of Config strings - extracts resource types directly
-		// Priority depends on function name hints:
-		// - If function name contains "Action", prioritize actions
-		// - If function name contains "DataSource", prioritize data sources
-		// - Otherwise: resources > actions > data sources
-		if !matchFound && len(fn.InferredResources) > 0 {
-			// Determine priority order based on function name hints
-			isActionTest := strings.Contains(fn.Name, "Action")
-			isDataSourceTest := strings.Contains(fn.Name, "DataSource") || strings.Contains(fn.Name, "Data_Source")
+		// Strategy 2: Typed HCL Block Matching (exact matching using parsed block types)
+		// Uses InferredHCLBlocks which contain both block type (resource/data/action) and resource type
+		// This gives us exact matches without guessing based on function name hints
+		if !matchFound && len(fn.InferredHCLBlocks) > 0 {
+			// Map HCL block types to registry key prefixes
+			blockTypeToPrefix := map[string]string{
+				"resource": "resource:",
+				"data":     "data source:",
+				"action":   "action:",
+			}
 
+			// Priority order: actions (most specific) > resources > data sources (often dependencies)
+			priorityOrder := []string{"action", "resource", "data"}
+
+			for _, blockType := range priorityOrder {
+				if matchFound {
+					break
+				}
+				prefix := blockTypeToPrefix[blockType]
+				for _, block := range fn.InferredHCLBlocks {
+					if block.BlockType != blockType {
+						continue
+					}
+					// Try exact match
+					key := prefix + block.ResourceType
+					if _, exists := allDefinitions[key]; exists {
+						bestMatch = &ResourceMatch{
+							ResourceName: block.ResourceType,
+							Confidence:   1.0, // Exact match from HCL
+							MatchType:    registry.MatchTypeInferred,
+						}
+						matchFound = true
+						break
+					}
+					// Try stripping provider prefix
+					if idx := strings.Index(block.ResourceType, "_"); idx != -1 {
+						shortName := block.ResourceType[idx+1:]
+						key = prefix + shortName
+						if _, exists := allDefinitions[key]; exists {
+							bestMatch = &ResourceMatch{
+								ResourceName: shortName,
+								Confidence:   1.0, // Exact match from HCL
+								MatchType:    registry.MatchTypeInferred,
+							}
+							matchFound = true
+							break
+						}
+					}
+				}
+			}
+		}
+
+		// Strategy 3: Legacy Inferred Content Matching (fallback for helper functions without direct HCL)
+		if !matchFound && len(fn.InferredResources) > 0 {
 			// Helper to match against a specific kind
 			matchKind := func(kindPrefix string) bool {
 				for _, inferredName := range fn.InferredResources {
@@ -117,7 +160,7 @@ func (l *Linker) LinkTestsToResources() {
 					if _, exists := allDefinitions[key]; exists {
 						bestMatch = &ResourceMatch{
 							ResourceName: inferredName,
-							Confidence:   0.9,
+							Confidence:   0.85,
 							MatchType:    registry.MatchTypeInferred,
 						}
 						return true
@@ -129,7 +172,7 @@ func (l *Linker) LinkTestsToResources() {
 						if _, exists := allDefinitions[key]; exists {
 							bestMatch = &ResourceMatch{
 								ResourceName: shortName,
-								Confidence:   0.9,
+								Confidence:   0.85,
 								MatchType:    registry.MatchTypeInferred,
 							}
 							return true
@@ -137,13 +180,6 @@ func (l *Linker) LinkTestsToResources() {
 					}
 				}
 				return false
-			}
-
-			// Try matching based on function name hints first
-			if isActionTest {
-				matchFound = matchKind("action:")
-			} else if isDataSourceTest {
-				matchFound = matchKind("data source:")
 			}
 
 			// Standard priority order: resources > actions > data sources

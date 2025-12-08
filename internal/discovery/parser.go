@@ -27,6 +27,16 @@ import (
 // Captures the type (e.g., "example_widget", "google_compute_disk")
 var ResourceTypeRegex = regexp.MustCompile(`(?:resource|data|action)\s+"([^"]+)"\s+"[^"]+"\s+\{`)
 
+// HCLBlockRegex captures both the block type (resource/data/action) and the resource type.
+// Groups: [1] = block type (resource|data|action), [2] = resource type (e.g., "aws_instance")
+var HCLBlockRegex = regexp.MustCompile(`(resource|data|action)\s+"([^"]+)"\s+"[^"]+"\s+\{`)
+
+// InferredResource represents a resource found in HCL config with its block type.
+type InferredResource struct {
+	BlockType    string // "resource", "data", or "action"
+	ResourceType string // e.g., "aws_instance", "aap_job_launch"
+}
+
 // LocalHelper represents a discovered local test helper function.
 type LocalHelper struct {
 	Name     string
@@ -919,8 +929,11 @@ func ParseTestFileWithConfig(file *ast.File, fset *token.FileSet, filePath strin
 
 	resourceName, isDataSource := extractResourceNameFromFilePath(filePath)
 
-	// Build helper function map: function name -> resource/action patterns in return strings
+	// Build helper function maps:
+	// - helperPatterns: function name -> resource type names (for legacy InferredResources)
+	// - typedHelperPatterns: function name -> typed blocks (for InferredHCLBlocks)
 	helperPatterns := buildHelperPatternMap(file)
+	typedHelperPatterns := buildTypedHelperPatternMap(file)
 
 	// Extract resource package aliases from imports (handles aliased imports like r "...helper/resource")
 	resourceAliases := ExtractResourcePackageAliases(file)
@@ -966,7 +979,7 @@ func ParseTestFileWithConfig(file *ast.File, fset *token.FileSet, filePath strin
 			}
 		}
 
-		steps, hasCheckDestroy, hasPreCheck, inferred := extractTestStepsWithHelpers(funcDecl.Body, helperPatterns)
+		steps, hasCheckDestroy, hasPreCheck, inferred, inferredBlocks := extractTestStepsWithHelpers(funcDecl.Body, helperPatterns, typedHelperPatterns)
 		testFunc := registry.TestFunctionInfo{
 			Name:              funcDecl.Name.Name,
 			FilePath:          filePath,
@@ -977,6 +990,7 @@ func ParseTestFileWithConfig(file *ast.File, fset *token.FileSet, filePath strin
 			HasCheckDestroy:   hasCheckDestroy,
 			HasPreCheck:       hasPreCheck,
 			InferredResources: inferred,
+			InferredHCLBlocks: inferredBlocks,
 		}
 
 		for _, step := range testFunc.TestSteps {
@@ -1497,17 +1511,62 @@ func buildHelperPatternMap(file *ast.File) map[string][]string {
 	return patterns
 }
 
+// buildTypedHelperPatternMap builds a map from helper function names to typed HCL blocks.
+// This preserves both block type (resource/data/action) and resource type information.
+func buildTypedHelperPatternMap(file *ast.File) map[string][]InferredResource {
+	patterns := make(map[string][]InferredResource)
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		funcDecl, ok := n.(*ast.FuncDecl)
+		if !ok || funcDecl.Body == nil {
+			return true
+		}
+
+		funcName := funcDecl.Name.Name
+
+		// Look for return statements with string literals or fmt.Sprintf
+		ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+			ret, ok := n.(*ast.ReturnStmt)
+			if !ok || len(ret.Results) == 0 {
+				return true
+			}
+
+			for _, result := range ret.Results {
+				extractTypedPatternsFromExpr(result, func(block InferredResource) {
+					patterns[funcName] = append(patterns[funcName], block)
+				})
+			}
+			return true
+		})
+		return true
+	})
+
+	return patterns
+}
+
 // extractPatternsFromExpr extracts resource/action patterns from an expression.
 // It handles string literals, fmt.Sprintf calls, and string concatenation.
 func extractPatternsFromExpr(expr ast.Expr, addPattern func(string)) {
+	extractTypedPatternsFromExpr(expr, func(block InferredResource) {
+		addPattern(block.ResourceType)
+	})
+}
+
+// extractTypedPatternsFromExpr extracts typed HCL blocks (resource/data/action) from an expression.
+// It handles string literals, fmt.Sprintf calls, and string concatenation.
+func extractTypedPatternsFromExpr(expr ast.Expr, addBlock func(InferredResource)) {
 	switch e := expr.(type) {
 	case *ast.BasicLit:
 		if e.Kind == token.STRING {
 			content := strings.Trim(e.Value, "`\"")
-			matches := ResourceTypeRegex.FindAllStringSubmatch(content, -1)
+			// Use HCLBlockRegex to capture both block type and resource type
+			matches := HCLBlockRegex.FindAllStringSubmatch(content, -1)
 			for _, match := range matches {
-				if len(match) > 1 {
-					addPattern(match[1])
+				if len(match) > 2 {
+					addBlock(InferredResource{
+						BlockType:    match[1], // "resource", "data", or "action"
+						ResourceType: match[2], // e.g., "aws_instance"
+					})
 				}
 			}
 		}
@@ -1517,25 +1576,27 @@ func extractPatternsFromExpr(expr ast.Expr, addPattern func(string)) {
 			if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == "fmt" {
 				// Look at the format string (first argument)
 				if len(e.Args) > 0 {
-					extractPatternsFromExpr(e.Args[0], addPattern)
+					extractTypedPatternsFromExpr(e.Args[0], addBlock)
 				}
 			}
 		}
 	case *ast.BinaryExpr:
 		// Handle string concatenation
 		if e.Op == token.ADD {
-			extractPatternsFromExpr(e.X, addPattern)
-			extractPatternsFromExpr(e.Y, addPattern)
+			extractTypedPatternsFromExpr(e.X, addBlock)
+			extractTypedPatternsFromExpr(e.Y, addBlock)
 		}
 	}
 }
 
 // extractTestStepsWithHelpers is like extractTestSteps but also looks up helper patterns.
-func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string][]string) ([]registry.TestStepInfo, bool, bool, []string) {
+// Returns: steps, hasCheckDestroy, hasPreCheck, inferredResources (legacy), inferredHCLBlocks (typed)
+func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string][]string, typedHelperPatterns map[string][]InferredResource) ([]registry.TestStepInfo, bool, bool, []string, []registry.InferredHCLBlock) {
 	var steps []registry.TestStepInfo
 	var hasCheckDestroy bool
 	var hasPreCheck bool
 	uniqueInferred := make(map[string]bool)
+	uniqueBlocks := make(map[string]registry.InferredHCLBlock) // key: "blockType:resourceType"
 	stepNumber := 1
 
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -1559,7 +1620,7 @@ func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string]
 			return true
 		}
 
-		testSteps, foundCheckDestroy, foundPreCheck := extractStepsFromTestCaseWithHelpers(callExpr.Args[1], &stepNumber, uniqueInferred, helperPatterns)
+		testSteps, foundCheckDestroy, foundPreCheck := extractStepsFromTestCaseWithHelpersTyped(callExpr.Args[1], &stepNumber, uniqueInferred, uniqueBlocks, helperPatterns, typedHelperPatterns)
 		steps = append(steps, testSteps...)
 		if foundCheckDestroy {
 			hasCheckDestroy = true
@@ -1576,11 +1637,23 @@ func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string]
 		inferredResources = append(inferredResources, resourceName)
 	}
 
-	return steps, hasCheckDestroy, hasPreCheck, inferredResources
+	var inferredBlocks []registry.InferredHCLBlock
+	for _, block := range uniqueBlocks {
+		inferredBlocks = append(inferredBlocks, block)
+	}
+
+	return steps, hasCheckDestroy, hasPreCheck, inferredResources, inferredBlocks
 }
 
 // extractStepsFromTestCaseWithHelpers extracts steps and looks up helper patterns.
 func extractStepsFromTestCaseWithHelpers(testCaseExpr ast.Expr, stepNumber *int, inferred map[string]bool, helperPatterns map[string][]string) ([]registry.TestStepInfo, bool, bool) {
+	// Delegate to typed version and ignore the blocks
+	blocks := make(map[string]registry.InferredHCLBlock)
+	return extractStepsFromTestCaseWithHelpersTyped(testCaseExpr, stepNumber, inferred, blocks, helperPatterns, nil)
+}
+
+// extractStepsFromTestCaseWithHelpersTyped extracts steps with typed HCL block information.
+func extractStepsFromTestCaseWithHelpersTyped(testCaseExpr ast.Expr, stepNumber *int, inferred map[string]bool, blocks map[string]registry.InferredHCLBlock, helperPatterns map[string][]string, typedHelperPatterns map[string][]InferredResource) ([]registry.TestStepInfo, bool, bool) {
 	var steps []registry.TestStepInfo
 	hasCheckDestroy := false
 	hasPreCheck := false
@@ -1613,7 +1686,7 @@ func extractStepsFromTestCaseWithHelpers(testCaseExpr ast.Expr, stepNumber *int,
 			}
 
 			for _, stepExpr := range stepsLit.Elts {
-				step := parseTestStepWithHashAndHelpers(stepExpr, *stepNumber, inferred, helperPatterns)
+				step := parseTestStepWithHashAndHelpersTyped(stepExpr, *stepNumber, inferred, blocks, helperPatterns, typedHelperPatterns)
 				steps = append(steps, step)
 				*stepNumber++
 			}
@@ -1632,6 +1705,12 @@ func extractStepsFromTestCaseWithHelpers(testCaseExpr ast.Expr, stepNumber *int,
 
 // parseTestStepWithHashAndHelpers parses a step and looks up helper patterns for Config.
 func parseTestStepWithHashAndHelpers(stepExpr ast.Expr, stepNum int, inferred map[string]bool, helperPatterns map[string][]string) registry.TestStepInfo {
+	blocks := make(map[string]registry.InferredHCLBlock)
+	return parseTestStepWithHashAndHelpersTyped(stepExpr, stepNum, inferred, blocks, helperPatterns, nil)
+}
+
+// parseTestStepWithHashAndHelpersTyped parses a step with typed HCL block extraction.
+func parseTestStepWithHashAndHelpersTyped(stepExpr ast.Expr, stepNum int, inferred map[string]bool, blocks map[string]registry.InferredHCLBlock, helperPatterns map[string][]string, typedHelperPatterns map[string][]InferredResource) registry.TestStepInfo {
 	step := registry.TestStepInfo{
 		StepNumber: stepNum,
 	}
@@ -1661,16 +1740,42 @@ func parseTestStepWithHashAndHelpers(stepExpr ast.Expr, stepNum int, inferred ma
 			step.HasConfig = true
 			step.ConfigHash = hashConfigExpr(kv.Value)
 
-			if inferred != nil {
-				// Try direct extraction first
-				extractResourceNamesFromConfigValue(kv.Value, inferred)
+			// Extract typed HCL blocks
+			extractTypedPatternsFromExpr(kv.Value, func(block InferredResource) {
+				if inferred != nil {
+					inferred[block.ResourceType] = true
+				}
+				if blocks != nil {
+					key := block.BlockType + ":" + block.ResourceType
+					blocks[key] = registry.InferredHCLBlock{
+						BlockType:    block.BlockType,
+						ResourceType: block.ResourceType,
+					}
+				}
+			})
 
-				// If Config is a function call, look up helper patterns
-				if callExpr, ok := kv.Value.(*ast.CallExpr); ok {
-					if ident, ok := callExpr.Fun.(*ast.Ident); ok {
-						if patterns, exists := helperPatterns[ident.Name]; exists {
-							for _, p := range patterns {
+			// If Config is a function call, look up helper patterns (both legacy and typed)
+			if callExpr, ok := kv.Value.(*ast.CallExpr); ok {
+				if ident, ok := callExpr.Fun.(*ast.Ident); ok {
+					// Legacy string patterns (for InferredResources)
+					if patterns, exists := helperPatterns[ident.Name]; exists {
+						for _, p := range patterns {
+							if inferred != nil {
 								inferred[p] = true
+							}
+						}
+					}
+					// Typed patterns (for InferredHCLBlocks)
+					if typedHelperPatterns != nil {
+						if typedPatterns, exists := typedHelperPatterns[ident.Name]; exists {
+							for _, block := range typedPatterns {
+								if blocks != nil {
+									key := block.BlockType + ":" + block.ResourceType
+									blocks[key] = registry.InferredHCLBlock{
+										BlockType:    block.BlockType,
+										ResourceType: block.ResourceType,
+									}
+								}
 							}
 						}
 					}

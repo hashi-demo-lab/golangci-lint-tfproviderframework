@@ -295,6 +295,12 @@ type TestFileInfo struct {
 	TestFunctions []TestFunctionInfo
 }
 
+// InferredHCLBlock represents a resource/data/action block found in HCL config.
+type InferredHCLBlock struct {
+	BlockType    string // "resource", "data", or "action"
+	ResourceType string // e.g., "aws_instance", "aap_job_launch"
+}
+
 // TestFunctionInfo represents a single TestAcc function and its test steps.
 type TestFunctionInfo struct {
 	Name              string
@@ -304,7 +310,8 @@ type TestFunctionInfo struct {
 	TestSteps         []TestStepInfo
 	HasErrorCase      bool
 	HasImportStep     bool
-	InferredResources []string
+	InferredResources []string           // Legacy: just resource type names
+	InferredHCLBlocks []InferredHCLBlock // New: typed HCL blocks with block type
 	MatchConfidence   float64
 	MatchType         MatchType
 	HelperUsed        string       // Name of helper function used (e.g., "resource.Test", "AccTestHelper")

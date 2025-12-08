@@ -39,8 +39,8 @@ func TestLinkerFunctionNameMatching(t *testing.T) {
 		if widgetTests[0].MatchType != registry.MatchTypeFunctionName {
 			t.Errorf("expected MatchTypeFunctionName, got %v", widgetTests[0].MatchType)
 		}
-		if widgetTests[0].MatchConfidence != 1.0 {
-			t.Errorf("expected confidence 1.0, got %f", widgetTests[0].MatchConfidence)
+		if widgetTests[0].MatchConfidence != 0.95 {
+			t.Errorf("expected confidence 0.95, got %f", widgetTests[0].MatchConfidence)
 		}
 	}
 
@@ -287,8 +287,8 @@ func TestLinkerInferredMatching(t *testing.T) {
 	if widgetTests[0].MatchType != registry.MatchTypeInferred {
 		t.Errorf("expected MatchTypeInferred, got %v", widgetTests[0].MatchType)
 	}
-	if widgetTests[0].MatchConfidence != 0.8 {
-		t.Errorf("expected confidence 0.8, got %f", widgetTests[0].MatchConfidence)
+	if widgetTests[0].MatchConfidence != 0.85 {
+		t.Errorf("expected confidence 0.85, got %f", widgetTests[0].MatchConfidence)
 	}
 }
 

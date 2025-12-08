@@ -42,7 +42,10 @@ Analyzing provider at: /workspace/validation/terraform-provider-helm (4 director
 └─────────────────────────────────────────────────────────────────────────────────┘
   RESOURCE  KIND      TEST FUNCTION                                               MATCH TYPE
   ────────  ────      ─────────────                                               ──────────
-  release   resource  TestAccResourceRelease_basic                                inferred_from_config
+  release   resource  TestAccHelmRelease_Upgrade_MetadataStructure                inferred_from_config
+                      TestAccHelmRelease_Upgrade_values                           inferred_from_config
+                      TestAccHelmRelease_Upgrade_PostrenderStructure              inferred_from_config
+                      TestAccResourceRelease_basic                                inferred_from_config
                       TestAccResourceRelease_set_wo                               inferred_from_config
                       TestAccResourceRelease_emptyVersion                         inferred_from_config
                       TestAccResourceRelease_import                               inferred_from_config
@@ -88,9 +91,6 @@ Analyzing provider at: /workspace/validation/terraform-provider-helm (4 director
                       TestAccResourceRelease_OCI_login                            inferred_from_config
                       TestAccResourceRelease_recomputeMetadata                    inferred_from_config
                       TestAccResourceRelease_manifestServerDiff                   function_name
-                      TestAccHelmRelease_Upgrade_MetadataStructure                inferred_from_config
-                      TestAccHelmRelease_Upgrade_values                           inferred_from_config
-                      TestAccHelmRelease_Upgrade_PostrenderStructure              inferred_from_config
   template  data      TestAccDataTemplate_basic                                   inferred_from_config
                       TestAccDataTemplate_crds                                    inferred_from_config
                       TestAccDataTemplate_templates                               inferred_from_config

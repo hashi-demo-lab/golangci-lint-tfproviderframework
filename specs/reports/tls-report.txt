@@ -23,7 +23,7 @@ Analyzing provider at: /workspace/validation/terraform-provider-tls (7 directori
   ────                 ─────  ──────  ───────────  ────────────  ───────────  ─────  ─────────────────  ──────────  ────                             ─────────
   cert_request         6      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_cert_request.go         resource_cert_request_test.go
   locally_signed_cert  18     ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_locally_signed_cert.go  resource_locally_signed_cert_test.go
-  private_key          14     ✓       ✗            ✗             ✓            ✓      ✗                  ✓           ephemeral_private_key.go         (3 files)
+  private_key          14     ✓       ✗            ✗             ✓            ✓      ✗                  ✓           resource_private_key.go          (3 files)
   public_key           10     ✓       ✗            ✗             ✗            ✓      ✗                  ✗           ephemeral_public_key.go          (2 files)
   self_signed_cert     19     ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_self_signed_cert.go     resource_self_signed_cert_test.go
 
@@ -70,11 +70,6 @@ Analyzing provider at: /workspace/validation/terraform-provider-tls (7 directori
                                  TestResourceLocallySignedCert_WithoutMaxPathLen                                      function_name
                                  TestResourceLocallySignedCert_WithMaxPathLen                                         function_name
   private_key          resource  TestProvider_InvalidProxyConfig                                                      inferred_from_config
-                                 TestAccEphemeralPrivateKey_RSA_DefaultRsaBits                                        function_name
-                                 TestAccEphemeralPrivateKey_RSA_4096RsaBits                                           function_name
-                                 TestAccEphemeralPrivateKey_ECDSA_DefaultEcdsaCurve                                   function_name
-                                 TestAccEphemeralPrivateKey_ECDSA_P256                                                function_name
-                                 TestAccEphemeralPrivateKey_ED25519                                                   function_name
                                  TestPrivateKeyRSA                                                                    file_proximity
                                  TestAccPrivateKeyRSA_UpgradeFromVersion3_4_0                                         inferred_from_config
                                  TestAccPrivateKeyRSA_UpgradeFromVersion3_1_0                                         inferred_from_config
@@ -83,6 +78,11 @@ Analyzing provider at: /workspace/validation/terraform-provider-tls (7 directori
                                  TestAccPrivateKeyECDSA_UpgradeFromVersion3_1_0                                       inferred_from_config
                                  TestPrivateKeyED25519                                                                file_proximity
                                  TestAccPrivateKeyED25519_UpgradeFromVersion3_4_0                                     inferred_from_config
+                                 TestAccEphemeralPrivateKey_RSA_DefaultRsaBits                                        function_name
+                                 TestAccEphemeralPrivateKey_RSA_4096RsaBits                                           function_name
+                                 TestAccEphemeralPrivateKey_ECDSA_DefaultEcdsaCurve                                   function_name
+                                 TestAccEphemeralPrivateKey_ECDSA_P256                                                function_name
+                                 TestAccEphemeralPrivateKey_ED25519                                                   function_name
   public_key           resource  TestPublicKey_dataSource_PEM                                                         function_name
                                  TestPublicKey_dataSource_PEM_UpgradeFromVersion3_4_0                                 function_name
                                  TestPublicKey_dataSource_OpenSSHPEM                                                  function_name

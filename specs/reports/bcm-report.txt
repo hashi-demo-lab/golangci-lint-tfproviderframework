@@ -21,11 +21,11 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
 └─────────────────────────────────────────────────────────────────────────────────┘
   NAME                  TESTS  Update  ImportState  CheckDestroy  ExpectError  Check  ConfigStateChecks  PlanChecks  FILE                              TEST FILE
   ────                  ─────  ──────  ───────────  ────────────  ───────────  ─────  ─────────────────  ──────────  ────                              ─────────
-  cmdevice_category     43     ✓       ✓            ✓             ✓            ✓      ✓                  ✓           resource_cmdevice_category.go     (3 files)
-  cmdevice_device       25     ✓       ✓            ✓             ✓            ✗      ✓                  ✓           resource_cmdevice_device.go       (3 files)
+  cmdevice_category     45     ✓       ✓            ✓             ✓            ✓      ✓                  ✓           resource_cmdevice_category.go     (4 files)
+  cmdevice_device       28     ✓       ✓            ✓             ✓            ✗      ✓                  ✓           resource_cmdevice_device.go       (4 files)
   cmkube_cluster        16     ✓       ✓            ✓             ✓            ✗      ✓                  ✓           resource_cmkube_cluster.go        (2 files)
   cmnet_network         4      ✓       ✓            ✓             ✗            ✗      ✓                  ✓           resource_cmnet_network.go         resource_cmnet_network_test.go
-  cmpart_softwareimage  38     ✓       ✓            ✓             ✓            ✓      ✓                  ✓           resource_cmpart_softwareimage.go  (3 files)
+  cmpart_softwareimage  34     ✓       ✓            ✓             ✓            ✓      ✓                  ✓           resource_cmpart_softwareimage.go  (3 files)
   cmuser_user           8      ✓       ✓            ✓             ✗            ✗      ✓                  ✓           resource_cmuser_user.go           resource_cmuser_user_test.go
   example               0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_template.go              -
 
@@ -41,7 +41,7 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
   cmnet_networks         4      ✗      ✓                  data_source_cmnet_networks.go         data_source_cmnet_networks_test.go
   cmpart_entity_info     11     ✓      ✓                  data_source_cmpart_entity_info.go     data_source_cmpart_entity_info_test.go
   cmpart_partitions      9      ✗      ✓                  data_source_cmpart_partitions.go      data_source_cmpart_partitions_test.go
-  cmpart_softwareimages  20     ✗      ✓                  data_source_cmpart_softwareimages.go  (3 files)
+  cmpart_softwareimages  19     ✗      ✓                  data_source_cmpart_softwareimages.go  (2 files)
   cmuser_users           6      ✗      ✓                  data_source_cmuser_users.go           data_source_cmuser_users_test.go
   example                0      ✗      ✗                  data_source_template.go               -
 
@@ -62,11 +62,12 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
 └─────────────────────────────────────────────────────────────────────────────────┘
   RESOURCE               KIND      TEST FUNCTION                                                         MATCH TYPE
   ────────               ────      ─────────────                                                         ──────────
-  cmdevice_category      resource  TestAccCMDeviceDevice_IdempotencyWithOptionalFields                   inferred_from_config
+  cmdevice_category      resource  TestAccCMDeviceDevice_IdempotencyWithImport                           inferred_from_config
+                                   TestAccCMDeviceDevice_IdempotencyWithOptionalFields                   inferred_from_config
+                                   TestAccCMDeviceDevice_IdempotencyDrift                                inferred_from_config
                                    TestAccCMDeviceDeviceResource_Basic                                   inferred_from_config
-                                   TestAccCMDeviceDevice_RolesIdempotent                                 inferred_from_config
-                                   TestAccCMDeviceDevice_MultipleInvalidRoles                            inferred_from_config
-                                   TestAccCMDeviceDevice_RolesAddMultiple                                inferred_from_config
+                                   TestAccCMDeviceDevice_Drift                                           inferred_from_config
+                                   TestAccCMDeviceDevice_RolesImportByName                               inferred_from_config
                                    TestAccCMDeviceCategoryResource_Basic                                 inferred_from_config
                                    TestAccCMDeviceCategoryResource_Import                                inferred_from_config
                                    TestAccCMDeviceCategoryResource_ForceParameter                        inferred_from_config
@@ -105,18 +106,14 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
                                    TestAccCMDeviceCategory_BMCPasswordUpdate                             inferred_from_config
                                    TestAccCMDeviceCategoryResource_Services                              inferred_from_config
                                    TestAccCMDeviceCategoryResource_ServicesWithAllFields                 inferred_from_config
-  cmdevice_device        resource  TestAccCMDeviceDevice_ValidationInvalidMAC                            inferred_from_config
+                                   TestAccCMDeviceCategoriesDataSource_FilterByName                      inferred_from_config
+  cmdevice_device        resource  TestAccCMDeviceDevice_Idempotency                                     inferred_from_config
+                                   TestAccCMDeviceDevice_ValidationInvalidMAC                            inferred_from_config
                                    TestAccCMDeviceDevice_RolesCreate                                     inferred_from_config
-                                   TestAccCMDeviceDevice_RolesUpdateByName                               inferred_from_config
+                                   TestAccCMDeviceDevice_RolesMultiple                                   inferred_from_config
+                                   TestAccCMDeviceDevice_RolesImport                                     inferred_from_config
                                    TestAccCMDeviceDevice_EmptyRoleString                                 file_proximity
-                                   TestAccCMDeviceDevice_InterfaceSingle                                 inferred_from_config
-                                   TestAccCMDeviceDevice_InterfaceMultiple                               inferred_from_config
-                                   TestAccCMDeviceDevice_InterfaceBond                                   inferred_from_config
-                                   TestAccCMDeviceDevice_InterfaceBMC                                    inferred_from_config
-                                   TestAccCMDeviceDevice_InterfaceImport                                 inferred_from_config
-                                   TestAccCMDeviceDevice_InterfaceUpdate                                 inferred_from_config
-                                   TestAccCMDeviceDevice_LegacyMACOnly                                   inferred_from_config
-                                   TestAccCMDeviceDevice_InterfaceDrift                                  inferred_from_config
+                                   TestAccCMDeviceDevice_MultipleInvalidRoles                            inferred_from_config
                                    TestAccCMDeviceDeviceResource_MockErrorCategoryNotFound               inferred_from_config
                                    TestAccCMDeviceDeviceResource_MockErrorCategoryInvalidJSON            inferred_from_config
                                    TestAccCMDeviceDeviceResource_MockErrorCategoryNoPartition            inferred_from_config
@@ -130,6 +127,14 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
                                    TestAccCMDeviceDeviceResource_MockErrorDeviceValidationFailed         inferred_from_config
                                    TestAccCMDeviceDeviceResource_MockErrorDeviceReadAfterCreateFailed    inferred_from_config
                                    TestAccCMDeviceDeviceResource_MockErrorDeviceReadInvalidJSON          inferred_from_config
+                                   TestAccCMDeviceDevice_InterfaceSingle                                 inferred_from_config
+                                   TestAccCMDeviceDevice_InterfaceMultiple                               inferred_from_config
+                                   TestAccCMDeviceDevice_InterfaceBond                                   inferred_from_config
+                                   TestAccCMDeviceDevice_InterfaceBMC                                    inferred_from_config
+                                   TestAccCMDeviceDevice_InterfaceImport                                 inferred_from_config
+                                   TestAccCMDeviceDevice_InterfaceUpdate                                 inferred_from_config
+                                   TestAccCMDeviceDevice_LegacyMACOnly                                   inferred_from_config
+                                   TestAccCMDeviceDevice_InterfaceDrift                                  inferred_from_config
   cmkube_cluster         resource  TestAccCMKubeClusterResource_Basic                                    inferred_from_config
                                    TestAccCMKubeClusterResource_DriftDetection                           inferred_from_config
                                    TestAccCMKubeClusterResource_WorkerNodes                              inferred_from_config
@@ -150,7 +155,8 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
                                    TestAccCMNetNetwork_Complete                                          inferred_from_config
                                    TestAccCMNetNetwork_Update                                            inferred_from_config
                                    TestAccCMNetNetwork_DriftDetection                                    inferred_from_config
-  cmpart_softwareimage   resource  TestAccCMPartSoftwareImageResource_Basic                              inferred_from_config
+  cmpart_softwareimage   resource  TestAccCMDeviceDevice_IdempotencyAfterUpdate                          inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_Basic                              inferred_from_config
                                    TestAccCMPartSoftwareImageResource_FullConfig                         inferred_from_config
                                    TestAccCMPartSoftwareImageResource_UpdateKernelConfig                 inferred_from_config
                                    TestAccCMPartSoftwareImageResource_UpdateModules                      inferred_from_config
@@ -170,24 +176,19 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
                                    TestAccCMPartSoftwareImageResource_ForceParameter                     inferred_from_config
                                    TestAccCMPartSoftwareImageResource_ForceParameterDefault              inferred_from_config
                                    TestAccCMPartSoftwareImageResource_BootFSPart                         inferred_from_config
-                                   TestAccCMDeviceDevice_Idempotency                                     inferred_from_config
-                                   TestAccCMDeviceDevice_IdempotencyWithImport                           inferred_from_config
-                                   TestAccCMDeviceDevice_IdempotencyAfterUpdate                          inferred_from_config
-                                   TestAccCMDeviceDevice_IdempotencyDrift                                inferred_from_config
                                    TestAccCMDeviceDevice_DriftNotes                                      inferred_from_config
                                    TestAccCMDeviceDevice_ValidationInvalidHostname                       inferred_from_config
                                    TestAccCMDeviceDevice_PartitionCommitTimeout                          inferred_from_config
-                                   TestAccCMDeviceDevice_Drift                                           inferred_from_config
-                                   TestAccCMDeviceDevice_RolesMultiple                                   inferred_from_config
+                                   TestAccCMDeviceDevice_RolesIdempotent                                 inferred_from_config
                                    TestAccCMDeviceDevice_RolesUpdate                                     inferred_from_config
                                    TestAccCMDeviceDevice_RolesRemove                                     inferred_from_config
-                                   TestAccCMDeviceDevice_RolesImport                                     inferred_from_config
                                    TestAccCMDeviceDevice_RolesDrift                                      inferred_from_config
                                    TestAccCMDeviceDevice_RolesByName                                     inferred_from_config
-                                   TestAccCMDeviceDevice_RolesImportByName                               inferred_from_config
+                                   TestAccCMDeviceDevice_RolesUpdateByName                               inferred_from_config
                                    TestAccCMDeviceDevice_RolesDriftByName                                inferred_from_config
                                    TestAccCMDeviceDevice_InvalidRoleName                                 inferred_from_config
                                    TestAccCMDeviceDevice_InvalidRoleUUID                                 inferred_from_config
+                                   TestAccCMDeviceDevice_RolesAddMultiple                                inferred_from_config
   cmuser_user            resource  TestAccCMUserUser_Basic                                               inferred_from_config
                                    TestAccCMUserUser_Complete                                            inferred_from_config
                                    TestAccCMUserUser_Update                                              inferred_from_config
@@ -240,7 +241,14 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
                                    TestAccCMPartPartitionsDataSource_FilterCaseInsensitive               inferred_from_config
                                    TestAccCMPartPartitionsDataSource_FilterEmptyString                   inferred_from_config
                                    TestAccCMPartPartitionsDataSource_FilterSubsetProperty                inferred_from_config
-  cmpart_softwareimages  data      TestAccProviderConfig_InsecureSkipVerify_Default                      inferred_from_config
+  cmpart_softwareimages  data      TestAccCMPartSoftwareImagesDataSource_Basic                           inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_EmptyResponse                   inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_NestedModules                   inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_AllFields                       inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_InvalidCredentials              inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_FilterByCategory                inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_FilterByName                    inferred_from_config
+                                   TestAccProviderConfig_InsecureSkipVerify_Default                      inferred_from_config
                                    TestAccProviderConfig_InsecureSkipVerify_ExplicitTrue                 inferred_from_config
                                    TestAccProviderConfig_InsecureSkipVerify_ExplicitFalse                inferred_from_config
                                    TestAccProviderConfig_Timeout_Default                                 inferred_from_config
@@ -252,14 +260,6 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
                                    TestAccProviderConfig_CombinedDefaults                                inferred_from_config
                                    TestAccProviderConfig_Timeout_ZeroValue                               inferred_from_config
                                    TestAccProviderConfig_Timeout_NegativeValue                           inferred_from_config
-                                   TestAccCMPartSoftwareImagesDataSource_Basic                           inferred_from_config
-                                   TestAccCMPartSoftwareImagesDataSource_EmptyResponse                   inferred_from_config
-                                   TestAccCMPartSoftwareImagesDataSource_NestedModules                   inferred_from_config
-                                   TestAccCMPartSoftwareImagesDataSource_AllFields                       inferred_from_config
-                                   TestAccCMPartSoftwareImagesDataSource_InvalidCredentials              inferred_from_config
-                                   TestAccCMPartSoftwareImagesDataSource_FilterByCategory                inferred_from_config
-                                   TestAccCMPartSoftwareImagesDataSource_FilterByName                    inferred_from_config
-                                   TestAccCMDeviceCategoriesDataSource_FilterByName                      inferred_from_config
   cmuser_users           data      TestAccCMUserUsersDataSource_Basic                                    inferred_from_config
                                    TestAccCMUserUsersDataSource_FilterUsername                           inferred_from_config
                                    TestAccCMUserUsersDataSource_FilterGroupID                            inferred_from_config
