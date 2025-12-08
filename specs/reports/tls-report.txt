@@ -1,0 +1,130 @@
+Analyzing provider at: /workspace/validation/terraform-provider-tls (7 directories)
+
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                        TERRAFORM PROVIDER TEST COVERAGE REPORT                 ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ SUMMARY                                                                         │
+├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤
+│ Category     │ Total │ Untested │ Issues                                          │
+├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤
+│ Resources    │     5 │        0 │ 5 without CheckDestroy                          │
+│ Data Sources │     2 │        1 │ -                                               │
+│ Actions      │     0 │        0 │ 0 without Check func                            │
+│ Orphan Tests │     0 │        - │ -                                               │
+└──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ RESOURCES                                                                       │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME                 TESTS  Update  ImportState  CheckDestroy  ExpectError  Check  ConfigStateChecks  PlanChecks  FILE                             TEST FILE
+  ────                 ─────  ──────  ───────────  ────────────  ───────────  ─────  ─────────────────  ──────────  ────                             ─────────
+  cert_request         6      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_cert_request.go         resource_cert_request_test.go
+  locally_signed_cert  18     ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_locally_signed_cert.go  resource_locally_signed_cert_test.go
+  private_key          14     ✓       ✗            ✗             ✓            ✓      ✗                  ✓           resource_private_key.go          (3 files)
+  public_key           10     ✓       ✗            ✗             ✗            ✓      ✗                  ✗           ephemeral_public_key.go          (2 files)
+  self_signed_cert     19     ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_self_signed_cert.go     resource_self_signed_cert_test.go
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ DATA SOURCES                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME         TESTS  Check  ConfigStateChecks  FILE                        TEST FILE
+  ────         ─────  ─────  ─────────────────  ────                        ─────────
+  certificate  14     ✓      ✗                  data_source_certificate.go  data_source_certificate_test.go
+  public_key   0      ✗      ✗                  data_source_public_key.go   -
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ ORPHAN TESTS                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  ✓ All test functions are associated with resources!
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ TEST ASSOCIATIONS                                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  RESOURCE             KIND      TEST FUNCTION                                                                        MATCH TYPE
+  ────────             ────      ─────────────                                                                        ──────────
+  cert_request         resource  TestResourceCertRequest                                                              function_name
+                                 TestAccResourceCertRequest_UpgradeFromVersion3_4_0                                   function_name
+                                 TestResourceCertRequest_NoSubject                                                    function_name
+                                 TestResourceCertRequest_InvalidConfigs                                               function_name
+                                 TestResourceCertRequest_PKCS8                                                        function_name
+                                 TestResourceCertRequest_PrivateKeyPEM                                                function_name
+  locally_signed_cert  resource  TestResourceLocallySignedCert                                                        function_name
+                                 TestAccResourceLocallySignedCert_UpgradeFromVersion3_4_0                             function_name
+                                 TestResourceLocallySignedCert_DetectExpiringAndExpired                               function_name
+                                 TestResourceLocallySignedCert_DetectExpiring_Refresh                                 function_name
+                                 TestResourceLocallySignedCert_DetectExpired_Refresh                                  function_name
+                                 TestResourceLocallySignedCert_ReadyForRenewal_ValidityPeriodZero                     function_name
+                                 TestResourceLocallySignedCert_ReadyForRenewal_EarlyRenewalGreaterThanValidityPeriod  function_name
+                                 TestResourceLocallySignedCert_ReadyForRenewal_EarlyRenewalEqualsValidityPeriod       function_name
+                                 TestResourceLocallySignedCert_RecreatesAfterExpired                                  function_name
+                                 TestResourceLocallySignedCert_NotRecreatedForEarlyRenewalUpdateInFuture              function_name
+                                 TestResourceLocallySignedCert_KeyIDs                                                 function_name
+                                 TestResourceLocallySignedCert_FromED25519PrivateKeyResource                          function_name
+                                 TestResourceLocallySignedCert_FromED25519PrivateKeyResource_PKCS8                    function_name
+                                 TestResourceLocallySignedCert_FromECDSAPrivateKeyResource                            function_name
+                                 TestResourceLocallySignedCert_FromRSAPrivateKeyResource                              function_name
+                                 TestResourceLocallySignedCert_InvalidConfigs                                         function_name
+                                 TestResourceLocallySignedCert_WithoutMaxPathLen                                      function_name
+                                 TestResourceLocallySignedCert_WithMaxPathLen                                         function_name
+  private_key          resource  TestAccEphemeralPrivateKey_RSA_DefaultRsaBits                                        function_name
+                                 TestAccEphemeralPrivateKey_RSA_4096RsaBits                                           function_name
+                                 TestAccEphemeralPrivateKey_ECDSA_DefaultEcdsaCurve                                   function_name
+                                 TestAccEphemeralPrivateKey_ECDSA_P256                                                function_name
+                                 TestAccEphemeralPrivateKey_ED25519                                                   function_name
+                                 TestProvider_InvalidProxyConfig                                                      inferred_from_config
+                                 TestPrivateKeyRSA                                                                    file_proximity
+                                 TestAccPrivateKeyRSA_UpgradeFromVersion3_4_0                                         file_proximity
+                                 TestAccPrivateKeyRSA_UpgradeFromVersion3_1_0                                         file_proximity
+                                 TestPrivateKeyECDSA                                                                  file_proximity
+                                 TestAccPrivateKeyECDSA_UpgradeFromVersion3_4_0                                       file_proximity
+                                 TestAccPrivateKeyECDSA_UpgradeFromVersion3_1_0                                       file_proximity
+                                 TestPrivateKeyED25519                                                                file_proximity
+                                 TestAccPrivateKeyED25519_UpgradeFromVersion3_4_0                                     file_proximity
+  public_key           resource  TestPublicKey_dataSource_PEM                                                         function_name
+                                 TestPublicKey_dataSource_PEM_UpgradeFromVersion3_4_0                                 function_name
+                                 TestPublicKey_dataSource_OpenSSHPEM                                                  function_name
+                                 TestAccPublicKey_dataSource_OpenSSHPEM_UpgradeFromVersion3_4_0                       function_name
+                                 TestPublicKey_dataSource_PKCS8PEM                                                    function_name
+                                 TestPublicKey_dataSource_errorCases                                                  function_name
+                                 TestPublicKey_ephemeral_PEM                                                          function_name
+                                 TestPublicKey_ephemeral_OpenSSHPEM                                                   function_name
+                                 TestPublicKey_ephemeral_PKCS8PEM                                                     function_name
+                                 TestPublicKey_ephemeral_errorCases                                                   function_name
+  self_signed_cert     resource  TestResourceSelfSignedCert                                                           function_name
+                                 TestAccResourceSelfSignedCert_UpgradeFromVersion3_4_0                                function_name
+                                 TestResourceSelfSignedCert_DetectExpiringAndExpired                                  function_name
+                                 TestResourceSelfSignedCert_DetectExpiring_Refresh                                    function_name
+                                 TestResourceSelfSignedCert_DetectExpired_Refresh                                     function_name
+                                 TestResourceSelfSignedCert_ReadyForRenewal_ValidityPeriodZero                        function_name
+                                 TestResourceSelfSignedCert_ReadyForRenewal_EarlyRenewalGreaterThanValidityPeriod     function_name
+                                 TestResourceSelfSignedCert_ReadyForRenewal_EarlyRenewalEqualsValidityPeriod          function_name
+                                 TestResourceSelfSignedCert_RecreatesAfterExpired                                     function_name
+                                 TestResourceSelfSignedCert_NotRecreatedForEarlyRenewalUpdateInFuture                 function_name
+                                 TestResourceSelfSignedCert_KeyIDs                                                    function_name
+                                 TestResourceSelfSignedCert_InvalidConfigs                                            function_name
+                                 TestResourceSelfSignedCert_FromED25519PrivateKeyResource                             function_name
+                                 TestResourceSelfSignedCert_FromECDSAPrivateKeyResource                               function_name
+                                 TestResourceSelfSignedCert_FromECDSAPrivateKeyResource_PKCS8                         function_name
+                                 TestResourceSelfSignedCert_FromRSAPrivateKeyResource                                 function_name
+                                 TestResourceSelfSignedCert_NoSubject                                                 function_name
+                                 TestResourceSelfSignedCert_WithoutMaxPathLen                                         function_name
+                                 TestResourceSelfSignedCert_WithMaxPathLen                                            function_name
+  certificate          data      TestDataSourceCertificate_CertificateContent                                         function_name
+                                 TestAccDataSourceCertificate_UpgradeFromVersion3_4_0                                 function_name
+                                 TestAccDataSourceCertificate_DevDot                                                  function_name
+                                 TestAccDataSourceCertificate_BadSSL                                                  function_name
+                                 TestDataSourceCertificate_CertificateContentNegativeTests                            function_name
+                                 TestDataSourceCertificate_HTTPSScheme                                                function_name
+                                 TestDataSourceCertificate_TLSScheme                                                  function_name
+                                 TestDataSourceCertificate_HTTPSSchemeViaProxy                                        function_name
+                                 TestDataSourceCertificate_HTTPSSchemeViaProxyWithUsernameAuth                        function_name
+                                 TestDataSourceCertificate_HTTPSSchemeViaProxyWithUsernameAndPasswordAuth             function_name
+                                 TestDataSourceCertificate_HTTPSSchemeViaProxyFromEnv                                 function_name
+                                 TestDataSourceCertificate_HTTPSSchemeViaProxyButNoProxyAvailable                     function_name
+                                 TestDataSourceCertificate_MalformedURL                                               function_name
+                                 TestDataSourceCertificate_UnknownComputedCertificatesUntilApplied                    function_name
+  public_key           data      -                                                                                    -
+

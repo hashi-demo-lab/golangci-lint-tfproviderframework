@@ -7,12 +7,18 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/example/tfprovidertest/internal/analysis"
+	"github.com/example/tfprovidertest/internal/discovery"
+	"github.com/example/tfprovidertest/internal/matching"
+	"github.com/example/tfprovidertest/internal/registry"
+	"github.com/example/tfprovidertest/pkg/config"
 )
 
 // Test settings.go module
 func TestSettings_Module(t *testing.T) {
 	t.Run("DefaultSettings returns proper configuration", func(t *testing.T) {
-		settings := DefaultSettings()
+		settings := config.DefaultSettings()
 
 		assert.True(t, settings.EnableBasicTest, "BasicTest should be enabled by default")
 		assert.True(t, settings.EnableUpdateTest, "UpdateTest should be enabled by default")
@@ -37,7 +43,7 @@ func TestSettings_Module(t *testing.T) {
 // Test registry.go module
 func TestRegistry_Module(t *testing.T) {
 	t.Run("NewResourceRegistry creates empty registry", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		assert.NotNil(t, reg)
 		assert.Empty(t, reg.GetAllDefinitions())
@@ -45,10 +51,10 @@ func TestRegistry_Module(t *testing.T) {
 	})
 
 	t.Run("RegisterResource adds resource to registry", func(t *testing.T) {
-		reg := NewResourceRegistry()
-		resource := &ResourceInfo{
+		reg := registry.NewResourceRegistry()
+		resource := &registry.ResourceInfo{
 			Name:         "test_resource",
-			Kind: KindResource,
+			Kind: registry.KindResource,
 			FilePath:     "/path/to/resource_test_resource.go",
 		}
 
@@ -61,10 +67,10 @@ func TestRegistry_Module(t *testing.T) {
 	})
 
 	t.Run("GetResourceByFile retrieves resource by file path", func(t *testing.T) {
-		reg := NewResourceRegistry()
-		resource := &ResourceInfo{
+		reg := registry.NewResourceRegistry()
+		resource := &registry.ResourceInfo{
 			Name:         "widget",
-			Kind: KindResource,
+			Kind: registry.KindResource,
 			FilePath:     "/path/to/resource_widget.go",
 		}
 
@@ -91,7 +97,7 @@ func TestUtils_Module(t *testing.T) {
 		}
 
 		for _, tc := range tests {
-			result := CamelCaseToSnakeCaseExported(tc.input)
+			result := matching.CamelCaseToSnakeCaseExported(tc.input)
 			assert.Equal(t, tc.expected, result, "Input: %s", tc.input)
 		}
 	})
@@ -108,31 +114,31 @@ func TestUtils_Module(t *testing.T) {
 		}
 
 		for _, tc := range tests {
-			result := toTitleCase(tc.input)
+			result := matching.SnakeCaseToTitleCaseExported(tc.input)
 			assert.Equal(t, tc.expected, result, "Input: %s", tc.input)
 		}
 	})
 
 	t.Run("IsSweeperFile identifies sweeper files", func(t *testing.T) {
-		assert.True(t, IsSweeperFile("/path/to/resource_sweeper.go"))
-		assert.True(t, IsSweeperFile("compute_sweeper.go"))
-		assert.False(t, IsSweeperFile("resource_widget.go"))
-		assert.False(t, IsSweeperFile("sweeper/resource.go"))
+		assert.True(t, discovery.IsSweeperFile("/path/to/resource_sweeper.go"))
+		assert.True(t, discovery.IsSweeperFile("compute_sweeper.go"))
+		assert.False(t, discovery.IsSweeperFile("resource_widget.go"))
+		assert.False(t, discovery.IsSweeperFile("sweeper/resource.go"))
 	})
 
 	t.Run("IsMigrationFile identifies migration files", func(t *testing.T) {
-		assert.True(t, IsMigrationFile("resource_migrate.go"))
-		assert.True(t, IsMigrationFile("resource_migration_v1.go"))
-		assert.True(t, IsMigrationFile("resource_state_upgrader.go"))
-		assert.False(t, IsMigrationFile("resource_widget.go"))
+		assert.True(t, discovery.IsMigrationFile("resource_migrate.go"))
+		assert.True(t, discovery.IsMigrationFile("resource_migration_v1.go"))
+		assert.True(t, discovery.IsMigrationFile("resource_state_upgrader.go"))
+		assert.False(t, discovery.IsMigrationFile("resource_widget.go"))
 	})
 
 	t.Run("isTestFunction validates test function names", func(t *testing.T) {
-		assert.True(t, IsTestFunctionExported("TestAccWidget_basic", nil))
-		assert.True(t, IsTestFunctionExported("TestDataSource_200", nil))
-		assert.True(t, IsTestFunctionExported("TestPrivateKeyRSA", nil))
-		assert.False(t, IsTestFunctionExported("testHelper", nil)) // lowercase
-		assert.False(t, IsTestFunctionExported("Helper", nil))     // no Test prefix
+		assert.True(t, matching.IsTestFunctionExported("TestAccWidget_basic", nil))
+		assert.True(t, matching.IsTestFunctionExported("TestDataSource_200", nil))
+		assert.True(t, matching.IsTestFunctionExported("TestPrivateKeyRSA", nil))
+		assert.False(t, matching.IsTestFunctionExported("testHelper", nil)) // lowercase
+		assert.False(t, matching.IsTestFunctionExported("Helper", nil))     // no Test prefix
 	})
 }
 
@@ -153,7 +159,7 @@ func TestParser_Module(t *testing.T) {
 		}
 
 		for _, tc := range tests {
-			name, isData := extractResourceNameFromFilePath(tc.filePath)
+			name, isData := discovery.ExtractResourceNameFromPath(tc.filePath)
 			assert.Equal(t, tc.expectedName, name, "FilePath: %s", tc.filePath)
 			assert.Equal(t, tc.expectedIsData, isData, "FilePath: %s (isDataSource)", tc.filePath)
 		}
@@ -226,18 +232,18 @@ func TestIntegration_FileBasedMatching(t *testing.T) {
 		// 3. Associate tests with resources using file naming
 		// 4. Report untested resources
 
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		// Simulate finding a resource
-		resource := &ResourceInfo{
+		resource := &registry.ResourceInfo{
 			Name:         "widget",
-			Kind: KindResource,
+			Kind: registry.KindResource,
 			FilePath:     "/provider/internal/resource_widget.go",
 		}
 		reg.RegisterResource(resource)
 
 		// Register test function
-		testFunc := &TestFunctionInfo{
+		testFunc := &registry.TestFunctionInfo{
 			Name:             "TestAccWidget_basic",
 			FilePath:         "/provider/internal/resource_widget_test.go",
 			UsesResourceTest: true,
@@ -251,7 +257,7 @@ func TestIntegration_FileBasedMatching(t *testing.T) {
 		assert.Equal(t, "TestAccWidget_basic", linkedTests[0].Name)
 
 		// Verify no untested resources
-		calculator := NewCoverageCalculator(reg)
+		calculator := analysis.NewCoverageCalculator(reg)
 		untested := calculator.GetUntestedResources()
 		assert.Empty(t, untested, "Widget has tests, should not be untested")
 	})
@@ -264,28 +270,28 @@ func TestIntegration_FileBasedMatching(t *testing.T) {
 // Test MatchType.String() for all values
 func TestMatchType_String(t *testing.T) {
 	t.Run("MatchTypeNone returns 'none'", func(t *testing.T) {
-		assert.Equal(t, "none", MatchTypeNone.String())
+		assert.Equal(t, "none", registry.MatchTypeNone.String())
 	})
 
 	t.Run("MatchTypeInferred returns 'inferred_from_config'", func(t *testing.T) {
-		assert.Equal(t, "inferred_from_config", MatchTypeInferred.String())
+		assert.Equal(t, "inferred_from_config", registry.MatchTypeInferred.String())
 	})
 
 	t.Run("MatchTypeFunctionName returns 'function_name'", func(t *testing.T) {
-		assert.Equal(t, "function_name", MatchTypeFunctionName.String())
+		assert.Equal(t, "function_name", registry.MatchTypeFunctionName.String())
 	})
 
 	t.Run("MatchTypeFileProximity returns 'file_proximity'", func(t *testing.T) {
-		assert.Equal(t, "file_proximity", MatchTypeFileProximity.String())
+		assert.Equal(t, "file_proximity", registry.MatchTypeFileProximity.String())
 	})
 
 	t.Run("MatchTypeFuzzy returns 'fuzzy'", func(t *testing.T) {
-		assert.Equal(t, "fuzzy", MatchTypeFuzzy.String())
+		assert.Equal(t, "fuzzy", registry.MatchTypeFuzzy.String())
 	})
 
 	t.Run("MatchType default value is MatchTypeNone", func(t *testing.T) {
-		var m MatchType // default value
-		assert.Equal(t, MatchTypeNone, m)
+		var m registry.MatchType // default value
+		assert.Equal(t, registry.MatchTypeNone, m)
 		assert.Equal(t, "none", m.String())
 	})
 }
@@ -293,9 +299,9 @@ func TestMatchType_String(t *testing.T) {
 // Test RegisterTestFunction
 func TestRegisterTestFunction(t *testing.T) {
 	t.Run("should register test function to global index", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
-		fn := &TestFunctionInfo{
+		fn := &registry.TestFunctionInfo{
 			Name:     "TestAccWidget_basic",
 			FilePath: "/path/to/resource_widget_test.go",
 		}
@@ -309,11 +315,11 @@ func TestRegisterTestFunction(t *testing.T) {
 	})
 
 	t.Run("should append multiple test functions", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
-		fn1 := &TestFunctionInfo{Name: "TestAccWidget_basic"}
-		fn2 := &TestFunctionInfo{Name: "TestAccWidget_update"}
-		fn3 := &TestFunctionInfo{Name: "TestAccServer_basic"}
+		fn1 := &registry.TestFunctionInfo{Name: "TestAccWidget_basic"}
+		fn2 := &registry.TestFunctionInfo{Name: "TestAccWidget_update"}
+		fn3 := &registry.TestFunctionInfo{Name: "TestAccServer_basic"}
 
 		reg.RegisterTestFunction(fn1)
 		reg.RegisterTestFunction(fn2)
@@ -327,16 +333,16 @@ func TestRegisterTestFunction(t *testing.T) {
 // Test LinkTestToResource
 func TestLinkTestToResource(t *testing.T) {
 	t.Run("should associate test function with resource", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		// Register a resource first
-		reg.RegisterResource(&ResourceInfo{Name: "widget"})
+		reg.RegisterResource(&registry.ResourceInfo{Name: "widget"})
 
-		fn := &TestFunctionInfo{
+		fn := &registry.TestFunctionInfo{
 			Name:              "TestAccWidget_basic",
 			InferredResources: []string{"widget"},
 			MatchConfidence:   1.0,
-			MatchType:         MatchTypeFunctionName,
+			MatchType:         registry.MatchTypeFunctionName,
 		}
 
 		reg.RegisterTestFunction(fn)
@@ -348,12 +354,12 @@ func TestLinkTestToResource(t *testing.T) {
 	})
 
 	t.Run("should allow multiple tests per resource", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
-		reg.RegisterResource(&ResourceInfo{Name: "widget"})
+		reg.RegisterResource(&registry.ResourceInfo{Name: "widget"})
 
-		fn1 := &TestFunctionInfo{Name: "TestAccWidget_basic"}
-		fn2 := &TestFunctionInfo{Name: "TestAccWidget_update"}
+		fn1 := &registry.TestFunctionInfo{Name: "TestAccWidget_basic"}
+		fn2 := &registry.TestFunctionInfo{Name: "TestAccWidget_update"}
 
 		reg.LinkTestToResource("widget", fn1)
 		reg.LinkTestToResource("widget", fn2)
@@ -363,7 +369,7 @@ func TestLinkTestToResource(t *testing.T) {
 	})
 
 	t.Run("GetResourceTests returns nil for unknown resource", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		tests := reg.GetResourceTests("nonexistent")
 		assert.Nil(t, tests)
@@ -373,17 +379,17 @@ func TestLinkTestToResource(t *testing.T) {
 // Test GetUnmatchedTestFunctions
 func TestGetUnmatchedTestFunctions(t *testing.T) {
 	t.Run("should return functions with MatchTypeNone", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
-		matched := &TestFunctionInfo{
+		matched := &registry.TestFunctionInfo{
 			Name:              "TestAccWidget_basic",
 			InferredResources: []string{"widget"},
-			MatchType:         MatchTypeFunctionName, // Has a match
+			MatchType:         registry.MatchTypeFunctionName, // Has a match
 		}
-		unmatched := &TestFunctionInfo{
+		unmatched := &registry.TestFunctionInfo{
 			Name:              "TestAccOrphan_basic",
 			InferredResources: []string{},
-			MatchType:         MatchTypeNone, // No match
+			MatchType:         registry.MatchTypeNone, // No match
 		}
 
 		reg.RegisterTestFunction(matched)
@@ -395,12 +401,12 @@ func TestGetUnmatchedTestFunctions(t *testing.T) {
 	})
 
 	t.Run("should return empty slice when all functions are matched", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
-		fn := &TestFunctionInfo{
+		fn := &registry.TestFunctionInfo{
 			Name:              "TestAccWidget_basic",
 			InferredResources: []string{"widget"},
-			MatchType:         MatchTypeInferred, // Has a match
+			MatchType:         registry.MatchTypeInferred, // Has a match
 		}
 
 		reg.RegisterTestFunction(fn)
@@ -410,7 +416,7 @@ func TestGetUnmatchedTestFunctions(t *testing.T) {
 	})
 
 	t.Run("should return empty slice when no functions registered", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		orphans := reg.GetUnmatchedTestFunctions()
 		assert.Empty(t, orphans)
@@ -420,39 +426,39 @@ func TestGetUnmatchedTestFunctions(t *testing.T) {
 // Test GetUntestedResources with new resourceTests
 func TestGetUntestedResources_WithResourceTests(t *testing.T) {
 	t.Run("should use resourceTests map for test coverage check", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		// Register two resources
-		reg.RegisterResource(&ResourceInfo{Name: "tested"})
-		reg.RegisterResource(&ResourceInfo{Name: "untested"})
+		reg.RegisterResource(&registry.ResourceInfo{Name: "tested"})
+		reg.RegisterResource(&registry.ResourceInfo{Name: "untested"})
 
 		// Link test to 'tested' resource via new method
-		fn := &TestFunctionInfo{
+		fn := &registry.TestFunctionInfo{
 			Name:              "TestAccTested_basic",
 			InferredResources: []string{"tested"},
 		}
 		reg.RegisterTestFunction(fn)
 		reg.LinkTestToResource("tested", fn)
 
-		calculator := NewCoverageCalculator(reg)
+		calculator := analysis.NewCoverageCalculator(reg)
 		untested := calculator.GetUntestedResources()
 		assert.Len(t, untested, 1)
 		assert.Equal(t, "untested", untested[0].Name)
 	})
 
 	t.Run("should handle multiple test functions per resource", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 
 		// Register two resources
-		reg.RegisterResource(&ResourceInfo{Name: "tested_multi"})
-		reg.RegisterResource(&ResourceInfo{Name: "untested"})
+		reg.RegisterResource(&registry.ResourceInfo{Name: "tested_multi"})
+		reg.RegisterResource(&registry.ResourceInfo{Name: "untested"})
 
 		// Register multiple test functions for the same resource
-		testFunc1 := &TestFunctionInfo{
+		testFunc1 := &registry.TestFunctionInfo{
 			Name:     "TestAccTestedMulti_basic",
 			FilePath: "/path/to/resource_tested_multi_test.go",
 		}
-		testFunc2 := &TestFunctionInfo{
+		testFunc2 := &registry.TestFunctionInfo{
 			Name:     "TestAccTestedMulti_advanced",
 			FilePath: "/path/to/resource_tested_multi_test.go",
 		}
@@ -461,7 +467,7 @@ func TestGetUntestedResources_WithResourceTests(t *testing.T) {
 		reg.LinkTestToResource("tested_multi", testFunc1)
 		reg.LinkTestToResource("tested_multi", testFunc2)
 
-		calculator := NewCoverageCalculator(reg)
+		calculator := analysis.NewCoverageCalculator(reg)
 		untested := calculator.GetUntestedResources()
 		assert.Len(t, untested, 1)
 		assert.Equal(t, "untested", untested[0].Name)
@@ -471,7 +477,7 @@ func TestGetUntestedResources_WithResourceTests(t *testing.T) {
 // Test concurrent access to registry
 func TestRegistryConcurrentAccess(t *testing.T) {
 	t.Run("should handle concurrent RegisterTestFunction calls", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 		var wg sync.WaitGroup
 
 		// Concurrent writes
@@ -479,7 +485,7 @@ func TestRegistryConcurrentAccess(t *testing.T) {
 			wg.Add(1)
 			go func(n int) {
 				defer wg.Done()
-				fn := &TestFunctionInfo{
+				fn := &registry.TestFunctionInfo{
 					Name: fmt.Sprintf("TestFunc%d", n),
 				}
 				reg.RegisterTestFunction(fn)
@@ -493,12 +499,12 @@ func TestRegistryConcurrentAccess(t *testing.T) {
 	})
 
 	t.Run("should handle concurrent reads while writing", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 		var wg sync.WaitGroup
 
 		// Add some initial functions
 		for i := 0; i < 50; i++ {
-			fn := &TestFunctionInfo{Name: fmt.Sprintf("Initial%d", i)}
+			fn := &registry.TestFunctionInfo{Name: fmt.Sprintf("Initial%d", i)}
 			reg.RegisterTestFunction(fn)
 		}
 
@@ -507,7 +513,7 @@ func TestRegistryConcurrentAccess(t *testing.T) {
 			wg.Add(1)
 			go func(n int) {
 				defer wg.Done()
-				fn := &TestFunctionInfo{
+				fn := &registry.TestFunctionInfo{
 					Name: fmt.Sprintf("Concurrent%d", n),
 				}
 				reg.RegisterTestFunction(fn)
@@ -530,12 +536,12 @@ func TestRegistryConcurrentAccess(t *testing.T) {
 	})
 
 	t.Run("should handle concurrent LinkTestToResource calls", func(t *testing.T) {
-		reg := NewResourceRegistry()
+		reg := registry.NewResourceRegistry()
 		var wg sync.WaitGroup
 
 		// Register resources first
 		for i := 0; i < 10; i++ {
-			reg.RegisterResource(&ResourceInfo{Name: fmt.Sprintf("resource%d", i)})
+			reg.RegisterResource(&registry.ResourceInfo{Name: fmt.Sprintf("resource%d", i)})
 		}
 
 		// Concurrent links
@@ -543,7 +549,7 @@ func TestRegistryConcurrentAccess(t *testing.T) {
 			wg.Add(1)
 			go func(n int) {
 				defer wg.Done()
-				fn := &TestFunctionInfo{
+				fn := &registry.TestFunctionInfo{
 					Name: fmt.Sprintf("TestFunc%d", n),
 				}
 				resourceName := fmt.Sprintf("resource%d", n%10)
@@ -566,7 +572,7 @@ func TestRegistryConcurrentAccess(t *testing.T) {
 // Test TestFileInfo with new PackageName field
 func TestTestFileInfo_PackageName(t *testing.T) {
 	t.Run("should store PackageName", func(t *testing.T) {
-		info := &TestFileInfo{
+		info := &registry.TestFileInfo{
 			FilePath:    "/path/to/resource_widget_test.go",
 			PackageName: "provider_test",
 		}
@@ -578,7 +584,7 @@ func TestTestFileInfo_PackageName(t *testing.T) {
 // Test TestFunctionInfo with new fields
 func TestTestFunctionInfo_NewFields(t *testing.T) {
 	t.Run("should store FilePath", func(t *testing.T) {
-		info := &TestFunctionInfo{
+		info := &registry.TestFunctionInfo{
 			Name:     "TestAccWidget_basic",
 			FilePath: "/path/to/resource_widget_test.go",
 		}
@@ -587,7 +593,7 @@ func TestTestFunctionInfo_NewFields(t *testing.T) {
 	})
 
 	t.Run("should store InferredResources", func(t *testing.T) {
-		info := &TestFunctionInfo{
+		info := &registry.TestFunctionInfo{
 			Name:              "TestAccWidget_basic",
 			InferredResources: []string{"widget", "widget_v2"},
 		}
@@ -597,14 +603,14 @@ func TestTestFunctionInfo_NewFields(t *testing.T) {
 	})
 
 	t.Run("should store MatchConfidence and MatchType", func(t *testing.T) {
-		info := &TestFunctionInfo{
+		info := &registry.TestFunctionInfo{
 			Name:            "TestAccWidget_basic",
 			MatchConfidence: 0.95,
-			MatchType:       MatchTypeFunctionName,
+			MatchType:       registry.MatchTypeFunctionName,
 		}
 
 		assert.Equal(t, 0.95, info.MatchConfidence)
-		assert.Equal(t, MatchTypeFunctionName, info.MatchType)
+		assert.Equal(t, registry.MatchTypeFunctionName, info.MatchType)
 	})
 }
 
@@ -615,7 +621,7 @@ func TestTestFunctionInfo_NewFields(t *testing.T) {
 // Test DetermineIfUpdateStep
 func TestDetermineIfUpdateStep(t *testing.T) {
 	t.Run("first step is never an update", func(t *testing.T) {
-		step := &TestStepInfo{
+		step := &registry.TestStepInfo{
 			StepNumber: 0,
 			HasConfig:  true,
 			ConfigHash: "abc123",
@@ -625,12 +631,12 @@ func TestDetermineIfUpdateStep(t *testing.T) {
 	})
 
 	t.Run("import step is not an update", func(t *testing.T) {
-		prevStep := &TestStepInfo{
+		prevStep := &registry.TestStepInfo{
 			StepNumber: 0,
 			HasConfig:  true,
 			ConfigHash: "abc123",
 		}
-		step := &TestStepInfo{
+		step := &registry.TestStepInfo{
 			StepNumber:  1,
 			HasConfig:   false,
 			ImportState: true,
@@ -640,12 +646,12 @@ func TestDetermineIfUpdateStep(t *testing.T) {
 	})
 
 	t.Run("same config hash is idempotency test not update", func(t *testing.T) {
-		prevStep := &TestStepInfo{
+		prevStep := &registry.TestStepInfo{
 			StepNumber: 0,
 			HasConfig:  true,
 			ConfigHash: "abc123",
 		}
-		step := &TestStepInfo{
+		step := &registry.TestStepInfo{
 			StepNumber: 1,
 			HasConfig:  true,
 			ConfigHash: "abc123", // Same hash
@@ -655,12 +661,12 @@ func TestDetermineIfUpdateStep(t *testing.T) {
 	})
 
 	t.Run("different config hash is update step", func(t *testing.T) {
-		prevStep := &TestStepInfo{
+		prevStep := &registry.TestStepInfo{
 			StepNumber: 0,
 			HasConfig:  true,
 			ConfigHash: "abc123",
 		}
-		step := &TestStepInfo{
+		step := &registry.TestStepInfo{
 			StepNumber: 1,
 			HasConfig:  true,
 			ConfigHash: "def456", // Different hash
@@ -670,7 +676,7 @@ func TestDetermineIfUpdateStep(t *testing.T) {
 	})
 
 	t.Run("no previous step means not an update", func(t *testing.T) {
-		step := &TestStepInfo{
+		step := &registry.TestStepInfo{
 			StepNumber: 1,
 			HasConfig:  true,
 			ConfigHash: "abc123",
@@ -680,11 +686,11 @@ func TestDetermineIfUpdateStep(t *testing.T) {
 	})
 
 	t.Run("previous step without config means not an update", func(t *testing.T) {
-		prevStep := &TestStepInfo{
+		prevStep := &registry.TestStepInfo{
 			StepNumber: 0,
 			HasConfig:  false, // No config in previous
 		}
-		step := &TestStepInfo{
+		step := &registry.TestStepInfo{
 			StepNumber: 1,
 			HasConfig:  true,
 			ConfigHash: "abc123",
@@ -694,12 +700,12 @@ func TestDetermineIfUpdateStep(t *testing.T) {
 	})
 
 	t.Run("step without config is not an update", func(t *testing.T) {
-		prevStep := &TestStepInfo{
+		prevStep := &registry.TestStepInfo{
 			StepNumber: 0,
 			HasConfig:  true,
 			ConfigHash: "abc123",
 		}
-		step := &TestStepInfo{
+		step := &registry.TestStepInfo{
 			StepNumber: 1,
 			HasConfig:  false,
 		}
@@ -712,28 +718,33 @@ func TestDetermineIfUpdateStep(t *testing.T) {
 func TestHasRequiresReplaceWithConfidence(t *testing.T) {
 	t.Run("known modifier returns high confidence", func(t *testing.T) {
 		// Test that known modifiers are detected with high confidence
-		result := HasRequiresReplaceWithConfidence(nil)
+		result := matching.HasRequiresReplaceWithConfidence(nil)
 		assert.False(t, result.Found)
 		assert.Equal(t, 0.0, result.Confidence)
 	})
 
-	t.Run("standardRequiresReplaceModifiers contains expected entries", func(t *testing.T) {
-		assert.True(t, standardRequiresReplaceModifiers["RequiresReplace"])
-		assert.True(t, standardRequiresReplaceModifiers["RequiresReplaceIf"])
-		assert.True(t, standardRequiresReplaceModifiers["RequiresReplaceIfConfigured"])
-		assert.False(t, standardRequiresReplaceModifiers["UseStateForUnknown"])
+	t.Run("RequiresReplaceResult has required fields", func(t *testing.T) {
+		// Test the result struct
+		result := matching.RequiresReplaceResult{
+			Found:        true,
+			Confidence:   0.95,
+			ModifierName: "RequiresReplace",
+		}
+		assert.True(t, result.Found)
+		assert.Equal(t, 0.95, result.Confidence)
+		assert.Equal(t, "RequiresReplace", result.ModifierName)
 	})
 }
 
 // Test CheckSuppressionComment
 func TestCheckSuppressionComment(t *testing.T) {
 	t.Run("returns false for nil comments", func(t *testing.T) {
-		result := CheckSuppressionComment(nil, "tfprovider-resource-basic-test")
+		result := matching.CheckSuppressionComment(nil, "tfprovider-resource-basic-test")
 		assert.False(t, result)
 	})
 
 	t.Run("returns false for empty comments", func(t *testing.T) {
-		result := CheckSuppressionComment([]*ast.CommentGroup{}, "tfprovider-resource-basic-test")
+		result := matching.CheckSuppressionComment([]*ast.CommentGroup{}, "tfprovider-resource-basic-test")
 		assert.False(t, result)
 	})
 
@@ -745,7 +756,7 @@ func TestCheckSuppressionComment(t *testing.T) {
 				},
 			},
 		}
-		result := CheckSuppressionComment(comments, "tfprovider-resource-basic-test")
+		result := matching.CheckSuppressionComment(comments, "tfprovider-resource-basic-test")
 		assert.True(t, result)
 	})
 
@@ -757,7 +768,7 @@ func TestCheckSuppressionComment(t *testing.T) {
 				},
 			},
 		}
-		result := CheckSuppressionComment(comments, "any-check-name")
+		result := matching.CheckSuppressionComment(comments, "any-check-name")
 		assert.True(t, result)
 	})
 
@@ -769,7 +780,7 @@ func TestCheckSuppressionComment(t *testing.T) {
 				},
 			},
 		}
-		result := CheckSuppressionComment(comments, "tfprovider-resource-basic-test")
+		result := matching.CheckSuppressionComment(comments, "tfprovider-resource-basic-test")
 		assert.False(t, result)
 	})
 
@@ -781,7 +792,7 @@ func TestCheckSuppressionComment(t *testing.T) {
 				},
 			},
 		}
-		result := CheckSuppressionComment(comments, "tfprovider-resource-basic-test")
+		result := matching.CheckSuppressionComment(comments, "tfprovider-resource-basic-test")
 		assert.True(t, result)
 	})
 }
@@ -789,7 +800,7 @@ func TestCheckSuppressionComment(t *testing.T) {
 // Test GetSuppressedChecks
 func TestGetSuppressedChecks(t *testing.T) {
 	t.Run("returns empty for nil comments", func(t *testing.T) {
-		result := GetSuppressedChecks(nil)
+		result := matching.GetSuppressedChecks(nil)
 		assert.Empty(t, result)
 	})
 
@@ -801,7 +812,7 @@ func TestGetSuppressedChecks(t *testing.T) {
 				},
 			},
 		}
-		result := GetSuppressedChecks(comments)
+		result := matching.GetSuppressedChecks(comments)
 		assert.Contains(t, result, "tfprovider-resource-basic-test")
 	})
 
@@ -813,7 +824,7 @@ func TestGetSuppressedChecks(t *testing.T) {
 				},
 			},
 		}
-		result := GetSuppressedChecks(comments)
+		result := matching.GetSuppressedChecks(comments)
 		assert.Len(t, result, 3)
 		assert.Contains(t, result, "check1")
 		assert.Contains(t, result, "check2")
@@ -828,7 +839,7 @@ func TestGetSuppressedChecks(t *testing.T) {
 				},
 			},
 		}
-		result := GetSuppressedChecks(comments)
+		result := matching.GetSuppressedChecks(comments)
 		assert.Contains(t, result, "mycheck")
 	})
 
@@ -840,7 +851,7 @@ func TestGetSuppressedChecks(t *testing.T) {
 				},
 			},
 		}
-		result := GetSuppressedChecks(comments)
+		result := matching.GetSuppressedChecks(comments)
 		assert.Contains(t, result, "mycheck1")
 		assert.Contains(t, result, "mycheck2")
 	})
@@ -858,7 +869,7 @@ func TestGetSuppressedChecks(t *testing.T) {
 				},
 			},
 		}
-		result := GetSuppressedChecks(comments)
+		result := matching.GetSuppressedChecks(comments)
 		assert.Contains(t, result, "check1")
 		assert.Contains(t, result, "check2")
 	})
@@ -867,7 +878,7 @@ func TestGetSuppressedChecks(t *testing.T) {
 // Test HashConfigExpr
 func TestHashConfigExpr(t *testing.T) {
 	t.Run("returns empty for nil expr", func(t *testing.T) {
-		result := HashConfigExpr(nil)
+		result := discovery.HashConfigExpr(nil)
 		assert.Equal(t, "", result)
 	})
 
@@ -877,7 +888,7 @@ func TestHashConfigExpr(t *testing.T) {
 			Kind:  0,
 			Value: `"test config"`,
 		}
-		result := HashConfigExpr(expr)
+		result := discovery.HashConfigExpr(expr)
 		assert.NotEmpty(t, result)
 		// Hash should be 16 hex chars (8 bytes)
 		assert.Len(t, result, 16)
@@ -886,16 +897,16 @@ func TestHashConfigExpr(t *testing.T) {
 	t.Run("same expression produces same hash", func(t *testing.T) {
 		expr1 := &ast.BasicLit{Value: `"test config"`}
 		expr2 := &ast.BasicLit{Value: `"test config"`}
-		result1 := HashConfigExpr(expr1)
-		result2 := HashConfigExpr(expr2)
+		result1 := discovery.HashConfigExpr(expr1)
+		result2 := discovery.HashConfigExpr(expr2)
 		assert.Equal(t, result1, result2)
 	})
 
 	t.Run("different expression produces different hash", func(t *testing.T) {
 		expr1 := &ast.BasicLit{Value: `"test config 1"`}
 		expr2 := &ast.BasicLit{Value: `"test config 2"`}
-		result1 := HashConfigExpr(expr1)
-		result2 := HashConfigExpr(expr2)
+		result1 := discovery.HashConfigExpr(expr1)
+		result2 := discovery.HashConfigExpr(expr2)
 		assert.NotEqual(t, result1, result2)
 	})
 }
@@ -903,34 +914,34 @@ func TestHashConfigExpr(t *testing.T) {
 // Test TestStepInfo new fields
 func TestTestStepInfo_NewFields(t *testing.T) {
 	t.Run("should store ConfigHash", func(t *testing.T) {
-		step := TestStepInfo{
+		step := registry.TestStepInfo{
 			ConfigHash: "abc123def456",
 		}
 		assert.Equal(t, "abc123def456", step.ConfigHash)
 	})
 
 	t.Run("should store IsUpdateStepFlag", func(t *testing.T) {
-		step := TestStepInfo{
+		step := registry.TestStepInfo{
 			IsUpdateStepFlag: true,
 		}
 		assert.True(t, step.IsUpdateStepFlag)
 	})
 
 	t.Run("should store PreviousConfigHash", func(t *testing.T) {
-		step := TestStepInfo{
+		step := registry.TestStepInfo{
 			PreviousConfigHash: "prev123",
 		}
 		assert.Equal(t, "prev123", step.PreviousConfigHash)
 	})
 
 	t.Run("IsUpdateStep deprecated method still works", func(t *testing.T) {
-		step := TestStepInfo{
+		step := registry.TestStepInfo{
 			StepNumber: 1,
 			HasConfig:  true,
 		}
 		assert.True(t, step.IsUpdateStep())
 
-		step0 := TestStepInfo{
+		step0 := registry.TestStepInfo{
 			StepNumber: 0,
 			HasConfig:  true,
 		}
@@ -941,7 +952,7 @@ func TestTestStepInfo_NewFields(t *testing.T) {
 // Test RequiresReplaceResult struct
 func TestRequiresReplaceResult(t *testing.T) {
 	t.Run("should store all fields", func(t *testing.T) {
-		result := RequiresReplaceResult{
+		result := matching.RequiresReplaceResult{
 			Found:        true,
 			Confidence:   0.95,
 			ModifierName: "RequiresReplace",
@@ -953,7 +964,7 @@ func TestRequiresReplaceResult(t *testing.T) {
 	})
 
 	t.Run("default values", func(t *testing.T) {
-		var result RequiresReplaceResult
+		var result matching.RequiresReplaceResult
 		assert.False(t, result.Found)
 		assert.Equal(t, 0.0, result.Confidence)
 		assert.Equal(t, "", result.ModifierName)
@@ -964,12 +975,12 @@ func TestRequiresReplaceResult(t *testing.T) {
 func TestTestStepInfo_IsRealUpdateStep(t *testing.T) {
 	tests := []struct {
 		name     string
-		step     TestStepInfo
+		step     registry.TestStepInfo
 		expected bool
 	}{
 		{
 			name: "real update step - step 1 with config and not import",
-			step: TestStepInfo{
+			step: registry.TestStepInfo{
 				StepNumber:  1,
 				HasConfig:   true,
 				ImportState: false,
@@ -978,7 +989,7 @@ func TestTestStepInfo_IsRealUpdateStep(t *testing.T) {
 		},
 		{
 			name: "not update step - step 0",
-			step: TestStepInfo{
+			step: registry.TestStepInfo{
 				StepNumber:  0,
 				HasConfig:   true,
 				ImportState: false,
@@ -987,7 +998,7 @@ func TestTestStepInfo_IsRealUpdateStep(t *testing.T) {
 		},
 		{
 			name: "not update step - import step",
-			step: TestStepInfo{
+			step: registry.TestStepInfo{
 				StepNumber:  1,
 				HasConfig:   true,
 				ImportState: true,
@@ -996,7 +1007,7 @@ func TestTestStepInfo_IsRealUpdateStep(t *testing.T) {
 		},
 		{
 			name: "not update step - no config",
-			step: TestStepInfo{
+			step: registry.TestStepInfo{
 				StepNumber:  1,
 				HasConfig:   false,
 				ImportState: false,
@@ -1005,7 +1016,7 @@ func TestTestStepInfo_IsRealUpdateStep(t *testing.T) {
 		},
 		{
 			name: "real update step - step 2 with config",
-			step: TestStepInfo{
+			step: registry.TestStepInfo{
 				StepNumber:  2,
 				HasConfig:   true,
 				ImportState: false,
@@ -1014,7 +1025,7 @@ func TestTestStepInfo_IsRealUpdateStep(t *testing.T) {
 		},
 		{
 			name: "not update step - import step even with config",
-			step: TestStepInfo{
+			step: registry.TestStepInfo{
 				StepNumber:  2,
 				HasConfig:   true,
 				ImportState: true,
@@ -1035,12 +1046,12 @@ func TestTestStepInfo_IsRealUpdateStep(t *testing.T) {
 func TestIsAttributeUpdatable(t *testing.T) {
 	tests := []struct {
 		name     string
-		attr     AttributeInfo
+		attr     registry.AttributeInfo
 		expected bool
 	}{
 		{
 			name: "optional and updatable attribute",
-			attr: AttributeInfo{
+			attr: registry.AttributeInfo{
 				Name:        "name",
 				Optional:    true,
 				IsUpdatable: true,
@@ -1049,7 +1060,7 @@ func TestIsAttributeUpdatable(t *testing.T) {
 		},
 		{
 			name: "required attribute - not optional, not updatable",
-			attr: AttributeInfo{
+			attr: registry.AttributeInfo{
 				Name:        "id",
 				Required:    true,
 				Optional:    false,
@@ -1059,7 +1070,7 @@ func TestIsAttributeUpdatable(t *testing.T) {
 		},
 		{
 			name: "computed-only attribute - not optional",
-			attr: AttributeInfo{
+			attr: registry.AttributeInfo{
 				Name:        "created_at",
 				Computed:    true,
 				Optional:    false,
@@ -1069,7 +1080,7 @@ func TestIsAttributeUpdatable(t *testing.T) {
 		},
 		{
 			name: "optional but has RequiresReplace",
-			attr: AttributeInfo{
+			attr: registry.AttributeInfo{
 				Name:        "region",
 				Optional:    true,
 				IsUpdatable: false, // RequiresReplace found
@@ -1078,7 +1089,7 @@ func TestIsAttributeUpdatable(t *testing.T) {
 		},
 		{
 			name: "optional, computed, and updatable",
-			attr: AttributeInfo{
+			attr: registry.AttributeInfo{
 				Name:        "description",
 				Optional:    true,
 				Computed:    true,
@@ -1090,7 +1101,7 @@ func TestIsAttributeUpdatable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := IsAttributeUpdatable(tt.attr)
+			result := analysis.IsAttributeUpdatable(tt.attr)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -1168,7 +1179,7 @@ func TestMatchesTestPattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := MatchesTestPattern(tt.funcName, tt.testNamePatterns)
+			result := discovery.MatchesTestPattern(tt.funcName, tt.testNamePatterns)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

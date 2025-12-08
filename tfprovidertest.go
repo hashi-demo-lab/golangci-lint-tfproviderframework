@@ -17,20 +17,22 @@ package tfprovidertest
 import (
 	"fmt"
 
+	"github.com/example/tfprovidertest/internal/analysis"
+	"github.com/example/tfprovidertest/pkg/config"
 	"github.com/golangci/plugin-module-register/register"
-	"golang.org/x/tools/go/analysis"
+	analysislib "golang.org/x/tools/go/analysis"
 )
 
 // Plugin implements the golangci-lint plugin interface.
 type Plugin struct {
-	settings Settings
+	settings config.Settings
 }
 
 // New creates a new plugin instance with the given settings.
 func New(settings any) (register.LinterPlugin, error) {
-	s := DefaultSettings()
+	s := config.DefaultSettings()
 	if settings != nil {
-		decoded, err := register.DecodeSettings[Settings](settings)
+		decoded, err := register.DecodeSettings[config.Settings](settings)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode settings: %w", err)
 		}
@@ -41,8 +43,8 @@ func New(settings any) (register.LinterPlugin, error) {
 
 // BuildAnalyzers returns the list of enabled analyzers based on settings.
 // Each analyzer is created dynamically with a closure that captures the plugin's settings.
-func (p *Plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
-	var analyzers []*analysis.Analyzer
+func (p *Plugin) BuildAnalyzers() ([]*analysislib.Analyzer, error) {
+	var analyzers []*analysislib.Analyzer
 
 	if p.settings.EnableBasicTest {
 		analyzers = append(analyzers, p.createBasicTestAnalyzer())
@@ -69,78 +71,78 @@ func (p *Plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 }
 
 // createBasicTestAnalyzer creates an analyzer with settings captured via closure.
-func (p *Plugin) createBasicTestAnalyzer() *analysis.Analyzer {
-	return &analysis.Analyzer{
+func (p *Plugin) createBasicTestAnalyzer() *analysislib.Analyzer {
+	return &analysislib.Analyzer{
 		Name: "tfprovider-resource-basic-test",
 		Doc:  "Checks that every resource and data source has at least one acceptance test.",
-		Run: func(pass *analysis.Pass) (interface{}, error) {
-			return runBasicTestAnalyzer(pass, p.settings)
+		Run: func(pass *analysislib.Pass) (interface{}, error) {
+			return analysis.RunBasicTestAnalyzer(pass, &p.settings)
 		},
 	}
 }
 
 // createUpdateTestAnalyzer creates an analyzer with settings captured via closure.
-func (p *Plugin) createUpdateTestAnalyzer() *analysis.Analyzer {
-	return &analysis.Analyzer{
+func (p *Plugin) createUpdateTestAnalyzer() *analysislib.Analyzer {
+	return &analysislib.Analyzer{
 		Name: "tfprovider-resource-update-test",
 		Doc:  "Checks that resources with updatable attributes have multi-step update tests.",
-		Run: func(pass *analysis.Pass) (interface{}, error) {
-			return runUpdateTestAnalyzer(pass, p.settings)
+		Run: func(pass *analysislib.Pass) (interface{}, error) {
+			return analysis.RunUpdateTestAnalyzer(pass, &p.settings)
 		},
 	}
 }
 
 // createImportTestAnalyzer creates an analyzer with settings captured via closure.
-func (p *Plugin) createImportTestAnalyzer() *analysis.Analyzer {
-	return &analysis.Analyzer{
+func (p *Plugin) createImportTestAnalyzer() *analysislib.Analyzer {
+	return &analysislib.Analyzer{
 		Name: "tfprovider-resource-import-test",
 		Doc:  "Checks that resources implementing ImportState have import tests.",
-		Run: func(pass *analysis.Pass) (interface{}, error) {
-			return runImportTestAnalyzer(pass, p.settings)
+		Run: func(pass *analysislib.Pass) (interface{}, error) {
+			return analysis.RunImportTestAnalyzer(pass, &p.settings)
 		},
 	}
 }
 
 // createErrorTestAnalyzer creates an analyzer with settings captured via closure.
-func (p *Plugin) createErrorTestAnalyzer() *analysis.Analyzer {
-	return &analysis.Analyzer{
+func (p *Plugin) createErrorTestAnalyzer() *analysislib.Analyzer {
+	return &analysislib.Analyzer{
 		Name: "tfprovider-test-error-cases",
 		Doc:  "Checks that resources with validation rules have error case tests.",
-		Run: func(pass *analysis.Pass) (interface{}, error) {
-			return runErrorTestAnalyzer(pass, p.settings)
+		Run: func(pass *analysislib.Pass) (interface{}, error) {
+			return analysis.RunErrorTestAnalyzer(pass, &p.settings)
 		},
 	}
 }
 
 // createStateCheckAnalyzer creates an analyzer with settings captured via closure.
-func (p *Plugin) createStateCheckAnalyzer() *analysis.Analyzer {
-	return &analysis.Analyzer{
+func (p *Plugin) createStateCheckAnalyzer() *analysislib.Analyzer {
+	return &analysislib.Analyzer{
 		Name: "tfprovider-test-check-functions",
 		Doc:  "Checks that test steps include state validation check functions.",
-		Run: func(pass *analysis.Pass) (interface{}, error) {
-			return runStateCheckAnalyzer(pass, p.settings)
+		Run: func(pass *analysislib.Pass) (interface{}, error) {
+			return analysis.RunStateCheckAnalyzer(pass, &p.settings)
 		},
 	}
 }
 
 // createDriftCheckAnalyzer creates an analyzer with settings captured via closure.
-func (p *Plugin) createDriftCheckAnalyzer() *analysis.Analyzer {
-	return &analysis.Analyzer{
+func (p *Plugin) createDriftCheckAnalyzer() *analysislib.Analyzer {
+	return &analysislib.Analyzer{
 		Name: "tfprovider-test-drift-check",
 		Doc:  "Checks that acceptance tests include CheckDestroy for drift detection.",
-		Run: func(pass *analysis.Pass) (interface{}, error) {
-			return runDriftCheckAnalyzer(pass, p.settings)
+		Run: func(pass *analysislib.Pass) (interface{}, error) {
+			return analysis.RunDriftCheckAnalyzer(pass, &p.settings)
 		},
 	}
 }
 
 // createSweeperAnalyzer creates an analyzer with settings captured via closure.
-func (p *Plugin) createSweeperAnalyzer() *analysis.Analyzer {
-	return &analysis.Analyzer{
+func (p *Plugin) createSweeperAnalyzer() *analysislib.Analyzer {
+	return &analysislib.Analyzer{
 		Name: "tfprovider-test-sweepers",
 		Doc:  "Checks that packages have test sweeper registrations for cleanup.",
-		Run: func(pass *analysis.Pass) (interface{}, error) {
-			return runSweeperAnalyzer(pass, p.settings)
+		Run: func(pass *analysislib.Pass) (interface{}, error) {
+			return analysis.RunSweeperAnalyzer(pass, &p.settings)
 		},
 	}
 }

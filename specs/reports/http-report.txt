@@ -1,0 +1,66 @@
+Analyzing provider at: /workspace/validation/terraform-provider-http (3 directories)
+
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                        TERRAFORM PROVIDER TEST COVERAGE REPORT                 ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ SUMMARY                                                                         │
+├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤
+│ Category     │ Total │ Untested │ Issues                                          │
+├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤
+│ Resources    │     0 │        0 │ 0 without CheckDestroy                          │
+│ Data Sources │     1 │        0 │ -                                               │
+│ Actions      │     0 │        0 │ 0 without Check func                            │
+│ Orphan Tests │     0 │        - │ -                                               │
+└──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ DATA SOURCES                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME  TESTS  Check  ConfigStateChecks  FILE                 TEST FILE
+  ────  ─────  ─────  ─────────────────  ────                 ─────────
+  http  30     ✓      ✗                  data_source_http.go  data_source_http_test.go
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ ORPHAN TESTS                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  ✓ All test functions are associated with resources!
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ TEST ASSOCIATIONS                                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  RESOURCE  KIND  TEST FUNCTION                                      MATCH TYPE
+  ────────  ────  ─────────────                                      ──────────
+  http      data  TestDataSource_200                                 file_proximity
+                  TestDataSource_200_SlashInPath                     file_proximity
+                  TestDataSource_404                                 file_proximity
+                  TestDataSource_withAuthorizationRequestHeader_200  file_proximity
+                  TestDataSource_withAuthorizationRequestHeader_403  file_proximity
+                  TestDataSource_utf8_200                            file_proximity
+                  TestDataSource_utf16_200                           file_proximity
+                  TestDataSource_x509cert                            file_proximity
+                  TestDataSource_UpgradeFromVersion2_2_0             file_proximity
+                  TestDataSource_Provisioner                         file_proximity
+                  TestDataSource_POST_200                            file_proximity
+                  TestDataSource_HEAD_204                            file_proximity
+                  TestDataSource_UnsupportedMethod                   file_proximity
+                  TestDataSource_WithCACertificate                   file_proximity
+                  TestDataSource_WithClientCert                      file_proximity
+                  TestDataSource_WithCACertificateFalse              file_proximity
+                  TestDataSource_InsecureTrue                        file_proximity
+                  TestDataSource_InsecureFalse                       file_proximity
+                  TestDataSource_InsecureUnconfigured                file_proximity
+                  TestDataSource_UnsupportedInsecureCaCert           file_proximity
+                  TestDataSource_HostRequestHeaderOverride_200       file_proximity
+                  TestDataSource_HTTPViaProxyWithEnv                 file_proximity
+                  TestDataSource_Timeout                             file_proximity
+                  TestDataSource_Retry                               file_proximity
+                  TestDataSource_MinDelay                            file_proximity
+                  TestDataSource_MaxDelay                            file_proximity
+                  TestDataSource_MaxDelayAtLeastEqualToMinDelay      file_proximity
+                  TestDataSource_RequestBody                         file_proximity
+                  TestDataSource_ResponseBodyText                    file_proximity
+                  TestDataSource_ResponseBodyBinary                  file_proximity
+

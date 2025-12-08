@@ -4,6 +4,9 @@ package tfprovidertest
 
 import (
 	"testing"
+
+	"github.com/example/tfprovidertest/internal/matching"
+	"github.com/example/tfprovidertest/internal/registry"
 )
 
 func TestExtractResourceFromFuncName(t *testing.T) {
@@ -56,7 +59,7 @@ func TestExtractResourceFromFuncName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.funcName, func(t *testing.T) {
-			got, found := ExtractResourceFromFuncName(tt.funcName)
+			got, found := matching.ExtractResourceFromFuncName(tt.funcName)
 			if found != tt.wantFound {
 				t.Errorf("ExtractResourceFromFuncName(%q) found = %v, want %v", tt.funcName, found, tt.wantFound)
 			}
@@ -94,7 +97,7 @@ func TestExtractProviderFromFuncName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.funcName, func(t *testing.T) {
-			got := ExtractProviderFromFuncName(tt.funcName)
+			got := matching.ExtractProviderFromFuncName(tt.funcName)
 			if got != tt.wantProvider {
 				t.Errorf("ExtractProviderFromFuncName(%q) = %q, want %q", tt.funcName, got, tt.wantProvider)
 			}
@@ -122,7 +125,7 @@ func TestToSnakeCase(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := toSnakeCase(tt.input)
+			got := matching.CamelCaseToSnakeCaseExported(tt.input)
 			if got != tt.expected {
 				t.Errorf("toSnakeCase(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
@@ -147,7 +150,7 @@ func TestToTitleCase(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := toTitleCase(tt.input)
+			got := matching.SnakeCaseToTitleCaseExported(tt.input)
 			if got != tt.expected {
 				t.Errorf("toTitleCase(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
@@ -171,7 +174,7 @@ func TestIsSweeperFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.filePath, func(t *testing.T) {
-			got := IsSweeperFile(tt.filePath)
+			got := matching.IsSweeperFile(tt.filePath)
 			if got != tt.expected {
 				t.Errorf("IsSweeperFile(%q) = %v, want %v", tt.filePath, got, tt.expected)
 			}
@@ -195,7 +198,7 @@ func TestIsMigrationFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.filePath, func(t *testing.T) {
-			got := IsMigrationFile(tt.filePath)
+			got := matching.IsMigrationFile(tt.filePath)
 			if got != tt.expected {
 				t.Errorf("IsMigrationFile(%q) = %v, want %v", tt.filePath, got, tt.expected)
 			}
@@ -218,7 +221,7 @@ func TestIsBaseClassFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.filePath, func(t *testing.T) {
-			got := isBaseClassFile(tt.filePath)
+			got := matching.IsBaseClassFile(tt.filePath)
 			if got != tt.expected {
 				t.Errorf("isBaseClassFile(%q) = %v, want %v", tt.filePath, got, tt.expected)
 			}
@@ -242,7 +245,7 @@ func TestShouldExcludeFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.filePath, func(t *testing.T) {
-			got := shouldExcludeFile(tt.filePath, tt.excludePaths)
+			got := matching.ShouldExcludeFileExported(tt.filePath, tt.excludePaths)
 			if got != tt.expected {
 				t.Errorf("shouldExcludeFile(%q, %v) = %v, want %v", tt.filePath, tt.excludePaths, got, tt.expected)
 			}
@@ -272,7 +275,7 @@ func TestIsTestFunction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.funcName, func(t *testing.T) {
-			got := isTestFunction(tt.funcName, tt.customPatterns)
+			got := matching.IsTestFunctionExported(tt.funcName, tt.customPatterns)
 			if got != tt.expected {
 				t.Errorf("isTestFunction(%q, %v) = %v, want %v", tt.funcName, tt.customPatterns, got, tt.expected)
 			}
@@ -295,7 +298,7 @@ func TestExtractResourceName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.typeName, func(t *testing.T) {
-			got := extractResourceName(tt.typeName)
+			got := matching.ExtractResourceNameExported(tt.typeName)
 			if got != tt.expected {
 				t.Errorf("extractResourceName(%q) = %q, want %q", tt.typeName, got, tt.expected)
 			}
@@ -308,26 +311,26 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 		name             string
 		filePath         string
 		wantResourceName string
-		wantKind ResourceKind
+		wantKind registry.ResourceKind
 	}{
 		// Prefix patterns
 		{
 			name:             "resource_ prefix",
 			filePath:         "/path/to/resource_widget_test.go",
 			wantResourceName: "widget",
-			wantKind: KindResource,
+			wantKind: registry.KindResource,
 		},
 		{
 			name:             "data_source_ prefix",
 			filePath:         "/path/to/data_source_http_test.go",
 			wantResourceName: "http",
-			wantKind: KindDataSource,
+			wantKind: registry.KindDataSource,
 		},
 		{
 			name:             "ephemeral_ prefix",
 			filePath:         "/path/to/ephemeral_session_test.go",
 			wantResourceName: "session",
-			wantKind: KindResource,
+			wantKind: registry.KindResource,
 		},
 
 		// Suffix patterns
@@ -335,19 +338,19 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 			name:             "_resource suffix",
 			filePath:         "/path/to/widget_resource_test.go",
 			wantResourceName: "widget",
-			wantKind: KindResource,
+			wantKind: registry.KindResource,
 		},
 		{
 			name:             "_data_source suffix",
 			filePath:         "/path/to/http_data_source_test.go",
 			wantResourceName: "http",
-			wantKind: KindDataSource,
+			wantKind: registry.KindDataSource,
 		},
 		{
 			name:             "_datasource suffix",
 			filePath:         "/path/to/http_datasource_test.go",
 			wantResourceName: "http",
-			wantKind: KindDataSource,
+			wantKind: registry.KindDataSource,
 		},
 
 		// Multi-part names
@@ -355,13 +358,13 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 			name:             "resource with underscores",
 			filePath:         "/path/to/resource_compute_instance_test.go",
 			wantResourceName: "compute_instance",
-			wantKind: KindResource,
+			wantKind: registry.KindResource,
 		},
 		{
 			name:             "data source with underscores",
 			filePath:         "/path/to/data_source_s3_bucket_test.go",
 			wantResourceName: "s3_bucket",
-			wantKind: KindDataSource,
+			wantKind: registry.KindDataSource,
 		},
 
 		// Edge cases
@@ -369,25 +372,25 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 			name:             "not a test file",
 			filePath:         "/path/to/resource_widget.go",
 			wantResourceName: "",
-			wantKind: KindResource,
+			wantKind: registry.KindResource,
 		},
 		{
 			name:             "no matching pattern",
 			filePath:         "/path/to/helper_test.go",
 			wantResourceName: "",
-			wantKind: KindResource,
+			wantKind: registry.KindResource,
 		},
 		{
 			name:             "just _test.go",
 			filePath:         "/path/to/_test.go",
 			wantResourceName: "",
-			wantKind: KindResource,
+			wantKind: registry.KindResource,
 		},
 		{
 			name:             "empty resource name after prefix",
 			filePath:         "/path/to/resource__test.go",
 			wantResourceName: "",
-			wantKind: KindResource,
+			wantKind: registry.KindResource,
 		},
 
 		// Full path variations
@@ -395,19 +398,19 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 			name:             "absolute path with prefix",
 			filePath:         "/home/user/project/internal/provider/resource_bucket_test.go",
 			wantResourceName: "bucket",
-			wantKind: KindResource,
+			wantKind: registry.KindResource,
 		},
 		{
 			name:             "relative path with suffix",
 			filePath:         "provider/http_datasource_test.go",
 			wantResourceName: "http",
-			wantKind: KindDataSource,
+			wantKind: registry.KindDataSource,
 		},
 		{
 			name:             "basename only",
 			filePath:         "data_source_ami_test.go",
 			wantResourceName: "ami",
-			wantKind: KindDataSource,
+			wantKind: registry.KindDataSource,
 		},
 
 		// Priority - prefix patterns should take precedence
@@ -415,18 +418,18 @@ func TestExtractResourceNameFromPath(t *testing.T) {
 			name:             "both prefix and suffix patterns present",
 			filePath:         "/path/to/resource_widget_resource_test.go",
 			wantResourceName: "widget_resource",
-			wantKind: KindResource,
+			wantKind: registry.KindResource,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotResourceName, gotIsDataSource := ExtractResourceNameFromPath(tt.filePath)
+			gotResourceName, gotIsDataSource := matching.ExtractResourceNameFromPath(tt.filePath)
 			if gotResourceName != tt.wantResourceName {
 				t.Errorf("ExtractResourceNameFromPath(%q) resourceName = %q, want %q",
 					tt.filePath, gotResourceName, tt.wantResourceName)
 			}
-			wantIsDataSource := tt.wantKind == KindDataSource
+			wantIsDataSource := tt.wantKind == registry.KindDataSource
 			if gotIsDataSource != wantIsDataSource {
 				t.Errorf("ExtractResourceNameFromPath(%q) isDataSource = %v, want %v",
 					tt.filePath, gotIsDataSource, wantIsDataSource)
