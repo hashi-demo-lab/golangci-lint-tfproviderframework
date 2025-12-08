@@ -33,34 +33,34 @@ Analyzing provider at: /workspace/validation/terraform-provider-http (3 director
 └─────────────────────────────────────────────────────────────────────────────────┘
   RESOURCE  KIND  TEST FUNCTION                                      MATCH TYPE
   ────────  ────  ─────────────                                      ──────────
-  http      data  TestDataSource_200                                 file_proximity
-                  TestDataSource_200_SlashInPath                     file_proximity
-                  TestDataSource_404                                 file_proximity
-                  TestDataSource_withAuthorizationRequestHeader_200  file_proximity
-                  TestDataSource_withAuthorizationRequestHeader_403  file_proximity
-                  TestDataSource_utf8_200                            file_proximity
-                  TestDataSource_utf16_200                           file_proximity
-                  TestDataSource_x509cert                            file_proximity
-                  TestDataSource_UpgradeFromVersion2_2_0             file_proximity
-                  TestDataSource_Provisioner                         file_proximity
-                  TestDataSource_POST_200                            file_proximity
-                  TestDataSource_HEAD_204                            file_proximity
-                  TestDataSource_UnsupportedMethod                   file_proximity
-                  TestDataSource_WithCACertificate                   file_proximity
-                  TestDataSource_WithClientCert                      file_proximity
-                  TestDataSource_WithCACertificateFalse              file_proximity
-                  TestDataSource_InsecureTrue                        file_proximity
-                  TestDataSource_InsecureFalse                       file_proximity
-                  TestDataSource_InsecureUnconfigured                file_proximity
-                  TestDataSource_UnsupportedInsecureCaCert           file_proximity
-                  TestDataSource_HostRequestHeaderOverride_200       file_proximity
-                  TestDataSource_HTTPViaProxyWithEnv                 file_proximity
-                  TestDataSource_Timeout                             file_proximity
-                  TestDataSource_Retry                               file_proximity
-                  TestDataSource_MinDelay                            file_proximity
-                  TestDataSource_MaxDelay                            file_proximity
-                  TestDataSource_MaxDelayAtLeastEqualToMinDelay      file_proximity
-                  TestDataSource_RequestBody                         file_proximity
-                  TestDataSource_ResponseBodyText                    file_proximity
-                  TestDataSource_ResponseBodyBinary                  file_proximity
+  http      data  TestDataSource_200                                 inferred_from_config
+                  TestDataSource_200_SlashInPath                     inferred_from_config
+                  TestDataSource_404                                 inferred_from_config
+                  TestDataSource_withAuthorizationRequestHeader_200  inferred_from_config
+                  TestDataSource_withAuthorizationRequestHeader_403  inferred_from_config
+                  TestDataSource_utf8_200                            inferred_from_config
+                  TestDataSource_utf16_200                           inferred_from_config
+                  TestDataSource_x509cert                            inferred_from_config
+                  TestDataSource_UpgradeFromVersion2_2_0             inferred_from_config
+                  TestDataSource_Provisioner                         inferred_from_config
+                  TestDataSource_POST_200                            inferred_from_config
+                  TestDataSource_HEAD_204                            inferred_from_config
+                  TestDataSource_UnsupportedMethod                   inferred_from_config
+                  TestDataSource_WithCACertificate                   inferred_from_config
+                  TestDataSource_WithClientCert                      inferred_from_config
+                  TestDataSource_WithCACertificateFalse              inferred_from_config
+                  TestDataSource_InsecureTrue                        inferred_from_config
+                  TestDataSource_InsecureFalse                       inferred_from_config
+                  TestDataSource_InsecureUnconfigured                inferred_from_config
+                  TestDataSource_UnsupportedInsecureCaCert           inferred_from_config
+                  TestDataSource_HostRequestHeaderOverride_200       inferred_from_config
+                  TestDataSource_HTTPViaProxyWithEnv                 inferred_from_config
+                  TestDataSource_Timeout                             inferred_from_config
+                  TestDataSource_Retry                               inferred_from_config
+                  TestDataSource_MinDelay                            inferred_from_config
+                  TestDataSource_MaxDelay                            inferred_from_config
+                  TestDataSource_MaxDelayAtLeastEqualToMinDelay      inferred_from_config
+                  TestDataSource_RequestBody                         inferred_from_config
+                  TestDataSource_ResponseBodyText                    inferred_from_config
+                  TestDataSource_ResponseBodyBinary                  inferred_from_config
 

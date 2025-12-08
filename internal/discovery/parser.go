@@ -19,10 +19,13 @@ import (
 	"github.com/example/tfprovidertest/pkg/config"
 )
 
-// Regex to find 'resource "example_widget" "name" {' or 'action "example_action" "name" {'
-// Captures the resource/action type (e.g., "example_widget", "aap_eda_eventstream_post")
-// This handles both standard resources and terraform-plugin-framework actions
-var ResourceTypeRegex = regexp.MustCompile(`(?:resource|action)\s+"([^"]+)"\s+"[^"]+"\s+\{`)
+// Regex to find HCL blocks: resource, data, or action
+// Examples:
+//   - resource "example_widget" "name" {
+//   - data "example_datasource" "name" {
+//   - action "example_action" "name" {
+// Captures the type (e.g., "example_widget", "google_compute_disk")
+var ResourceTypeRegex = regexp.MustCompile(`(?:resource|data|action)\s+"([^"]+)"\s+"[^"]+"\s+\{`)
 
 // LocalHelper represents a discovered local test helper function.
 type LocalHelper struct {
@@ -476,6 +479,15 @@ func (r *ReturnTypeStrategy) Discover(file *ast.File, fset *token.FileSet, fileP
 				continue
 			}
 
+			// For SDK v2 schema.Resource, differentiate based on filename
+			// SDK v2 uses *schema.Resource for both resources and data sources
+			if strings.HasSuffix(strings.TrimPrefix(returnType, "*"), "schema.Resource") {
+				baseName := filepath.Base(filePath)
+				if strings.HasPrefix(baseName, "data_source_") {
+					kind = registry.KindDataSource
+				}
+			}
+
 			// Extract resource name from Metadata method body or function name
 			name := r.extractResourceName(funcDecl, file, kind)
 			if name == "" {
@@ -671,11 +683,12 @@ func extractNameFromFactoryFunc(funcName string, kind registry.ResourceKind) str
 	// NewXxxDataSource -> xxx
 	// ResourceXxx -> xxx (SDK v2 pattern)
 	// DataSourceXxx -> xxx (SDK v2 pattern)
+	// dataSourceXxx -> xxx (SDK v2 camelCase pattern)
 	// NewXxx -> xxx (when return type indicates resource/datasource)
 
 	name := funcName
 
-	// Remove common prefixes
+	// Remove common prefixes (case-sensitive patterns first, then case-insensitive)
 	if strings.HasPrefix(name, "New") {
 		name = strings.TrimPrefix(name, "New")
 	} else if strings.HasPrefix(name, "Resource") {
@@ -683,6 +696,13 @@ func extractNameFromFactoryFunc(funcName string, kind registry.ResourceKind) str
 	} else if strings.HasPrefix(name, "DataSource") {
 		name = strings.TrimPrefix(name, "DataSource")
 		kind = registry.KindDataSource
+	} else if strings.HasPrefix(name, "dataSource") {
+		// Handle SDK v2 camelCase pattern: dataSourceXxx
+		name = strings.TrimPrefix(name, "dataSource")
+		kind = registry.KindDataSource
+	} else if strings.HasPrefix(name, "resource") {
+		// Handle SDK v2 camelCase pattern: resourceXxx
+		name = strings.TrimPrefix(name, "resource")
 	}
 
 	// Remove common suffixes

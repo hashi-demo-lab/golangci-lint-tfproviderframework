@@ -42,58 +42,58 @@ Analyzing provider at: /workspace/validation/terraform-provider-helm (4 director
 └─────────────────────────────────────────────────────────────────────────────────┘
   RESOURCE  KIND      TEST FUNCTION                                               MATCH TYPE
   ────────  ────      ─────────────                                               ──────────
-  release   resource  TestAccResourceRelease_basic                                function_name
-                      TestAccResourceRelease_set_wo                               function_name
-                      TestAccResourceRelease_emptyVersion                         function_name
-                      TestAccResourceRelease_import                               function_name
-                      TestAccResourceRelease_inconsistentVersionRegression        function_name
+  release   resource  TestAccResourceRelease_basic                                inferred_from_config
+                      TestAccResourceRelease_set_wo                               inferred_from_config
+                      TestAccResourceRelease_emptyVersion                         inferred_from_config
+                      TestAccResourceRelease_import                               inferred_from_config
+                      TestAccResourceRelease_inconsistentVersionRegression        inferred_from_config
                       TestAccResourceRelease_multiple_releases                    function_name
-                      TestAccResourceRelease_parallel                             function_name
-                      TestAccResourceRelease_update                               function_name
-                      TestAccResourceRelease_emptyValuesList                      function_name
-                      TestAccResourceRelease_updateValues                         function_name
-                      TestAccResourceRelease_cloakValues                          function_name
-                      TestAccResourceRelease_updateMultipleValues                 function_name
-                      TestAccResourceRelease_identity                             function_name
+                      TestAccResourceRelease_parallel                             inferred_from_config
+                      TestAccResourceRelease_update                               inferred_from_config
+                      TestAccResourceRelease_emptyValuesList                      inferred_from_config
+                      TestAccResourceRelease_updateValues                         inferred_from_config
+                      TestAccResourceRelease_cloakValues                          inferred_from_config
+                      TestAccResourceRelease_updateMultipleValues                 inferred_from_config
+                      TestAccResourceRelease_identity                             inferred_from_config
                       TestAccResourceRelease_repository_url                       function_name
                       TestAccResourceRelease_updateAfterFail                      function_name
-                      TestAccResourceRelease_upgradeInstall_coldstart             function_name
-                      TestAccResourceRelease_upgradeInstall_warmstart             function_name
-                      TestAccResourceRelease_upgradeInstall_warmstart_no_version  function_name
-                      TestAccResourceRelease_updateExistingFailed                 function_name
-                      TestAccResourceRelease_SetNull                              function_name
-                      TestAccResourceRelease_updateSetValue                       function_name
-                      TestAccResourceRelease_validation                           function_name
-                      TestAccResourceRelease_postrender                           function_name
+                      TestAccResourceRelease_upgradeInstall_coldstart             inferred_from_config
+                      TestAccResourceRelease_upgradeInstall_warmstart             inferred_from_config
+                      TestAccResourceRelease_upgradeInstall_warmstart_no_version  inferred_from_config
+                      TestAccResourceRelease_updateExistingFailed                 inferred_from_config
+                      TestAccResourceRelease_SetNull                              inferred_from_config
+                      TestAccResourceRelease_updateSetValue                       inferred_from_config
+                      TestAccResourceRelease_validation                           inferred_from_config
+                      TestAccResourceRelease_postrender                           inferred_from_config
                       TestAccResourceRelease_namespaceDoesNotExist                function_name
                       TestAccResourceRelease_invalidName                          function_name
                       TestAccResourceRelease_createNamespace                      function_name
                       TestAccResourceRelease_LocalVersion                         function_name
                       TestAccResourceRelease_LintFailValues                       function_name
-                      TestAccResourceRelease_takeOwnership                        function_name
+                      TestAccResourceRelease_takeOwnership                        inferred_from_config
                       TestAccResourceRelease_LintFailChart                        function_name
                       TestAccResourceRelease_FailedDeployFailsApply               function_name
-                      TestAccResourceRelease_dependency                           function_name
-                      TestAccResourceRelease_chartURL                             function_name
-                      TestAccResourceRelease_helm_repo_add                        function_name
-                      TestAccResourceRelease_delete_regression                    function_name
-                      TestAccResourceRelease_manifest                             function_name
-                      TestAccResourceRelease_manifestUnknownValues                function_name
-                      TestAccResourceRelease_set_list_chart                       function_name
-                      TestAccResourceRelease_update_set_list_chart                function_name
-                      TestAccResourceRelease_literalSet                           function_name
-                      TestAccResourceRelease_Timeouts                             function_name
-                      TestAccResourceRelease_OCI_repository                       function_name
-                      TestAccResourceRelease_OCI_registry_login                   function_name
-                      TestAccResourceRelease_OCI_login                            function_name
-                      TestAccResourceRelease_recomputeMetadata                    function_name
+                      TestAccResourceRelease_dependency                           inferred_from_config
+                      TestAccResourceRelease_chartURL                             inferred_from_config
+                      TestAccResourceRelease_helm_repo_add                        inferred_from_config
+                      TestAccResourceRelease_delete_regression                    inferred_from_config
+                      TestAccResourceRelease_manifest                             inferred_from_config
+                      TestAccResourceRelease_manifestUnknownValues                inferred_from_config
+                      TestAccResourceRelease_set_list_chart                       inferred_from_config
+                      TestAccResourceRelease_update_set_list_chart                inferred_from_config
+                      TestAccResourceRelease_literalSet                           inferred_from_config
+                      TestAccResourceRelease_Timeouts                             inferred_from_config
+                      TestAccResourceRelease_OCI_repository                       inferred_from_config
+                      TestAccResourceRelease_OCI_registry_login                   inferred_from_config
+                      TestAccResourceRelease_OCI_login                            inferred_from_config
+                      TestAccResourceRelease_recomputeMetadata                    inferred_from_config
                       TestAccResourceRelease_manifestServerDiff                   function_name
-                      TestAccHelmRelease_Upgrade_MetadataStructure                function_name
-                      TestAccHelmRelease_Upgrade_values                           function_name
-                      TestAccHelmRelease_Upgrade_PostrenderStructure              function_name
-  template  data      TestAccDataTemplate_basic                                   function_name
-                      TestAccDataTemplate_crds                                    function_name
-                      TestAccDataTemplate_templates                               function_name
-                      TestAccDataTemplate_kubeVersion                             function_name
-                      TestAccDataTemplate_configSetNull                           function_name
+                      TestAccHelmRelease_Upgrade_MetadataStructure                inferred_from_config
+                      TestAccHelmRelease_Upgrade_values                           inferred_from_config
+                      TestAccHelmRelease_Upgrade_PostrenderStructure              inferred_from_config
+  template  data      TestAccDataTemplate_basic                                   inferred_from_config
+                      TestAccDataTemplate_crds                                    inferred_from_config
+                      TestAccDataTemplate_templates                               inferred_from_config
+                      TestAccDataTemplate_kubeVersion                             inferred_from_config
+                      TestAccDataTemplate_configSetNull                           inferred_from_config
 

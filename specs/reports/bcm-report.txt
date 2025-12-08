@@ -13,7 +13,7 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
 │ Resources    │     7 │        1 │ 0 without CheckDestroy                          │
 │ Data Sources │    10 │        1 │ -                                               │
 │ Actions      │     1 │        1 │ 0 without Check func                            │
-│ Orphan Tests │    12 │        - │ -                                               │
+│ Orphan Tests │     0 │        - │ -                                               │
 └──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -21,11 +21,11 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
 └─────────────────────────────────────────────────────────────────────────────────┘
   NAME                  TESTS  Update  ImportState  CheckDestroy  ExpectError  Check  ConfigStateChecks  PlanChecks  FILE                              TEST FILE
   ────                  ─────  ──────  ───────────  ────────────  ───────────  ─────  ─────────────────  ──────────  ────                              ─────────
-  cmdevice_category     38     ✓       ✓            ✓             ✓            ✓      ✓                  ✓           resource_cmdevice_category.go     resource_cmdevice_category_test.go
-  cmdevice_device       44     ✓       ✓            ✓             ✓            ✓      ✓                  ✓           resource_cmdevice_device.go       (4 files)
+  cmdevice_category     43     ✓       ✓            ✓             ✓            ✓      ✓                  ✓           resource_cmdevice_category.go     (3 files)
+  cmdevice_device       25     ✓       ✓            ✓             ✓            ✗      ✓                  ✓           resource_cmdevice_device.go       (3 files)
   cmkube_cluster        16     ✓       ✓            ✓             ✓            ✗      ✓                  ✓           resource_cmkube_cluster.go        (2 files)
   cmnet_network         4      ✓       ✓            ✓             ✗            ✗      ✓                  ✓           resource_cmnet_network.go         resource_cmnet_network_test.go
-  cmpart_softwareimage  24     ✓       ✓            ✓             ✓            ✗      ✓                  ✓           resource_cmpart_softwareimage.go  (2 files)
+  cmpart_softwareimage  38     ✓       ✓            ✓             ✓            ✓      ✓                  ✓           resource_cmpart_softwareimage.go  (3 files)
   cmuser_user           8      ✓       ✓            ✓             ✗            ✗      ✓                  ✓           resource_cmuser_user.go           resource_cmuser_user_test.go
   example               0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_template.go              -
 
@@ -34,14 +34,14 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
 └─────────────────────────────────────────────────────────────────────────────────┘
   NAME                   TESTS  Check  ConfigStateChecks  FILE                                  TEST FILE
   ────                   ─────  ─────  ─────────────────  ────                                  ─────────
-  cmdevice_categories    4      ✗      ✓                  data_source_cmdevice_categories.go    data_source_cmdevice_categories_test.go
+  cmdevice_categories    3      ✗      ✓                  data_source_cmdevice_categories.go    data_source_cmdevice_categories_test.go
   cmdevice_nodes         4      ✗      ✓                  data_source_cmdevice_nodes.go         data_source_cmdevice_nodes_test.go
   cmdevice_roles         5      ✗      ✓                  data_source_cmdevice_roles.go         data_source_cmdevice_roles_test.go
   cmkube_clusters        7      ✗      ✓                  data_source_cmkube_clusters.go        data_source_cmkube_clusters_test.go
   cmnet_networks         4      ✗      ✓                  data_source_cmnet_networks.go         data_source_cmnet_networks_test.go
   cmpart_entity_info     11     ✓      ✓                  data_source_cmpart_entity_info.go     data_source_cmpart_entity_info_test.go
   cmpart_partitions      9      ✗      ✓                  data_source_cmpart_partitions.go      data_source_cmpart_partitions_test.go
-  cmpart_softwareimages  7      ✗      ✓                  data_source_cmpart_softwareimages.go  data_source_cmpart_softwareimages_test.go
+  cmpart_softwareimages  20     ✗      ✓                  data_source_cmpart_softwareimages.go  (3 files)
   cmuser_users           6      ✗      ✓                  data_source_cmuser_users.go           data_source_cmuser_users_test.go
   example                0      ✗      ✗                  data_source_template.go               -
 
@@ -55,65 +55,61 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │ ORPHAN TESTS                                                                    │
 └─────────────────────────────────────────────────────────────────────────────────┘
-  TEST FUNCTION                                           FILE                              INFERRED RESOURCES
-  ─────────────                                           ────                              ──────────────────
-  TestAccProviderConfig_InsecureSkipVerify_Default        provider_optional_config_test.go  -
-  TestAccProviderConfig_InsecureSkipVerify_ExplicitTrue   provider_optional_config_test.go  -
-  TestAccProviderConfig_InsecureSkipVerify_ExplicitFalse  provider_optional_config_test.go  -
-  TestAccProviderConfig_Timeout_Default                   provider_optional_config_test.go  -
-  TestAccProviderConfig_Timeout_Custom60Seconds           provider_optional_config_test.go  -
-  TestAccProviderConfig_Timeout_Custom120Seconds          provider_optional_config_test.go  -
-  TestAccProviderConfig_Timeout_Short5Seconds             provider_optional_config_test.go  -
-  TestAccProviderConfig_Timeout_Int64ToIntConversion      provider_optional_config_test.go  -
-  TestAccProviderConfig_CombinedOptionalFields            provider_optional_config_test.go  -
-  TestAccProviderConfig_CombinedDefaults                  provider_optional_config_test.go  -
-  TestAccProviderConfig_Timeout_ZeroValue                 provider_optional_config_test.go  -
-  TestAccProviderConfig_Timeout_NegativeValue             provider_optional_config_test.go  -
+  ✓ All test functions are associated with resources!
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │ TEST ASSOCIATIONS                                                               │
 └─────────────────────────────────────────────────────────────────────────────────┘
   RESOURCE               KIND      TEST FUNCTION                                                         MATCH TYPE
   ────────               ────      ─────────────                                                         ──────────
-  cmdevice_category      resource  TestAccCMDeviceCategoryResource_Basic                                 file_proximity
-                                   TestAccCMDeviceCategoryResource_Import                                file_proximity
-                                   TestAccCMDeviceCategoryResource_ForceParameter                        file_proximity
-                                   TestAccCMDeviceCategory_DriftNotes                                    file_proximity
-                                   TestAccCMDeviceCategory_DestroyWithForce                              file_proximity
-                                   TestAccCMDeviceCategory_DestroyExternalDelete                         file_proximity
-                                   TestAccCMDeviceCategory_NetworkConfiguration                          file_proximity
-                                   TestAccCMDeviceCategory_PartitionConfiguration                        file_proximity
-                                   TestAccCMDeviceCategoryResource_DiskSetupAdvanced                     file_proximity
-                                   TestAccCMDeviceCategoryResource_DiskSetupOptionalCombinations         file_proximity
-                                   TestAccCMDeviceCategoryResource_ProvisioningScripts                   file_proximity
-                                   TestAccCMDeviceCategory_ValidationInvalidName                         file_proximity
-                                   TestAccCMDeviceCategory_ValidationInvalidManagementNetwork            file_proximity
-                                   TestAccCMDeviceCategory_ValidationInvalidBootLoader                   file_proximity
-                                   TestAccCMDeviceCategory_ValidationInvalidFIPS                         file_proximity
-                                   TestAccCMDeviceCategoryResource_BootLoaderFields                      file_proximity
-                                   TestAccCMDeviceCategoryResource_InstallationModes                     file_proximity
-                                   TestAccCMDeviceCategoryResource_NetworkListFields                     file_proximity
-                                   TestAccCMDeviceCategory_StaticRoutesBasicCRUD                         file_proximity
-                                   TestAccCMDeviceCategory_StaticRoutesValidation                        file_proximity
-                                   TestAccCMDeviceCategory_GPUSettingsBasicCRUD                          file_proximity
-                                   TestAccCMDeviceCategoryResource_SimpleStringFields                    file_proximity
-                                   TestAccCMDeviceCategoryResource_BooleanFieldsNonDefault               file_proximity
-                                   TestAccCMDeviceCategoryResource_ExcludeLists                          file_proximity
-                                   TestAccCMDeviceCategoryResource_KernelModules                         file_proximity
-                                   TestAccCMDeviceCategoryResource_BMCSettings                           file_proximity
-                                   TestAccCMDeviceCategoryResource_FilesystemMounts                      file_proximity
-                                   TestAccCMDeviceCategoryResource_FilesystemExports                     file_proximity
-                                   TestAccCMDeviceCategoryResource_RolesConfiguration                    file_proximity
-                                   TestAccCMDeviceCategory_RolesUUIDPopulated                            file_proximity
-                                   TestAccCMDeviceCategory_RolesIdempotency                              file_proximity
-                                   TestAccCMDeviceCategory_MultipleRolesUUID                             file_proximity
-                                   TestAccCMDeviceCategory_RolesUUIDPreservedOnRefresh                   file_proximity
-                                   TestAccCMDeviceCategory_RolesImportUUID                               file_proximity
-                                   TestAccCMDeviceCategory_BMCPasswordNoDrift                            file_proximity
-                                   TestAccCMDeviceCategory_BMCPasswordUpdate                             file_proximity
-                                   TestAccCMDeviceCategoryResource_Services                              file_proximity
-                                   TestAccCMDeviceCategoryResource_ServicesWithAllFields                 file_proximity
-  cmdevice_device        resource  TestAccCMDeviceDevice_InterfaceSingle                                 inferred_from_config
+  cmdevice_category      resource  TestAccCMDeviceDevice_IdempotencyWithOptionalFields                   inferred_from_config
+                                   TestAccCMDeviceDeviceResource_Basic                                   inferred_from_config
+                                   TestAccCMDeviceDevice_RolesIdempotent                                 inferred_from_config
+                                   TestAccCMDeviceDevice_MultipleInvalidRoles                            inferred_from_config
+                                   TestAccCMDeviceDevice_RolesAddMultiple                                inferred_from_config
+                                   TestAccCMDeviceCategoryResource_Basic                                 inferred_from_config
+                                   TestAccCMDeviceCategoryResource_Import                                inferred_from_config
+                                   TestAccCMDeviceCategoryResource_ForceParameter                        inferred_from_config
+                                   TestAccCMDeviceCategory_DriftNotes                                    inferred_from_config
+                                   TestAccCMDeviceCategory_DestroyWithForce                              inferred_from_config
+                                   TestAccCMDeviceCategory_DestroyExternalDelete                         inferred_from_config
+                                   TestAccCMDeviceCategory_NetworkConfiguration                          inferred_from_config
+                                   TestAccCMDeviceCategory_PartitionConfiguration                        inferred_from_config
+                                   TestAccCMDeviceCategoryResource_DiskSetupAdvanced                     inferred_from_config
+                                   TestAccCMDeviceCategoryResource_DiskSetupOptionalCombinations         inferred_from_config
+                                   TestAccCMDeviceCategoryResource_ProvisioningScripts                   inferred_from_config
+                                   TestAccCMDeviceCategory_ValidationInvalidName                         inferred_from_config
+                                   TestAccCMDeviceCategory_ValidationInvalidManagementNetwork            inferred_from_config
+                                   TestAccCMDeviceCategory_ValidationInvalidBootLoader                   inferred_from_config
+                                   TestAccCMDeviceCategory_ValidationInvalidFIPS                         inferred_from_config
+                                   TestAccCMDeviceCategoryResource_BootLoaderFields                      inferred_from_config
+                                   TestAccCMDeviceCategoryResource_InstallationModes                     inferred_from_config
+                                   TestAccCMDeviceCategoryResource_NetworkListFields                     inferred_from_config
+                                   TestAccCMDeviceCategory_StaticRoutesBasicCRUD                         inferred_from_config
+                                   TestAccCMDeviceCategory_StaticRoutesValidation                        inferred_from_config
+                                   TestAccCMDeviceCategory_GPUSettingsBasicCRUD                          inferred_from_config
+                                   TestAccCMDeviceCategoryResource_SimpleStringFields                    inferred_from_config
+                                   TestAccCMDeviceCategoryResource_BooleanFieldsNonDefault               inferred_from_config
+                                   TestAccCMDeviceCategoryResource_ExcludeLists                          inferred_from_config
+                                   TestAccCMDeviceCategoryResource_KernelModules                         inferred_from_config
+                                   TestAccCMDeviceCategoryResource_BMCSettings                           inferred_from_config
+                                   TestAccCMDeviceCategoryResource_FilesystemMounts                      inferred_from_config
+                                   TestAccCMDeviceCategoryResource_FilesystemExports                     inferred_from_config
+                                   TestAccCMDeviceCategoryResource_RolesConfiguration                    inferred_from_config
+                                   TestAccCMDeviceCategory_RolesUUIDPopulated                            inferred_from_config
+                                   TestAccCMDeviceCategory_RolesIdempotency                              inferred_from_config
+                                   TestAccCMDeviceCategory_MultipleRolesUUID                             inferred_from_config
+                                   TestAccCMDeviceCategory_RolesUUIDPreservedOnRefresh                   inferred_from_config
+                                   TestAccCMDeviceCategory_RolesImportUUID                               inferred_from_config
+                                   TestAccCMDeviceCategory_BMCPasswordNoDrift                            inferred_from_config
+                                   TestAccCMDeviceCategory_BMCPasswordUpdate                             inferred_from_config
+                                   TestAccCMDeviceCategoryResource_Services                              inferred_from_config
+                                   TestAccCMDeviceCategoryResource_ServicesWithAllFields                 inferred_from_config
+  cmdevice_device        resource  TestAccCMDeviceDevice_ValidationInvalidMAC                            inferred_from_config
+                                   TestAccCMDeviceDevice_RolesCreate                                     inferred_from_config
+                                   TestAccCMDeviceDevice_RolesUpdateByName                               inferred_from_config
+                                   TestAccCMDeviceDevice_EmptyRoleString                                 file_proximity
+                                   TestAccCMDeviceDevice_InterfaceSingle                                 inferred_from_config
                                    TestAccCMDeviceDevice_InterfaceMultiple                               inferred_from_config
                                    TestAccCMDeviceDevice_InterfaceBond                                   inferred_from_config
                                    TestAccCMDeviceDevice_InterfaceBMC                                    inferred_from_config
@@ -134,139 +130,142 @@ Analyzing provider at: /workspace/validation/terraform-provider-bcm (9 directori
                                    TestAccCMDeviceDeviceResource_MockErrorDeviceValidationFailed         inferred_from_config
                                    TestAccCMDeviceDeviceResource_MockErrorDeviceReadAfterCreateFailed    inferred_from_config
                                    TestAccCMDeviceDeviceResource_MockErrorDeviceReadInvalidJSON          inferred_from_config
-                                   TestAccCMDeviceDeviceResource_Basic                                   file_proximity
-                                   TestAccCMDeviceDevice_DriftNotes                                      file_proximity
-                                   TestAccCMDeviceDevice_ValidationInvalidHostname                       file_proximity
-                                   TestAccCMDeviceDevice_PartitionCommitTimeout                          file_proximity
-                                   TestAccCMDeviceDevice_ValidationInvalidMAC                            file_proximity
-                                   TestAccCMDeviceDevice_Drift                                           file_proximity
-                                   TestAccCMDeviceDevice_RolesCreate                                     file_proximity
-                                   TestAccCMDeviceDevice_RolesMultiple                                   file_proximity
-                                   TestAccCMDeviceDevice_RolesIdempotent                                 file_proximity
-                                   TestAccCMDeviceDevice_RolesUpdate                                     file_proximity
-                                   TestAccCMDeviceDevice_RolesRemove                                     file_proximity
-                                   TestAccCMDeviceDevice_RolesImport                                     file_proximity
-                                   TestAccCMDeviceDevice_RolesDrift                                      file_proximity
-                                   TestAccCMDeviceDevice_RolesByName                                     file_proximity
-                                   TestAccCMDeviceDevice_RolesImportByName                               file_proximity
-                                   TestAccCMDeviceDevice_RolesUpdateByName                               file_proximity
-                                   TestAccCMDeviceDevice_RolesDriftByName                                file_proximity
-                                   TestAccCMDeviceDevice_InvalidRoleName                                 file_proximity
-                                   TestAccCMDeviceDevice_InvalidRoleUUID                                 file_proximity
-                                   TestAccCMDeviceDevice_EmptyRoleString                                 file_proximity
-                                   TestAccCMDeviceDevice_MultipleInvalidRoles                            file_proximity
-                                   TestAccCMDeviceDevice_RolesAddMultiple                                file_proximity
-                                   TestAccCMDeviceDevice_IdempotencyAfterUpdate                          inferred_from_config
-  cmkube_cluster         resource  TestAccCMKubeClusterResource_Basic                                    file_proximity
-                                   TestAccCMKubeClusterResource_DriftDetection                           file_proximity
-                                   TestAccCMKubeClusterResource_WorkerNodes                              file_proximity
-                                   TestAccCMKubeClusterResource_ValidationInvalidName                    file_proximity
-                                   TestAccCMKubeClusterResource_ValidationInvalidVersion                 file_proximity
-                                   TestAccCMKubeClusterResource_CompleteConfiguration                    file_proximity
-                                   TestAccCMKubeClusterResource_P3AdvancedNetworking                     file_proximity
-                                   TestAccCMKubeClusterResource_P3StorageAndLoadBalancer                 file_proximity
-                                   TestAccCMKubeClusterResource_P3Addons                                 file_proximity
-                                   TestAccCMKubeClusterResource_P3FullStack                              file_proximity
-                                   TestAccCMKubeClusterResource_ForceOption                              file_proximity
-                                   TestAccCMKubeClusterResource_EtcdNodes                                file_proximity
+  cmkube_cluster         resource  TestAccCMKubeClusterResource_Basic                                    inferred_from_config
+                                   TestAccCMKubeClusterResource_DriftDetection                           inferred_from_config
+                                   TestAccCMKubeClusterResource_WorkerNodes                              inferred_from_config
+                                   TestAccCMKubeClusterResource_ValidationInvalidName                    inferred_from_config
+                                   TestAccCMKubeClusterResource_ValidationInvalidVersion                 inferred_from_config
+                                   TestAccCMKubeClusterResource_CompleteConfiguration                    inferred_from_config
+                                   TestAccCMKubeClusterResource_P3AdvancedNetworking                     inferred_from_config
+                                   TestAccCMKubeClusterResource_P3StorageAndLoadBalancer                 inferred_from_config
+                                   TestAccCMKubeClusterResource_P3Addons                                 inferred_from_config
+                                   TestAccCMKubeClusterResource_P3FullStack                              inferred_from_config
+                                   TestAccCMKubeClusterResource_ForceOption                              inferred_from_config
+                                   TestAccCMKubeClusterResource_EtcdNodes                                inferred_from_config
                                    TestAccCMKubeClusterResource_MockEtcdNodes                            inferred_from_config
                                    TestAccCMKubeClusterResource_MockEtcdNodesUpdate                      inferred_from_config
                                    TestAccCMKubeClusterResource_MockEtcdNodesValidationError             inferred_from_config
                                    TestAccCMKubeClusterResource_MockEtcdNodesNullToValue                 inferred_from_config
-  cmnet_network          resource  TestAccCMNetNetwork_Basic                                             file_proximity
-                                   TestAccCMNetNetwork_Complete                                          file_proximity
-                                   TestAccCMNetNetwork_Update                                            file_proximity
-                                   TestAccCMNetNetwork_DriftDetection                                    file_proximity
-  cmpart_softwareimage   resource  TestAccCMPartSoftwareImageResource_Basic                              file_proximity
-                                   TestAccCMPartSoftwareImageResource_FullConfig                         file_proximity
-                                   TestAccCMPartSoftwareImageResource_UpdateKernelConfig                 file_proximity
-                                   TestAccCMPartSoftwareImageResource_UpdateModules                      file_proximity
-                                   TestAccCMPartSoftwareImageResource_UpdateSOL                          file_proximity
-                                   TestAccCMPartSoftwareImageResource_ValidationInvalidName              file_proximity
-                                   TestAccCMPartSoftwareImageResource_InvalidSOLSpeed                    file_proximity
-                                   TestAccCMPartSoftwareImageResource_InvalidPath                        file_proximity
-                                   TestAccCMPartSoftwareImageResource_InvalidModules                     file_proximity
-                                   TestAccCMPartSoftwareImageResource_UnknownValue                       file_proximity
-                                   TestAccCMPartSoftwareImage_DriftKernelParameters                      file_proximity
-                                   TestAccCMPartSoftwareImage_Drift                                      file_proximity
-                                   TestAccCMPartSoftwareImage_DestroyIdempotent                          file_proximity
-                                   TestAccCMPartSoftwareImage_DestroyExternalDelete                      file_proximity
-                                   TestAccCMPartSoftwareImageResource_SOLConfiguration                   file_proximity
-                                   TestAccCMPartSoftwareImageResource_KernelOutputConsole                file_proximity
-                                   TestAccCMPartSoftwareImageResource_ComputedFields                     file_proximity
-                                   TestAccCMPartSoftwareImageResource_ForceParameter                     file_proximity
-                                   TestAccCMPartSoftwareImageResource_ForceParameterDefault              file_proximity
-                                   TestAccCMPartSoftwareImageResource_BootFSPart                         file_proximity
+  cmnet_network          resource  TestAccCMNetNetwork_Basic                                             inferred_from_config
+                                   TestAccCMNetNetwork_Complete                                          inferred_from_config
+                                   TestAccCMNetNetwork_Update                                            inferred_from_config
+                                   TestAccCMNetNetwork_DriftDetection                                    inferred_from_config
+  cmpart_softwareimage   resource  TestAccCMPartSoftwareImageResource_Basic                              inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_FullConfig                         inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_UpdateKernelConfig                 inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_UpdateModules                      inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_UpdateSOL                          inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_ValidationInvalidName              inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_InvalidSOLSpeed                    inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_InvalidPath                        inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_InvalidModules                     inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_UnknownValue                       inferred_from_config
+                                   TestAccCMPartSoftwareImage_DriftKernelParameters                      inferred_from_config
+                                   TestAccCMPartSoftwareImage_Drift                                      inferred_from_config
+                                   TestAccCMPartSoftwareImage_DestroyIdempotent                          inferred_from_config
+                                   TestAccCMPartSoftwareImage_DestroyExternalDelete                      inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_SOLConfiguration                   inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_KernelOutputConsole                inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_ComputedFields                     inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_ForceParameter                     inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_ForceParameterDefault              inferred_from_config
+                                   TestAccCMPartSoftwareImageResource_BootFSPart                         inferred_from_config
                                    TestAccCMDeviceDevice_Idempotency                                     inferred_from_config
                                    TestAccCMDeviceDevice_IdempotencyWithImport                           inferred_from_config
-                                   TestAccCMDeviceDevice_IdempotencyWithOptionalFields                   inferred_from_config
+                                   TestAccCMDeviceDevice_IdempotencyAfterUpdate                          inferred_from_config
                                    TestAccCMDeviceDevice_IdempotencyDrift                                inferred_from_config
-  cmuser_user            resource  TestAccCMUserUser_Basic                                               file_proximity
-                                   TestAccCMUserUser_Complete                                            file_proximity
-                                   TestAccCMUserUser_Update                                              file_proximity
-                                   TestAccCMUserUser_Idempotent                                          file_proximity
-                                   TestAccCMUserUser_Import                                              file_proximity
-                                   TestAccCMUserUser_DriftShell                                          file_proximity
-                                   TestAccCMUserUser_DriftNotes                                          file_proximity
-                                   TestAccCMUserUser_PasswordSensitive                                   file_proximity
+                                   TestAccCMDeviceDevice_DriftNotes                                      inferred_from_config
+                                   TestAccCMDeviceDevice_ValidationInvalidHostname                       inferred_from_config
+                                   TestAccCMDeviceDevice_PartitionCommitTimeout                          inferred_from_config
+                                   TestAccCMDeviceDevice_Drift                                           inferred_from_config
+                                   TestAccCMDeviceDevice_RolesMultiple                                   inferred_from_config
+                                   TestAccCMDeviceDevice_RolesUpdate                                     inferred_from_config
+                                   TestAccCMDeviceDevice_RolesRemove                                     inferred_from_config
+                                   TestAccCMDeviceDevice_RolesImport                                     inferred_from_config
+                                   TestAccCMDeviceDevice_RolesDrift                                      inferred_from_config
+                                   TestAccCMDeviceDevice_RolesByName                                     inferred_from_config
+                                   TestAccCMDeviceDevice_RolesImportByName                               inferred_from_config
+                                   TestAccCMDeviceDevice_RolesDriftByName                                inferred_from_config
+                                   TestAccCMDeviceDevice_InvalidRoleName                                 inferred_from_config
+                                   TestAccCMDeviceDevice_InvalidRoleUUID                                 inferred_from_config
+  cmuser_user            resource  TestAccCMUserUser_Basic                                               inferred_from_config
+                                   TestAccCMUserUser_Complete                                            inferred_from_config
+                                   TestAccCMUserUser_Update                                              inferred_from_config
+                                   TestAccCMUserUser_Idempotent                                          inferred_from_config
+                                   TestAccCMUserUser_Import                                              inferred_from_config
+                                   TestAccCMUserUser_DriftShell                                          inferred_from_config
+                                   TestAccCMUserUser_DriftNotes                                          inferred_from_config
+                                   TestAccCMUserUser_PasswordSensitive                                   inferred_from_config
   example                resource  -                                                                     -
-  cmdevice_categories    data      TestAccCMDeviceCategoriesDataSource_Basic                             file_proximity
-                                   TestAccCMDeviceCategoriesDataSource_FilterByName                      file_proximity
-                                   TestAccCMDeviceCategoriesDataSource_NestedAttributes                  file_proximity
-                                   TestAccCMDeviceCategoriesDataSource_DiskSetup                         file_proximity
-  cmdevice_nodes         data      TestAccCMDeviceNodesDataSource_Basic                                  file_proximity
-                                   TestAccCMDeviceNodesDataSource_FilterByType                           file_proximity
-                                   TestAccCMDeviceNodesDataSource_FilterByHostname                       file_proximity
-                                   TestAccCMDeviceNodesDataSource_FilterMultiple                         file_proximity
-  cmdevice_roles         data      TestAccCMDeviceRolesDataSource_All                                    file_proximity
-                                   TestAccCMDeviceRolesDataSource_FilterByChildType                      file_proximity
-                                   TestAccCMDeviceRolesDataSource_FilterByNamePattern                    file_proximity
-                                   TestAccCMDeviceRolesDataSource_CombinedFilters                        file_proximity
-                                   TestAccCMDeviceRolesDataSource_EmptyResults                           file_proximity
-  cmkube_clusters        data      TestAccCMKubeClustersDataSource_Basic                                 file_proximity
-                                   TestAccCMKubeClustersDataSource_FilterByName                          file_proximity
-                                   TestAccCMKubeClustersDataSource_FilterByVersion                       file_proximity
-                                   TestAccCMKubeClustersDataSource_FilterByMasterNode                    file_proximity
-                                   TestAccCMKubeClustersDataSource_MultipleFilters                       file_proximity
-                                   TestAccCMKubeClustersDataSource_EmptyResults                          file_proximity
-                                   TestAccCMKubeClustersDataSource_NullFields                            file_proximity
-  cmnet_networks         data      TestAccCMNetNetworksDataSource_Basic                                  file_proximity
-                                   TestAccCMNetNetworksDataSource_NameFilter                             file_proximity
-                                   TestAccCMNetNetworksDataSource_DHCPFilter                             file_proximity
-                                   TestAccCMNetNetworksDataSource_NoMatch                                file_proximity
-  cmpart_entity_info     data      TestAccCMPartEntityInfoDataSource_Basic                               file_proximity
-                                   TestAccCMPartEntityInfoDataSource_FilterByType                        file_proximity
-                                   TestAccCMPartEntityInfoDataSource_EmptyResult                         file_proximity
-                                   TestAccCMPartEntityInfoDataSource_InvalidCredentials                  file_proximity
-                                   TestAccCMPartEntityInfoDataSource_FilterByNamePattern                 file_proximity
-                                   TestAccCMPartEntityInfoDataSource_FilterByNamePatternMiddle           file_proximity
-                                   TestAccCMPartEntityInfoDataSource_FilterByExactName                   file_proximity
-                                   TestAccCMPartEntityInfoDataSource_FilterByNamePatternCaseInsensitive  file_proximity
-                                   TestAccCMPartEntityInfoDataSource_CombinedFilters                     file_proximity
-                                   TestAccCMPartEntityInfoDataSource_NoFilters                           file_proximity
-                                   TestAccCMPartEntityInfoDataSource_UUIDLookup                          file_proximity
-  cmpart_partitions      data      TestAccCMPartPartitionsDataSource_Basic                               file_proximity
-                                   TestAccCMPartPartitionsDataSource_FilterByNamePattern                 file_proximity
-                                   TestAccCMPartPartitionsDataSource_NoMatches                           file_proximity
-                                   TestAccCMPartPartitionsDataSource_ComputedFields                      file_proximity
-                                   TestAccCMPartPartitionsDataSource_AttributeTypes                      file_proximity
-                                   TestAccCMPartPartitionsDataSource_ListAttributes                      file_proximity
-                                   TestAccCMPartPartitionsDataSource_FilterCaseInsensitive               file_proximity
-                                   TestAccCMPartPartitionsDataSource_FilterEmptyString                   file_proximity
-                                   TestAccCMPartPartitionsDataSource_FilterSubsetProperty                file_proximity
-  cmpart_softwareimages  data      TestAccCMPartSoftwareImagesDataSource_Basic                           file_proximity
-                                   TestAccCMPartSoftwareImagesDataSource_EmptyResponse                   file_proximity
-                                   TestAccCMPartSoftwareImagesDataSource_NestedModules                   file_proximity
-                                   TestAccCMPartSoftwareImagesDataSource_AllFields                       file_proximity
-                                   TestAccCMPartSoftwareImagesDataSource_InvalidCredentials              file_proximity
-                                   TestAccCMPartSoftwareImagesDataSource_FilterByCategory                file_proximity
-                                   TestAccCMPartSoftwareImagesDataSource_FilterByName                    file_proximity
-  cmuser_users           data      TestAccCMUserUsersDataSource_Basic                                    file_proximity
-                                   TestAccCMUserUsersDataSource_FilterUsername                           file_proximity
-                                   TestAccCMUserUsersDataSource_FilterGroupID                            file_proximity
-                                   TestAccCMUserUsersDataSource_FilterUserID                             file_proximity
-                                   TestAccCMUserUsersDataSource_NestedAttributes                         file_proximity
-                                   TestAccCMUserUsersDataSource_AccountActive                            file_proximity
+  cmdevice_categories    data      TestAccCMDeviceCategoriesDataSource_Basic                             inferred_from_config
+                                   TestAccCMDeviceCategoriesDataSource_NestedAttributes                  inferred_from_config
+                                   TestAccCMDeviceCategoriesDataSource_DiskSetup                         inferred_from_config
+  cmdevice_nodes         data      TestAccCMDeviceNodesDataSource_Basic                                  inferred_from_config
+                                   TestAccCMDeviceNodesDataSource_FilterByType                           inferred_from_config
+                                   TestAccCMDeviceNodesDataSource_FilterByHostname                       inferred_from_config
+                                   TestAccCMDeviceNodesDataSource_FilterMultiple                         inferred_from_config
+  cmdevice_roles         data      TestAccCMDeviceRolesDataSource_All                                    inferred_from_config
+                                   TestAccCMDeviceRolesDataSource_FilterByChildType                      inferred_from_config
+                                   TestAccCMDeviceRolesDataSource_FilterByNamePattern                    inferred_from_config
+                                   TestAccCMDeviceRolesDataSource_CombinedFilters                        inferred_from_config
+                                   TestAccCMDeviceRolesDataSource_EmptyResults                           inferred_from_config
+  cmkube_clusters        data      TestAccCMKubeClustersDataSource_Basic                                 inferred_from_config
+                                   TestAccCMKubeClustersDataSource_FilterByName                          inferred_from_config
+                                   TestAccCMKubeClustersDataSource_FilterByVersion                       inferred_from_config
+                                   TestAccCMKubeClustersDataSource_FilterByMasterNode                    inferred_from_config
+                                   TestAccCMKubeClustersDataSource_MultipleFilters                       inferred_from_config
+                                   TestAccCMKubeClustersDataSource_EmptyResults                          inferred_from_config
+                                   TestAccCMKubeClustersDataSource_NullFields                            inferred_from_config
+  cmnet_networks         data      TestAccCMNetNetworksDataSource_Basic                                  inferred_from_config
+                                   TestAccCMNetNetworksDataSource_NameFilter                             inferred_from_config
+                                   TestAccCMNetNetworksDataSource_DHCPFilter                             inferred_from_config
+                                   TestAccCMNetNetworksDataSource_NoMatch                                inferred_from_config
+  cmpart_entity_info     data      TestAccCMPartEntityInfoDataSource_Basic                               inferred_from_config
+                                   TestAccCMPartEntityInfoDataSource_FilterByType                        inferred_from_config
+                                   TestAccCMPartEntityInfoDataSource_EmptyResult                         inferred_from_config
+                                   TestAccCMPartEntityInfoDataSource_InvalidCredentials                  inferred_from_config
+                                   TestAccCMPartEntityInfoDataSource_FilterByNamePattern                 inferred_from_config
+                                   TestAccCMPartEntityInfoDataSource_FilterByNamePatternMiddle           inferred_from_config
+                                   TestAccCMPartEntityInfoDataSource_FilterByExactName                   inferred_from_config
+                                   TestAccCMPartEntityInfoDataSource_FilterByNamePatternCaseInsensitive  inferred_from_config
+                                   TestAccCMPartEntityInfoDataSource_CombinedFilters                     inferred_from_config
+                                   TestAccCMPartEntityInfoDataSource_NoFilters                           inferred_from_config
+                                   TestAccCMPartEntityInfoDataSource_UUIDLookup                          inferred_from_config
+  cmpart_partitions      data      TestAccCMPartPartitionsDataSource_Basic                               inferred_from_config
+                                   TestAccCMPartPartitionsDataSource_FilterByNamePattern                 inferred_from_config
+                                   TestAccCMPartPartitionsDataSource_NoMatches                           inferred_from_config
+                                   TestAccCMPartPartitionsDataSource_ComputedFields                      inferred_from_config
+                                   TestAccCMPartPartitionsDataSource_AttributeTypes                      inferred_from_config
+                                   TestAccCMPartPartitionsDataSource_ListAttributes                      inferred_from_config
+                                   TestAccCMPartPartitionsDataSource_FilterCaseInsensitive               inferred_from_config
+                                   TestAccCMPartPartitionsDataSource_FilterEmptyString                   inferred_from_config
+                                   TestAccCMPartPartitionsDataSource_FilterSubsetProperty                inferred_from_config
+  cmpart_softwareimages  data      TestAccProviderConfig_InsecureSkipVerify_Default                      inferred_from_config
+                                   TestAccProviderConfig_InsecureSkipVerify_ExplicitTrue                 inferred_from_config
+                                   TestAccProviderConfig_InsecureSkipVerify_ExplicitFalse                inferred_from_config
+                                   TestAccProviderConfig_Timeout_Default                                 inferred_from_config
+                                   TestAccProviderConfig_Timeout_Custom60Seconds                         inferred_from_config
+                                   TestAccProviderConfig_Timeout_Custom120Seconds                        inferred_from_config
+                                   TestAccProviderConfig_Timeout_Short5Seconds                           inferred_from_config
+                                   TestAccProviderConfig_Timeout_Int64ToIntConversion                    inferred_from_config
+                                   TestAccProviderConfig_CombinedOptionalFields                          inferred_from_config
+                                   TestAccProviderConfig_CombinedDefaults                                inferred_from_config
+                                   TestAccProviderConfig_Timeout_ZeroValue                               inferred_from_config
+                                   TestAccProviderConfig_Timeout_NegativeValue                           inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_Basic                           inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_EmptyResponse                   inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_NestedModules                   inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_AllFields                       inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_InvalidCredentials              inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_FilterByCategory                inferred_from_config
+                                   TestAccCMPartSoftwareImagesDataSource_FilterByName                    inferred_from_config
+                                   TestAccCMDeviceCategoriesDataSource_FilterByName                      inferred_from_config
+  cmuser_users           data      TestAccCMUserUsersDataSource_Basic                                    inferred_from_config
+                                   TestAccCMUserUsersDataSource_FilterUsername                           inferred_from_config
+                                   TestAccCMUserUsersDataSource_FilterGroupID                            inferred_from_config
+                                   TestAccCMUserUsersDataSource_FilterUserID                             inferred_from_config
+                                   TestAccCMUserUsersDataSource_NestedAttributes                         inferred_from_config
+                                   TestAccCMUserUsersDataSource_AccountActive                            inferred_from_config
   example                data      -                                                                     -
   cmdevice_power         action    -                                                                     -
 

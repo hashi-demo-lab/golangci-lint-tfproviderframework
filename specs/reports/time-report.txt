@@ -33,60 +33,60 @@ Analyzing provider at: /workspace/validation/terraform-provider-time (6 director
   ─────────────                         ────                                   ──────────────────
   TestDurationParse_valid               function_duration_parse_test.go        -
   TestDurationParse_invalid             function_duration_parse_test.go        -
+  TestUnixTimestampParseFunction_Valid  function_unix_timestamp_parse_test.go  -
+  TestUnixTimestampParseFunction_Null   function_unix_timestamp_parse_test.go  -
   TestRFC3339Parse_UTC                  function_rfc3339_parse_test.go         -
   TestRFC3339Parse_offset               function_rfc3339_parse_test.go         -
   TestRFC3339Parse_invalid              function_rfc3339_parse_test.go         -
-  TestUnixTimestampParseFunction_Valid  function_unix_timestamp_parse_test.go  -
-  TestUnixTimestampParseFunction_Null   function_unix_timestamp_parse_test.go  -
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │ TEST ASSOCIATIONS                                                               │
 └─────────────────────────────────────────────────────────────────────────────────┘
   RESOURCE  KIND      TEST FUNCTION                                                        MATCH TYPE
   ────────  ────      ─────────────                                                        ──────────
-  offset    resource  TestAccTimeOffset_Triggers                                           function_name
-                      TestAccTimeOffset_OffsetDays                                         function_name
-                      TestAccTimeOffset_OffsetHours                                        function_name
-                      TestAccTimeOffset_OffsetMinutes                                      function_name
-                      TestAccTimeOffset_OffsetMonths                                       function_name
-                      TestAccTimeOffset_OffsetSeconds                                      function_name
-                      TestAccTimeOffset_OffsetYears                                        function_name
-                      TestAccTimeOffset_OffsetYearsAndMonths                               function_name
-                      TestAccTimeOffset_Upgrade                                            function_name
-                      TestAccTimeOffset_Validators                                         function_name
-  rotating  resource  TestAccTimeRotating_Triggers                                         function_name
-                      TestAccTimeRotating_ComputedRFC3339RotationDays_basic                function_name
-                      TestAccTimeRotating_ConfiguredRFC3339RotationDays_basic              function_name
-                      TestAccTimeRotating_ConfiguredRFC3339RotationDays_expired            function_name
-                      TestAccTimeRotating_ComputedRFC3339RotationHours_basic               function_name
-                      TestAccTimeRotating_ConfiguredRFC3339RotationHours_basic             function_name
-                      TestAccTimeRotating_ConfiguredRFC3339RotationHours_expired           function_name
-                      TestAccTimeRotating_ComputedRFC3339RotationMinutes_basic             function_name
-                      TestAccTimeRotating_ConfiguredRFC3339RotationMinutes_basic           function_name
-                      TestAccTimeRotating_ConfiguredRFC3339RotationMinutes_expired         function_name
-                      TestAccTimeRotating_ComputedRFC3339RotationMonths_basic              function_name
-                      TestAccTimeRotating_ConfiguredRFC3339RotationMonths_basic            function_name
-                      TestAccTimeRotating_RotationMonths_expired                           function_name
-                      TestAccTimeRotating_ComputedRFC3339RotationRfc3339_basic             function_name
-                      TestAccTimeRotating_ConfiguredRFC3339RotationRfc3339_basic           function_name
-                      TestAccTimeRotating_ConfiguredRFC339RotationRfc3339_expired          function_name
-                      TestAccTimeRotating_ComputedRFC3339RotationYears_basic               function_name
-                      TestAccTimeRotating_ConfiguredRFC3339RotationYears_basic             function_name
-                      TestAccTimeRotating_ConfiguredRFC3339RotationYears_expired           function_name
-                      TestAccTimeRotating_ComputedRFC3339_RotationDays_ToRotationMonths    function_name
-                      TestAccTimeRotating_ConfiguredRFC3339_RotationDays_ToRotationMonths  function_name
-                      TestAccTimeRotating_UpdateUnknownValue                               function_name
+  offset    resource  TestAccTimeOffset_Triggers                                           inferred_from_config
+                      TestAccTimeOffset_OffsetDays                                         inferred_from_config
+                      TestAccTimeOffset_OffsetHours                                        inferred_from_config
+                      TestAccTimeOffset_OffsetMinutes                                      inferred_from_config
+                      TestAccTimeOffset_OffsetMonths                                       inferred_from_config
+                      TestAccTimeOffset_OffsetSeconds                                      inferred_from_config
+                      TestAccTimeOffset_OffsetYears                                        inferred_from_config
+                      TestAccTimeOffset_OffsetYearsAndMonths                               inferred_from_config
+                      TestAccTimeOffset_Upgrade                                            inferred_from_config
+                      TestAccTimeOffset_Validators                                         inferred_from_config
+  rotating  resource  TestAccTimeRotating_Triggers                                         inferred_from_config
+                      TestAccTimeRotating_ComputedRFC3339RotationDays_basic                inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC3339RotationDays_basic              inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC3339RotationDays_expired            inferred_from_config
+                      TestAccTimeRotating_ComputedRFC3339RotationHours_basic               inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC3339RotationHours_basic             inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC3339RotationHours_expired           inferred_from_config
+                      TestAccTimeRotating_ComputedRFC3339RotationMinutes_basic             inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC3339RotationMinutes_basic           inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC3339RotationMinutes_expired         inferred_from_config
+                      TestAccTimeRotating_ComputedRFC3339RotationMonths_basic              inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC3339RotationMonths_basic            inferred_from_config
+                      TestAccTimeRotating_RotationMonths_expired                           inferred_from_config
+                      TestAccTimeRotating_ComputedRFC3339RotationRfc3339_basic             inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC3339RotationRfc3339_basic           inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC339RotationRfc3339_expired          inferred_from_config
+                      TestAccTimeRotating_ComputedRFC3339RotationYears_basic               inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC3339RotationYears_basic             inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC3339RotationYears_expired           inferred_from_config
+                      TestAccTimeRotating_ComputedRFC3339_RotationDays_ToRotationMonths    inferred_from_config
+                      TestAccTimeRotating_ConfiguredRFC3339_RotationDays_ToRotationMonths  inferred_from_config
+                      TestAccTimeRotating_UpdateUnknownValue                               inferred_from_config
                       TestAccTimeRotating_LifecycleReplaceTriggeredBy                      function_name
                       TestAccTimeRotation_Upgrade                                          inferred_from_config
-                      TestAccTimeRotating_Validators                                       function_name
-  sleep     resource  TestAccTimeSleep_CreateDuration                                      function_name
-                      TestAccTimeSleep_DestroyDuration                                     function_name
-                      TestAccTimeSleep_Triggers                                            function_name
-                      TestAccTimeSleep_Upgrade                                             function_name
-                      TestAccTimeSleep_Validators                                          function_name
-  static    resource  TestAccTimeStatic_basic                                              function_name
-                      TestAccTimeStatic_Triggers                                           function_name
-                      TestAccTimeStatic_Rfc3339                                            function_name
-                      TestAccTimeStatic_Upgrade                                            function_name
-                      TestAccTimeStatic_Validators                                         function_name
+                      TestAccTimeRotating_Validators                                       inferred_from_config
+  sleep     resource  TestAccTimeSleep_CreateDuration                                      inferred_from_config
+                      TestAccTimeSleep_DestroyDuration                                     inferred_from_config
+                      TestAccTimeSleep_Triggers                                            inferred_from_config
+                      TestAccTimeSleep_Upgrade                                             inferred_from_config
+                      TestAccTimeSleep_Validators                                          inferred_from_config
+  static    resource  TestAccTimeStatic_basic                                              inferred_from_config
+                      TestAccTimeStatic_Triggers                                           inferred_from_config
+                      TestAccTimeStatic_Rfc3339                                            inferred_from_config
+                      TestAccTimeStatic_Upgrade                                            inferred_from_config
+                      TestAccTimeStatic_Validators                                         inferred_from_config
 

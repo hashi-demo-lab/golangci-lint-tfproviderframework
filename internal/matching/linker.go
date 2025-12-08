@@ -37,6 +37,11 @@ type ResourceMatch struct {
 
 // LinkTestsToResources iterates over all test functions and associates them with resources.
 // It uses multiple strategies in order of confidence to find the best match.
+// Priority order (highest to lowest):
+// 1. Inferred Content - based on actual HCL parsing of Config strings (most reliable)
+// 2. Function name extraction - based on test function naming conventions
+// 3. File proximity - based on test file naming conventions
+// 4. Fuzzy matching - optional, disabled by default
 func (l *Linker) LinkTestsToResources() {
 	// Get all definitions and test functions
 	allDefinitions := l.GetAllDefinitions()
@@ -56,18 +61,131 @@ func (l *Linker) LinkTestsToResources() {
 		var bestMatch *ResourceMatch
 		matchFound := false
 
-		// Strategy 1: Function name extraction (highest confidence)
-		// Function names like TestAccWidgetResource_Basic clearly indicate the target resource
-		if resourceName, found := matchResourceByName(fn.Name, simpleNames); found {
-			bestMatch = &ResourceMatch{
-				ResourceName: resourceName,
-				Confidence:   1.0,
-				MatchType:    registry.MatchTypeFunctionName,
+		// Build a set of inferred resources for quick lookup
+		inferredSet := make(map[string]bool)
+		for _, name := range fn.InferredResources {
+			inferredSet[name] = true
+			// Also add stripped version
+			if idx := strings.Index(name, "_"); idx != -1 {
+				inferredSet[name[idx+1:]] = true
 			}
-			matchFound = true
 		}
 
-		// Strategy 2: File proximity (high confidence)
+		// Strategy 1: Function name extraction validated by InferredContent (HIGHEST confidence)
+		// Combines the reliability of HCL parsing with the intent clarity of function naming
+		// This solves the problem of tests that use multiple resources (e.g., group test uses inventory as dependency)
+		if resourceName, found := matchResourceByName(fn.Name, simpleNames); found {
+			// If we also have inferred resources, validate that this resource is in the config
+			if len(fn.InferredResources) > 0 {
+				// Check if function-derived resource is in inferred list
+				if inferredSet[resourceName] {
+					// Function name matches an inferred resource - highest confidence
+					bestMatch = &ResourceMatch{
+						ResourceName: resourceName,
+						Confidence:   1.0,
+						MatchType:    registry.MatchTypeInferred, // Use Inferred type since it's validated
+					}
+					matchFound = true
+				}
+			}
+			// If no inferred resources or not in inferred set, still use function name match
+			if !matchFound {
+				bestMatch = &ResourceMatch{
+					ResourceName: resourceName,
+					Confidence:   0.95,
+					MatchType:    registry.MatchTypeFunctionName,
+				}
+				matchFound = true
+			}
+		}
+
+		// Strategy 2: Pure Inferred Content Matching (fallback when function name doesn't match)
+		// Based on actual HCL parsing of Config strings - extracts resource types directly
+		// Priority depends on function name hints:
+		// - If function name contains "Action", prioritize actions
+		// - If function name contains "DataSource", prioritize data sources
+		// - Otherwise: resources > actions > data sources
+		if !matchFound && len(fn.InferredResources) > 0 {
+			// Determine priority order based on function name hints
+			isActionTest := strings.Contains(fn.Name, "Action")
+			isDataSourceTest := strings.Contains(fn.Name, "DataSource") || strings.Contains(fn.Name, "Data_Source")
+
+			// Helper to match against a specific kind
+			matchKind := func(kindPrefix string) bool {
+				for _, inferredName := range fn.InferredResources {
+					key := kindPrefix + inferredName
+					if _, exists := allDefinitions[key]; exists {
+						bestMatch = &ResourceMatch{
+							ResourceName: inferredName,
+							Confidence:   0.9,
+							MatchType:    registry.MatchTypeInferred,
+						}
+						return true
+					}
+					// Try stripping provider prefix
+					if idx := strings.Index(inferredName, "_"); idx != -1 {
+						shortName := inferredName[idx+1:]
+						key = kindPrefix + shortName
+						if _, exists := allDefinitions[key]; exists {
+							bestMatch = &ResourceMatch{
+								ResourceName: shortName,
+								Confidence:   0.9,
+								MatchType:    registry.MatchTypeInferred,
+							}
+							return true
+						}
+					}
+				}
+				return false
+			}
+
+			// Try matching based on function name hints first
+			if isActionTest {
+				matchFound = matchKind("action:")
+			} else if isDataSourceTest {
+				matchFound = matchKind("data source:")
+			}
+
+			// Standard priority order: resources > actions > data sources
+			if !matchFound {
+				matchFound = matchKind("resource:")
+			}
+			if !matchFound {
+				matchFound = matchKind("action:")
+			}
+			if !matchFound {
+				matchFound = matchKind("data source:")
+			}
+
+			// Fallback: simple name matching (any kind)
+			if !matchFound {
+				for _, inferredName := range fn.InferredResources {
+					if simpleNames[inferredName] {
+						bestMatch = &ResourceMatch{
+							ResourceName: inferredName,
+							Confidence:   0.9,
+							MatchType:    registry.MatchTypeInferred,
+						}
+						matchFound = true
+						break
+					}
+					if idx := strings.Index(inferredName, "_"); idx != -1 {
+						shortName := inferredName[idx+1:]
+						if simpleNames[shortName] {
+							bestMatch = &ResourceMatch{
+								ResourceName: shortName,
+								Confidence:   0.9,
+								MatchType:    registry.MatchTypeInferred,
+							}
+							matchFound = true
+							break
+						}
+					}
+				}
+			}
+		}
+
+		// Strategy 3: File proximity (medium confidence)
 		// File names like widget_resource_test.go indicate the target resource
 		if !matchFound {
 			if resourceName := l.MatchByFileProximity(fn.FilePath, simpleNames); resourceName != "" {
@@ -77,48 +195,6 @@ func (l *Linker) LinkTestsToResources() {
 					MatchType:    registry.MatchTypeFileProximity,
 				}
 				matchFound = true
-			}
-		}
-
-		// Strategy 3: Inferred Content Matching (medium confidence)
-		// Fallback to parsing Config strings for resource references
-		// This is lower priority because tests often include dependency resources
-		if !matchFound && len(fn.InferredResources) > 0 {
-			// Link to the first inferred resource found in registry
-			for _, inferredName := range fn.InferredResources {
-				if _, exists := allDefinitions[inferredName]; exists {
-					bestMatch = &ResourceMatch{
-						ResourceName: inferredName,
-						Confidence:   0.8,
-						MatchType:    registry.MatchTypeInferred,
-					}
-					matchFound = true
-					break
-				}
-				// Also try looking it up as a simple name
-				if simpleNames[inferredName] {
-					bestMatch = &ResourceMatch{
-						ResourceName: inferredName,
-						Confidence:   0.8,
-						MatchType:    registry.MatchTypeInferred,
-					}
-					matchFound = true
-					break
-				}
-				// Try stripping provider prefix (e.g., "aap_inventory" -> "inventory")
-				// Provider prefixes are typically the first part before underscore
-				if idx := strings.Index(inferredName, "_"); idx != -1 {
-					shortName := inferredName[idx+1:]
-					if simpleNames[shortName] {
-						bestMatch = &ResourceMatch{
-							ResourceName: shortName,
-							Confidence:   0.8,
-							MatchType:    registry.MatchTypeInferred,
-						}
-						matchFound = true
-						break
-					}
-				}
 			}
 		}
 
@@ -484,4 +560,68 @@ func matchResourceByNameWithKeywords(funcName string, resourceNames map[string]b
 // MatchResourceByName is the public API for matching test function names to resources.
 func MatchResourceByName(funcName string, resourceNames map[string]bool) (string, bool) {
 	return matchResourceByName(funcName, resourceNames)
+}
+
+// ClassifyTest determines the category of a test function based on its characteristics.
+// This helps separate provider tests, function tests, and resource tests.
+func ClassifyTest(fn *registry.TestFunctionInfo) registry.TestCategory {
+	// Check if test has resources - if so, it's a resource test
+	if len(fn.InferredResources) > 0 {
+		return registry.TestCategoryResource
+	}
+
+	// Check function name patterns for provider tests
+	name := fn.Name
+	if strings.Contains(name, "ProviderConfig") ||
+		strings.Contains(name, "ProviderMeta") ||
+		strings.Contains(name, "ProviderBasePath") ||
+		strings.Contains(name, "ProviderCredentials") ||
+		strings.HasPrefix(name, "TestAccProvider") {
+		return registry.TestCategoryProvider
+	}
+
+	// Check function name patterns for provider functions (Terraform 1.6+)
+	if strings.Contains(name, "ProviderFunction") ||
+		strings.Contains(name, "Parse_") ||
+		strings.Contains(name, "Function_") ||
+		strings.HasSuffix(name, "ParseFunction") {
+		return registry.TestCategoryFunction
+	}
+
+	// Check file path patterns
+	filePath := fn.FilePath
+	if strings.Contains(filePath, "/functions/") ||
+		strings.Contains(filePath, "function_") ||
+		strings.Contains(filePath, "/testing/") {
+		return registry.TestCategoryFunction
+	}
+
+	if strings.Contains(filePath, "provider_test.go") ||
+		strings.Contains(filePath, "provider_config") {
+		return registry.TestCategoryProvider
+	}
+
+	// Default to integration if we can't classify
+	// This includes tests that don't configure any resources
+	return registry.TestCategoryIntegration
+}
+
+// ClassifyAllTests classifies all test functions in the registry.
+func (l *Linker) ClassifyAllTests() {
+	allTests := l.GetAllTestFunctions()
+	for _, fn := range allTests {
+		fn.Category = ClassifyTest(fn)
+	}
+}
+
+// GetUnmatchedResourceTests returns test functions that are resource tests but couldn't be matched.
+// This filters out provider tests, function tests, etc. from the orphan count.
+func (l *Linker) GetUnmatchedResourceTests() []*registry.TestFunctionInfo {
+	var unmatched []*registry.TestFunctionInfo
+	for _, fn := range l.GetAllTestFunctions() {
+		if fn.MatchType == registry.MatchTypeNone && fn.Category == registry.TestCategoryResource {
+			unmatched = append(unmatched, fn)
+		}
+	}
+	return unmatched
 }

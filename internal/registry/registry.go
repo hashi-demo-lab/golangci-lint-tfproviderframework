@@ -209,6 +209,36 @@ const (
 	KindAction
 )
 
+// TestCategory classifies what a test is testing (resource, provider config, functions, etc.)
+type TestCategory int
+
+const (
+	// TestCategoryResource indicates the test is for a specific resource/data source/action.
+	TestCategoryResource TestCategory = iota
+	// TestCategoryProvider indicates the test is for provider configuration (credentials, endpoints).
+	TestCategoryProvider
+	// TestCategoryFunction indicates the test is for provider functions (Terraform 1.6+).
+	TestCategoryFunction
+	// TestCategoryIntegration indicates infrastructure or integration tests.
+	TestCategoryIntegration
+)
+
+// String returns the string representation of a TestCategory.
+func (c TestCategory) String() string {
+	switch c {
+	case TestCategoryResource:
+		return "resource"
+	case TestCategoryProvider:
+		return "provider"
+	case TestCategoryFunction:
+		return "function"
+	case TestCategoryIntegration:
+		return "integration"
+	default:
+		return "unknown"
+	}
+}
+
 // String returns the string representation of a ResourceKind.
 func (k ResourceKind) String() string {
 	switch k {
@@ -277,9 +307,10 @@ type TestFunctionInfo struct {
 	InferredResources []string
 	MatchConfidence   float64
 	MatchType         MatchType
-	HelperUsed        string // Name of helper function used (e.g., "resource.Test", "AccTestHelper")
-	HasCheckDestroy   bool   // HasCheckDestroy tracks presence of CheckDestroy in resource.TestCase
-	HasPreCheck       bool   // HasPreCheck tracks presence of PreCheck function
+	HelperUsed        string       // Name of helper function used (e.g., "resource.Test", "AccTestHelper")
+	HasCheckDestroy   bool         // HasCheckDestroy tracks presence of CheckDestroy in resource.TestCase
+	HasPreCheck       bool         // HasPreCheck tracks presence of PreCheck function
+	Category          TestCategory // Category classifies test type (resource, provider, function, integration)
 }
 
 // TestStepInfo represents a single step within a resource.TestCase.
