@@ -33,6 +33,8 @@ go build ./cmd/validate
 
 ### Example Report Output
 
+Column names reference HashiCorp SDK fields directly for clarity:
+
 ```
 ╔════════════════════════════════════════════════════════════════════════════════╗
 ║                        TERRAFORM PROVIDER TEST COVERAGE REPORT                 ║
@@ -43,21 +45,31 @@ go build ./cmd/validate
 ├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤
 │ Category     │ Total │ Untested │ Issues                                          │
 ├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤
-│ Resources    │     5 │        0 │ 1 missing CheckDestroy                          │
+│ Resources    │     5 │        0 │ 1 without CheckDestroy                          │
 │ Data Sources │     5 │        0 │ -                                               │
-│ Actions      │     3 │        0 │ 2 missing state/plan checks                     │
+│ Actions      │     3 │        0 │ 2 without Check func                            │
 │ Orphan Tests │     0 │        - │ -                                               │
 └──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │ RESOURCES                                                                       │
 └─────────────────────────────────────────────────────────────────────────────────┘
-  NAME          TESTS  DESTROY  STATE  IMPORT  UPDATE  FILE
-  ────          ─────  ───────  ─────  ──────  ──────  ────
-  group         2      ✓        ✓      ✗       ✓       group_resource.go
-  host          2      ✓        ✓      ✗       ✓       host_resource.go
-  inventory     13     ✓        ✓      ✗       ✓       inventory_resource.go
+  NAME          TESTS  Steps>1  ImportState  CheckDestroy  ExpectError  Check  PlanChecks  FILE
+  ────          ─────  ───────  ───────────  ────────────  ───────────  ─────  ──────────  ────
+  group         2      ✓        ✗            ✓             ✓            ✓      ✗           group_resource.go
+  host          2      ✓        ✗            ✓             ✓            ✓      ✗           host_resource.go
+  inventory     13     ✓        ✗            ✓             ✓            ✓      ✗           inventory_resource.go
 ```
+
+**Column Reference**:
+| Column | SDK Field | Description |
+|--------|-----------|-------------|
+| Steps>1 | `len(Steps) > 1` | Multi-step test (update coverage) |
+| ImportState | `TestStep.ImportState` | Import testing step |
+| CheckDestroy | `TestCase.CheckDestroy` | Destroy verification |
+| ExpectError | `TestStep.ExpectError` | Error case validation |
+| Check | `TestStep.Check` | State validation func |
+| PlanChecks | `TestStep.ConfigPlanChecks` | Plan validation checks |
 
 ## Installation
 
@@ -287,6 +299,28 @@ func TestAccResourceConfig_update(t *testing.T) {
 }
 ```
 
+## HashiCorp Testing Patterns
+
+This linter detects coverage for the testing patterns documented in HashiCorp's official Terraform Plugin Testing documentation.
+
+**Official Documentation**:
+- [Testing Patterns Overview](https://developer.hashicorp.com/terraform/plugin/testing/testing-patterns)
+- [Acceptance Tests: TestCase](https://developer.hashicorp.com/terraform/plugin/testing/acceptance-tests/testcase)
+- [Acceptance Tests: TestStep](https://developer.hashicorp.com/terraform/plugin/testing/acceptance-tests/teststep)
+
+**Pattern Detection Coverage**:
+
+| Pattern | SDK Field | Report Column | Status |
+|---------|-----------|---------------|--------|
+| Basic Test | `len(Steps) >= 1` | TESTS | ✅ Detected |
+| Update Test | `len(Steps) > 1` | Steps>1 | ✅ Detected |
+| Import Test | `TestStep.ImportState` | ImportState | ✅ Detected |
+| Error Expectation | `TestStep.ExpectError` | ExpectError | ✅ Detected |
+| Destroy Verification | `TestCase.CheckDestroy` | CheckDestroy | ✅ Detected |
+| State Validation | `TestStep.Check` | Check | ✅ Detected |
+| Plan Validation | `TestStep.ConfigPlanChecks` | PlanChecks | ✅ Detected |
+| Non-Empty Plan | `TestStep.ExpectNonEmptyPlan` | - | ✅ Detected |
+
 ## Configuration
 
 ### Settings Reference
@@ -420,18 +454,18 @@ Validated against the AAP (Ansible Automation Platform) provider:
 
 ### Detailed Resource Coverage
 
-| Resource | Tests | CheckDestroy | State Check | Import | Update |
-|----------|-------|--------------|-------------|--------|--------|
-| group | 2 | ✓ | ✓ | ✗ | ✓ |
-| host | 2 | ✓ | ✓ | ✗ | ✓ |
-| inventory | 13 | ✓ | ✓ | ✗ | ✓ |
-| job | 7 | ✓ | ✓ | ✗ | ✓ |
-| workflow_job | 6 | ✗ | ✓ | ✗ | ✓ |
+| Resource | Tests | Steps>1 | ImportState | CheckDestroy | ExpectError | Check | PlanChecks |
+|----------|-------|---------|-------------|--------------|-------------|-------|------------|
+| group | 2 | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
+| host | 2 | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
+| inventory | 13 | ✓ | ✗ | ✓ | ✓ | ✓ | ✗ |
+| job | 7 | ✓ | ✗ | ✓ | ✗ | ✓ | ✗ |
+| workflow_job | 6 | ✓ | ✗ | ✗ | ✗ | ✓ | ✗ |
 
 ### Action Coverage
 
-| Action | Tests | State Check |
-|--------|-------|-------------|
+| Action | Tests | Check |
+|--------|-------|-------|
 | eda_eventstream_post | 3 | ✓ |
 | job_launch | 3 | ✗ |
 | workflow_job_launch | 3 | ✗ |

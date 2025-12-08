@@ -484,14 +484,16 @@ type ReportSummary struct {
 }
 
 type ResourceReport struct {
-	Name             string       `json:"name"`
-	File             string       `json:"file"`
-	TestCount        int          `json:"test_count"`
-	HasCheckDestroy  bool         `json:"has_check_destroy"`
-	HasStateCheck    bool         `json:"has_state_check"`
-	HasImportTest    bool         `json:"has_import_test"`
-	HasUpdateTest    bool         `json:"has_update_test"`
-	Tests            []TestReport `json:"tests"`
+	Name            string       `json:"name"`
+	File            string       `json:"file"`
+	TestCount       int          `json:"test_count"`
+	HasCheckDestroy bool         `json:"has_check_destroy"`
+	HasStateCheck   bool         `json:"has_state_check"`
+	HasPlanCheck    bool         `json:"has_plan_check"`
+	HasImportTest   bool         `json:"has_import_test"`
+	HasUpdateTest   bool         `json:"has_update_test"`
+	HasExpectError  bool         `json:"has_expect_error"`
+	Tests           []TestReport `json:"tests"`
 }
 
 type TestReport struct {
@@ -532,7 +534,12 @@ func buildResourceReport(registry *tfprovidertest.ResourceRegistry, info *tfprov
 		for _, step := range t.TestSteps {
 			if step.IsRealUpdateStep() {
 				report.HasUpdateTest = true
-				break
+			}
+			if step.ExpectError {
+				report.HasExpectError = true
+			}
+			if step.HasPlanCheck {
+				report.HasPlanCheck = true
 			}
 		}
 	}
@@ -658,9 +665,9 @@ func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dat
 	fmt.Println("├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤")
 	fmt.Println("│ Category     │ Total │ Untested │ Issues                                          │")
 	fmt.Println("├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤")
-	fmt.Printf("│ Resources    │ %5d │ %8d │ %d missing CheckDestroy                          │\n", len(resources), untestedResources, missingCheckDestroy)
+	fmt.Printf("│ Resources    │ %5d │ %8d │ %d without CheckDestroy                          │\n", len(resources), untestedResources, missingCheckDestroy)
 	fmt.Printf("│ Data Sources │ %5d │ %8d │ -                                               │\n", len(dataSources), untestedDataSources)
-	fmt.Printf("│ Actions      │ %5d │ %8d │ %d missing state/plan checks                     │\n", len(actions), untestedActions, missingStateCheck)
+	fmt.Printf("│ Actions      │ %5d │ %8d │ %d without Check func                            │\n", len(actions), untestedActions, missingStateCheck)
 	fmt.Printf("│ Orphan Tests │ %5d │        - │ -                                               │\n", len(orphans))
 	fmt.Println("└──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘")
 
@@ -671,17 +678,19 @@ func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dat
 		fmt.Println("│ RESOURCES                                                                       │")
 		fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  NAME\tTESTS\tDESTROY\tSTATE\tIMPORT\tUPDATE\tFILE")
-		fmt.Fprintln(w, "  ────\t─────\t───────\t─────\t──────\t──────\t────")
+		fmt.Fprintln(w, "  NAME\tTESTS\tSteps>1\tImportState\tCheckDestroy\tExpectError\tCheck\tPlanChecks\tFILE")
+		fmt.Fprintln(w, "  ────\t─────\t───────\t───────────\t────────────\t───────────\t─────\t──────────\t────")
 		for _, info := range resources {
 			report := buildResourceReport(registry, info)
-			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				info.Name,
 				report.TestCount,
-				checkMark(report.HasCheckDestroy),
-				checkMark(report.HasStateCheck),
-				checkMark(report.HasImportTest),
 				checkMark(report.HasUpdateTest),
+				checkMark(report.HasImportTest),
+				checkMark(report.HasCheckDestroy),
+				checkMark(report.HasExpectError),
+				checkMark(report.HasStateCheck),
+				checkMark(report.HasPlanCheck),
 				report.File,
 			)
 		}
@@ -695,8 +704,8 @@ func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dat
 		fmt.Println("│ DATA SOURCES                                                                    │")
 		fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  NAME\tTESTS\tSTATE CHECK\tFILE")
-		fmt.Fprintln(w, "  ────\t─────\t───────────\t────")
+		fmt.Fprintln(w, "  NAME\tTESTS\tCheck\tFILE")
+		fmt.Fprintln(w, "  ────\t─────\t─────\t────")
 		for _, info := range dataSources {
 			report := buildResourceReport(registry, info)
 			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\n",
@@ -716,8 +725,8 @@ func outputReportTable(registry *tfprovidertest.ResourceRegistry, resources, dat
 		fmt.Println("│ ACTIONS                                                                         │")
 		fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  NAME\tTESTS\tSTATE CHECK\tFILE")
-		fmt.Fprintln(w, "  ────\t─────\t───────────\t────")
+		fmt.Fprintln(w, "  NAME\tTESTS\tCheck\tFILE")
+		fmt.Fprintln(w, "  ────\t─────\t─────\t────")
 		for _, info := range actions {
 			report := buildResourceReport(registry, info)
 			fmt.Fprintf(w, "  %s\t%d\t%s\t%s\n",
