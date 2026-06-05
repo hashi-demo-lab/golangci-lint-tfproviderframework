@@ -1,7 +1,7 @@
 ---
 title: "refactor: Linter correctness pass + powerhmc validation onboarding"
 type: refactor
-status: active
+status: completed
 date: 2026-06-05
 depth: deep
 plan_id: 2026-06-05-001
