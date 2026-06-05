@@ -1,4 +1,4 @@
-Analyzing provider at: /workspace/validation/terraform-provider-hcp (38 directories)
+Analyzing provider at: validation/terraform-provider-hcp (38 directories)
 
 
 ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -10,8 +10,8 @@ Analyzing provider at: /workspace/validation/terraform-provider-hcp (38 director
 ├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤
 │ Category     │ Total │ Untested │ Issues                                          │
 ├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤
-│ Resources    │    72 │       27 │ 18 without CheckDestroy                          │
-│ Data Sources │    35 │       28 │ -                                               │
+│ Resources    │    72 │       18 │ 22 without CheckDestroy                          │
+│ Data Sources │    35 │       25 │ -                                               │
 │ Actions      │     0 │        0 │ 0 without Check func                            │
 │ Orphan Tests │     6 │        - │ -                                               │
 └──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘
@@ -22,19 +22,19 @@ Analyzing provider at: /workspace/validation/terraform-provider-hcp (38 director
   NAME                                    TESTS  Update  ImportState  CheckDestroy  ExpectError  Check  ConfigStateChecks  PlanChecks  FILE                                                           TEST FILE
   ────                                    ─────  ──────  ───────────  ────────────  ───────────  ─────  ─────────────────  ──────────  ────                                                           ─────────
   aws_network_peering                     1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_aws_network_peering.go                                resource_aws_network_peering_test.go
-  aws_transit_gateway_attachment          2      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_aws_transit_gateway_attachment.go                     (2 files)
+  aws_transit_gateway_attachment          5      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_aws_transit_gateway_attachment.go                     (5 files)
   azure_peering_connection                0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_azure_peering_connection.go                           -
   boundary_cluster                        1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_boundary_cluster.go                                   resource_boundary_cluster_test.go
   consul_cluster                          1      ✓       ✓            ✓             ✓            ✓      ✗                  ✗           resource_consul_cluster.go                                     resource_consul_cluster_test.go
   consul_cluster_root_token               0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_consul_cluster_root_token.go                          -
   consul_snapshot                         1      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_consul_snapshot.go                                    resource_consul_snapshot_test.go
-  dns_forwarding                          1      ✓       ✓            ✗             ✗            ✓      ✗                  ✗           resource_dns_forwarding.go                                     resource_dns_forwarding_test.go
+  dns_forwarding                          0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_dns_forwarding.go                                     -
   dns_forwarding_rule                     0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_dns_forwarding_rule.go                                -
-  group                                   2      ✓       ✓            ✓             ✗            ✓      ✗                  ✓           resource_group.go                                              (2 files)
+  group                                   1      ✓       ✓            ✓             ✗            ✓      ✗                  ✓           resource_group.go                                              resource_group_test.go
   group_iam_binding                       1      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_group_iam_policy.go                                   resource_group_iam_policy_test.go
   group_iam_policy                        1      ✓       ✓            ✗             ✗            ✓      ✗                  ✗           resource_group_iam_policy.go                                   resource_group_iam_policy_test.go
   group_members                           1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_group_members.go                                      resource_group_members_test.go
-  hvn                                     7      ✓       ✓            ✓             ✓            ✓      ✗                  ✗           resource_hvn.go                                                (6 files)
+  hvn                                     4      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_hvn.go                                                (3 files)
   hvn_peering_connection                  1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_hvn_peering_connection.go                             resource_hvn_peering_connection_test.go
   hvn_route                               1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_hvn_route.go                                          resource_hvn_route_test.go
   iam_workload_identity_provider          0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_workload_identity_provider.go                         -
@@ -46,18 +46,18 @@ Analyzing provider at: /workspace/validation/terraform-provider-hcp (38 director
   integration_subscription                0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           integration_subscription.go                                    -
   log_streaming_destination               3      ✓       ✗            ✓             ✗            ✓      ✗                  ✓           resource_hcp_log_streaming_destination.go                      resource_hcp_log_streaming_destination_test.go
   notifications_webhook                   1      ✓       ✓            ✗             ✓            ✓      ✗                  ✗           resource_notifications_webhook.go                              resource_notifications_webhook_test.go
-  organization_iam_binding                0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_organization_iam_policy.go                            -
+  organization_iam_binding                1      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_organization_iam_policy.go                            resource_organization_iam_policy_test.go
   organization_iam_policy                 0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_organization_iam_policy.go                            -
-  packer_bucket                           2      ✓       ✓            ✗             ✗            ✓      ✗                  ✗           resource_packer_bucket.go                                      (2 files)
+  packer_bucket                           3      ✓       ✓            ✗             ✗            ✓      ✗                  ✗           resource_packer_bucket.go                                      (2 files)
   packer_bucket_app_iam_binding           0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_packer_bucket_iam_policy.go                           -
   packer_bucket_iam_policy                0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_packer_bucket_iam_policy.go                           -
   packer_channel                          4      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_packer_channel.go                                     resource_packer_channel_test.go
   packer_channel_assignment               6      ✓       ✓            ✓             ✓            ✓      ✗                  ✗           resource_packer_channel_assignment.go                          resource_packer_channel_assignment_test.go
   packer_run_task                         1      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_packer_run_task.go                                    resource_packer_run_task_test.go
   private_link                            0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_private_link.go                                       -
-  project                                 6      ✓       ✓            ✓             ✓            ✓      ✗                  ✗           resource_project.go                                            (5 files)
-  project_iam_binding                     0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_project_iam_policy.go                                 -
-  project_iam_policy                      0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_project_iam_policy.go                                 -
+  project                                 3      ✓       ✓            ✓             ✓            ✓      ✗                  ✗           resource_project.go                                            (2 files)
+  project_iam_binding                     1      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_project_iam_policy.go                                 resource_project_iam_policy_test.go
+  project_iam_policy                      1      ✓       ✓            ✗             ✗            ✓      ✗                  ✗           resource_project_iam_policy.go                                 resource_project_iam_policy_test.go
   radar_resource_iam_binding              1      ✓       ✗            ✗             ✗            ✓      ✗                  ✓           resource_radar_resource_iam_policy.go                          resource_radar_resource_iam_policy_test.go
   radar_resource_iam_policy               1      ✓       ✗            ✗             ✗            ✓      ✗                  ✓           resource_radar_resource_iam_policy.go                          resource_radar_resource_iam_policy_test.go
   radar_secret_manager_vault_dedicated    1      ✓       ✗            ✗             ✗            ✓      ✗                  ✓           resource_radar_secret_manager_vault_dedicated.go               resource_radar_secret_manager_vault_dedicated_test.go
@@ -65,33 +65,33 @@ Analyzing provider at: /workspace/validation/terraform-provider-hcp (38 director
   resource_iam_binding                    0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_iam_binding.go                                        -
   resource_iam_policy                     0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_iam_policy.go                                         -
   secret_manager                          0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           secret_manager.go                                              -
-  service_principal                       7      ✓       ✓            ✗             ✗            ✓      ✗                  ✗           resource_service_principal.go                                  (5 files)
+  service_principal                       3      ✓       ✓            ✗             ✗            ✓      ✗                  ✗           resource_service_principal.go                                  resource_service_principal_test.go
   service_principal_key                   1      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_service_principal_key.go                              resource_service_principal_key_test.go
   source_git_hub_cloud                    1      ✓       ✗            ✗             ✗            ✓      ✗                  ✓           resource_radar_source_github_cloud.go                          resource_radar_source_github_cloud_test.go
   source_git_hub_enterprise               1      ✓       ✗            ✗             ✗            ✓      ✗                  ✓           resource_radar_source_github_enterprise.go                     resource_radar_source_github_enterprise_test.go
   vault_cluster                           2      ✗       ✗            ✓             ✗            ✗      ✗                  ✗           resource_vault_cluster.go                                      resource_vault_cluster_test.go
   vault_cluster_admin_token               0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_vault_cluster_admin_token.go                          -
   vault_plugin                            1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_vault_plugin.go                                       resource_vault_plugin_test.go
-  vault_secrets_app                       5      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_vault_secrets_app.go                                  (3 files)
-  vault_secrets_app_iam_binding           0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_vault_secrets_app_iam_policy.go                       -
-  vault_secrets_app_iam_policy            0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_vault_secrets_app_iam_policy.go                       -
+  vault_secrets_app                       4      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_vault_secrets_app.go                                  (2 files)
+  vault_secrets_app_iam_binding           1      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_vault_secrets_app_iam_policy.go                       resource_vault_secrets_app_iam_policy_test.go
+  vault_secrets_app_iam_policy            1      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_vault_secrets_app_iam_policy.go                       resource_vault_secrets_app_iam_policy_test.go
   vault_secrets_dynamic_secret            0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_vault_secrets_dynamic_secret.go                       -
-  vault_secrets_integration               6      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_vault_secrets_integration.go                          (6 files)
-  vault_secrets_integration_aws           0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_vault_secrets_integration_aws_deprecated.go           -
-  vault_secrets_integration_azure         0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_vault_secrets_integration_azure_deprecated.go         -
-  vault_secrets_integration_confluent     0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_vault_secrets_integration_confluent_deprecated.go     -
-  vault_secrets_integration_gcp           0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_vault_secrets_integration_gcp_deprecated.go           -
+  vault_secrets_integration               1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_vault_secrets_integration.go                          resource_vault_secrets_integration_test.go
+  vault_secrets_integration_aws           1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_vault_secrets_integration_aws_deprecated.go           resource_vault_secrets_integration_aws_test.go
+  vault_secrets_integration_azure         1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_vault_secrets_integration_azure_deprecated.go         resource_vault_secrets_integration_azure_test.go
+  vault_secrets_integration_confluent     1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_vault_secrets_integration_confluent_deprecated.go     resource_vault_secrets_integration_confluent_test.go
+  vault_secrets_integration_gcp           1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_vault_secrets_integration_gcp_deprecated.go           resource_vault_secrets_integration_gcp_test.go
   vault_secrets_integration_mongodbatlas  1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_vault_secrets_integration_mongodbatlas_deprecated.go  resource_vault_secrets_integration_mongodbatlas_test.go
-  vault_secrets_integration_twilio        0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_vault_secrets_integration_twilio_deprecated.go        -
+  vault_secrets_integration_twilio        1      ✓       ✓            ✓             ✗            ✓      ✗                  ✗           resource_vault_secrets_integration_twilio_deprecated.go        resource_vault_secrets_integration_twilio_test.go
   vault_secrets_rotating_secret           0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           resource_vault_secrets_rotating_secret.go                      -
   vault_secrets_secret                    2      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_vault_secrets_secret.go                               (2 files)
   vault_secrets_sync                      1      ✓       ✗            ✗             ✗            ✓      ✗                  ✗           resource_vault_secrets_sync.go                                 resource_vault_secrets_sync_test.go
   waypoint_action                         6      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_waypoint_action.go                                    (4 files)
-  waypoint_add_on                         2      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_waypoint_add_on.go                                    data_source_waypoint_add_on_test.go
-  waypoint_add_on_definition              3      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_waypoint_add_on_definition.go                         (3 files)
+  waypoint_add_on                         5      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_waypoint_add_on.go                                    (2 files)
+  waypoint_add_on_definition              2      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_waypoint_add_on_definition.go                         (2 files)
   waypoint_agent_group                    2      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_waypoint_agent_group.go                               (2 files)
-  waypoint_application                    4      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_waypoint_application.go                               (2 files)
-  waypoint_template                       9      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_waypoint_template.go                                  (4 files)
+  waypoint_application                    6      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_waypoint_application.go                               (2 files)
+  waypoint_template                       5      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_waypoint_template.go                                  (2 files)
   waypoint_tfc_config                     1      ✓       ✗            ✓             ✗            ✓      ✗                  ✗           resource_waypoint_tfc_config.go                                resource_waypoint_tfc_config_test.go
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -109,17 +109,17 @@ Analyzing provider at: /workspace/validation/terraform-provider-hcp (38 director
   consul_versions                 0      ✗      ✗                  data_source_consul_versions.go                 -
   dns_forwarding                  0      ✗      ✗                  data_source_dns_forwarding.go                  -
   dns_forwarding_rule             0      ✗      ✗                  data_source_dns_forwarding_rule.go             -
-  group                           0      ✗      ✗                  data_group.go                                  -
+  group                           1      ✓      ✗                  data_group.go                                  data_group_test.go
   hvn                             0      ✗      ✗                  data_source_hvn.go                             -
   hvn_peering_connection          0      ✗      ✗                  data_source_hvn_peering_connection.go          -
   hvn_route                       0      ✗      ✗                  data_source_hvn_route.go                       -
-  iam_policy                      1      ✗      ✗                  data_source_iam_policy.go                      data_source_iam_policy_test.go
+  iam_policy                      2      ✓      ✗                  data_source_iam_policy.go                      data_source_iam_policy_test.go
   organization                    1      ✓      ✗                  data_source_organization.go                    data_source_organization_test.go
   packer_bucket_names             1      ✓      ✗                  data_source_packer_bucket_names.go             data_source_packer_bucket_names_test.go
   packer_run_task                 1      ✓      ✗                  data_source_packer_run_task.go                 data_source_packer_run_task_test.go
   private_link                    0      ✗      ✗                  data_source_private_link.go                    -
-  project                         0      ✗      ✗                  data_source_project.go                         -
-  service_principal               0      ✗      ✗                  data_service_principal.go                      -
+  project                         1      ✓      ✗                  data_source_project.go                         data_source_project_test.go
+  service_principal               1      ✓      ✗                  data_service_principal.go                      data_service_principal_test.go
   user_principal                  1      ✓      ✗                  data_user_principal.go                         data_user_principal_test.go
   vault_cluster                   0      ✗      ✗                  data_source_vault_cluster.go                   -
   vault_plugin                    0      ✗      ✗                  data_source_vault_plugin.go                    -
@@ -154,26 +154,25 @@ Analyzing provider at: /workspace/validation/terraform-provider-hcp (38 director
   ────────                                ────      ─────────────                                                ──────────
   aws_network_peering                     resource  TestAcc_Platform_AwsPeering                                  file_proximity
   aws_transit_gateway_attachment          resource  TestAcc_Platform_DNSForwardingRuleDataSource                 inferred_from_config
+                                                    TestAcc_Platform_DNSForwardingDataSource                     inferred_from_config
                                                     TestAcc_Platform_TGWAttachment                               file_proximity
+                                                    TestAcc_Platform_DNSForwardingRuleResource                   inferred_from_config
+                                                    TestAcc_Platform_DNSForwardingResource                       inferred_from_config
   azure_peering_connection                resource  -                                                            -
   boundary_cluster                        resource  TestAcc_Boundary_Cluster                                     file_proximity
   consul_cluster                          resource  TestAcc_Consul_Cluster                                       file_proximity
   consul_cluster_root_token               resource  -                                                            -
   consul_snapshot                         resource  TestAcc_Consul_Snapshot                                      file_proximity
-  dns_forwarding                          resource  TestAcc_Platform_DNSForwardingResource                       inferred_from_config
+  dns_forwarding                          resource  -                                                            -
   dns_forwarding_rule                     resource  -                                                            -
-  group                                   resource  TestAccGroupDataSource                                       inferred_from_config
-                                                    TestAccGroupResource                                         inferred_from_config
+  group                                   resource  TestAccGroupResource                                         inferred_from_config
   group_iam_binding                       resource  TestAccGroupIamBindingResource                               inferred_from_config
   group_iam_policy                        resource  TestAccGroupIamPolicyResource                                inferred_from_config
   group_members                           resource  TestAccGroupMembersResource                                  inferred_from_config
-  hvn                                     resource  TestAcc_Platform_AwsHvnOnly                                  file_proximity
+  hvn                                     resource  TestAcc_Platform_DataSourcePrivateLink                       inferred_from_config
+                                                    TestAcc_Platform_AwsHvnOnly                                  file_proximity
                                                     TestAcc_Platform_AzureHvnOnly                                file_proximity
-                                                    TestAcc_Platform_DNSForwardingDataSource                     inferred_from_config
-                                                    TestAccMultiProjectResource                                  inferred_from_config
-                                                    TestAcc_Platform_DataSourcePrivateLink                       inferred_from_config
                                                     TestAcc_Platform_ResourcePrivateLink                         inferred_from_config
-                                                    TestAcc_Platform_DNSForwardingRuleResource                   inferred_from_config
   hvn_peering_connection                  resource  TestAcc_Platform_HvnPeeringConnection                        file_proximity
   hvn_route                               resource  TestAcc_Platform_HvnRouteAws                                 file_proximity
   iam_workload_identity_provider          resource  -                                                            -
@@ -186,10 +185,11 @@ Analyzing provider at: /workspace/validation/terraform-provider-hcp (38 director
   log_streaming_destination               resource  TestAccHCPLogStreamingDestinationSplunk                      inferred_from_config
                                                     TestAccHCPLogStreamingDestinationCloudWatch                  inferred_from_config
                                                     TestAccHCPLogStreamingDestinationDatadog                     inferred_from_config
-  notifications_webhook                   resource  TestAccNotificationsWebhookResource                          file_proximity
-  organization_iam_binding                resource  -                                                            -
+  notifications_webhook                   resource  TestAccNotificationsWebhookResource                          function_name
+  organization_iam_binding                resource  TestAccOrganizationIamBindingResource                        inferred_from_config
   organization_iam_policy                 resource  -                                                            -
   packer_bucket                           resource  TestAcc_Packer_BucketIamPolicyResource                       inferred_from_config
+                                                    TestAcc_Packer_BucketIamBindingResource                      inferred_from_config
                                                     TestAcc_Packer_BucketResource                                file_proximity
   packer_bucket_app_iam_binding           resource  -                                                            -
   packer_bucket_iam_policy                resource  -                                                            -
@@ -205,28 +205,21 @@ Analyzing provider at: /workspace/validation/terraform-provider-hcp (38 director
                                                     TestAcc_Packer_ChannelAssignment_EnforceNull                 file_proximity
   packer_run_task                         resource  TestAcc_Packer_RunTask                                       file_proximity
   private_link                            resource  -                                                            -
-  project                                 resource  TestAccIAMPolicyDataSource                                   inferred_from_config
-                                                    TestAccProjectDataSource                                     inferred_from_config
-                                                    TestAccProjectIamPolicyResource                              inferred_from_config
-                                                    TestAccProjectIamBindingResource                             inferred_from_config
-                                                    TestAccProjectResource                                       inferred_from_config
+  project                                 resource  TestAccProjectResource                                       inferred_from_config
                                                     TestAccMultiProject                                          function_name
-  project_iam_binding                     resource  -                                                            -
-  project_iam_policy                      resource  -                                                            -
+                                                    TestAccMultiProjectResource                                  function_name
+  project_iam_binding                     resource  TestAccProjectIamBindingResource                             inferred_from_config
+  project_iam_policy                      resource  TestAccProjectIamPolicyResource                              inferred_from_config
   radar_resource_iam_binding              resource  TestRadarResourceIAMBinding                                  function_name
   radar_resource_iam_policy               resource  TestRadarResourceIAMPolicy                                   function_name
-  radar_secret_manager_vault_dedicated    resource  TestRadarSecretManagerVaultDedicatedResource                 file_proximity
+  radar_secret_manager_vault_dedicated    resource  TestRadarSecretManagerVaultDedicatedResource                 function_name
   radar_source                            resource  -                                                            -
   resource_iam_binding                    resource  -                                                            -
   resource_iam_policy                     resource  -                                                            -
   secret_manager                          resource  -                                                            -
-  service_principal                       resource  TestAccServicePrincipalDataSource                            inferred_from_config
-                                                    TestAccServicePrincipalResource_Project                      file_proximity
-                                                    TestAccServicePrincipalResource_ExplicitProject              file_proximity
-                                                    TestAccServicePrincipalResource_Organization                 file_proximity
-                                                    TestAcc_Packer_BucketIamBindingResource                      inferred_from_config
-                                                    TestAccOrganizationIamBindingResource                        inferred_from_config
-                                                    TestAccVaultSecretsAppIamBindingResource                     inferred_from_config
+  service_principal                       resource  TestAccServicePrincipalResource_Project                      function_name
+                                                    TestAccServicePrincipalResource_ExplicitProject              function_name
+                                                    TestAccServicePrincipalResource_Organization                 function_name
   service_principal_key                   resource  TestAccServicePrincipalKeyResource                           inferred_from_config
   source_git_hub_cloud                    resource  TestRadarSourceGitHubCloud                                   function_name
   source_git_hub_enterprise               resource  TestRadarSourceGitHubEnterprise                              function_name
@@ -237,51 +230,45 @@ Analyzing provider at: /workspace/validation/terraform-provider-hcp (38 director
   vault_secrets_app                       resource  TestAcc_dataSourceVaultSecretsAppMigration                   inferred_from_config
                                                     TestAcc_dataSourceVaultSecretsApp                            inferred_from_config
                                                     TestAcc_VaultSecretsOpenAppSecretsPagination                 inferred_from_config
-                                                    TestAccVaultSecretsAppIamPolicyResource                      inferred_from_config
                                                     TestAccVaultSecretsResourceApp                               inferred_from_config
-  vault_secrets_app_iam_binding           resource  -                                                            -
-  vault_secrets_app_iam_policy            resource  -                                                            -
+  vault_secrets_app_iam_binding           resource  TestAccVaultSecretsAppIamBindingResource                     inferred_from_config
+  vault_secrets_app_iam_policy            resource  TestAccVaultSecretsAppIamPolicyResource                      inferred_from_config
   vault_secrets_dynamic_secret            resource  -                                                            -
-  vault_secrets_integration               resource  TestAccVaultSecretsResourceIntegrationConfluent              inferred_from_config
-                                                    TestAccVaultSecretsResourceIntegrationGCP                    inferred_from_config
-                                                    TestAccVaultSecretsResourceIntegrationTwilio                 inferred_from_config
-                                                    TestAccVaultSecretsResourceIntegrationAWS                    inferred_from_config
-                                                    TestAccVaultSecretsResourceIntegrationAzure                  inferred_from_config
-                                                    TestAccVaultSecretsResourceIntegrationGitLab                 inferred_from_config
-  vault_secrets_integration_aws           resource  -                                                            -
-  vault_secrets_integration_azure         resource  -                                                            -
-  vault_secrets_integration_confluent     resource  -                                                            -
-  vault_secrets_integration_gcp           resource  -                                                            -
+  vault_secrets_integration               resource  TestAccVaultSecretsResourceIntegrationGitLab                 inferred_from_config
+  vault_secrets_integration_aws           resource  TestAccVaultSecretsResourceIntegrationAWS                    function_name
+  vault_secrets_integration_azure         resource  TestAccVaultSecretsResourceIntegrationAzure                  function_name
+  vault_secrets_integration_confluent     resource  TestAccVaultSecretsResourceIntegrationConfluent              function_name
+  vault_secrets_integration_gcp           resource  TestAccVaultSecretsResourceIntegrationGCP                    function_name
   vault_secrets_integration_mongodbatlas  resource  TestAccVaultSecretsResourceIntegrationMongoDBAtlas           file_proximity
-  vault_secrets_integration_twilio        resource  -                                                            -
+  vault_secrets_integration_twilio        resource  TestAccVaultSecretsResourceIntegrationTwilio                 function_name
   vault_secrets_rotating_secret           resource  -                                                            -
-  vault_secrets_secret                    resource  TestAccVaultSecretsResourceSecret                            inferred_from_config
-                                                    TestAcc_dataSourceVaultSecretsSecret                         inferred_from_config
+  vault_secrets_secret                    resource  TestAcc_dataSourceVaultSecretsSecret                         inferred_from_config
+                                                    TestAccVaultSecretsResourceSecret                            inferred_from_config
   vault_secrets_sync                      resource  TestAccVaultSecretsResourceSync                              inferred_from_config
-  waypoint_action                         resource  TestAcc_Waypoint_Action_basic                                inferred_from_config
+  waypoint_action                         resource  TestAcc_Waypoint_Action_DataSource_basic                     inferred_from_config
+                                                    TestAcc_Waypoint_Action_DataSource_Agent                     inferred_from_config
+                                                    TestAcc_Waypoint_Action_basic                                inferred_from_config
                                                     TestAcc_Waypoint_Action_agent                                inferred_from_config
                                                     TestAcc_Waypoint_Application_Action_Assign                   inferred_from_config
                                                     TestAcc_Waypoint_Create_Template_with_actions                inferred_from_config
-                                                    TestAcc_Waypoint_Action_DataSource_basic                     inferred_from_config
-                                                    TestAcc_Waypoint_Action_DataSource_Agent                     inferred_from_config
   waypoint_add_on                         resource  TestAcc_Waypoint_Data_Add_On_basic                           inferred_from_config
                                                     TestAcc_Waypoint_AddOn_DataSource_WithInputVars              inferred_from_config
-  waypoint_add_on_definition              resource  TestAcc_Waypoint_Add_On_Definition_basic                     inferred_from_config
                                                     TestAcc_Waypoint_Add_On_basic                                inferred_from_config
-                                                    TestAcc_Waypoint_Data_Add_On_Definition_basic                inferred_from_config
-  waypoint_agent_group                    resource  TestAcc_Waypoint_Agent_Group_basic                           inferred_from_config
-                                                    TestAcc_Waypoint_Agent_Group_DataSource_basic                inferred_from_config
-  waypoint_application                    resource  TestAcc_Waypoint_AddOnInputVariables_OnDefinition            inferred_from_config
-                                                    TestAcc_Waypoint_Application_DataSource_basic                inferred_from_config
+                                                    TestAcc_Waypoint_AddOnInputVariables                         inferred_from_config
+                                                    TestAcc_Waypoint_AddOnInputVariables_OnDefinition            inferred_from_config
+  waypoint_add_on_definition              resource  TestAcc_Waypoint_Data_Add_On_Definition_basic                inferred_from_config
+                                                    TestAcc_Waypoint_Add_On_Definition_basic                     inferred_from_config
+  waypoint_agent_group                    resource  TestAcc_Waypoint_Agent_Group_DataSource_basic                inferred_from_config
+                                                    TestAcc_Waypoint_Agent_Group_basic                           inferred_from_config
+  waypoint_application                    resource  TestAcc_Waypoint_Application_DataSource_basic                inferred_from_config
                                                     TestAcc_Waypoint_Application_DataSource_WithInputVars        inferred_from_config
                                                     TestAcc_Waypoint_Application_DataSource_WithActions          inferred_from_config
-  waypoint_template                       resource  TestAcc_Waypoint_Data_Template_basic                         inferred_from_config
-                                                    TestAcc_Waypoint_Data_template_with_variable_options         inferred_from_config
-                                                    TestAcc_Waypoint_Data_template_with_actions                  inferred_from_config
-                                                    TestAcc_Waypoint_AddOnInputVariables                         inferred_from_config
                                                     TestAcc_Waypoint_Application_basic                           inferred_from_config
                                                     TestAcc_Waypoint_ApplicationInputVariables                   inferred_from_config
                                                     TestAcc_Waypoint_ApplicationInputVariables_OnTemplate        inferred_from_config
+  waypoint_template                       resource  TestAcc_Waypoint_Data_Template_basic                         inferred_from_config
+                                                    TestAcc_Waypoint_Data_template_with_variable_options         inferred_from_config
+                                                    TestAcc_Waypoint_Data_template_with_actions                  inferred_from_config
                                                     TestAcc_Waypoint_Template_basic                              inferred_from_config
                                                     TestAcc_Waypoint_template_with_variable_options              inferred_from_config
   waypoint_tfc_config                     resource  TestAcc_Waypoint_TfcConfig_basic                             inferred_from_config
@@ -295,18 +282,19 @@ Analyzing provider at: /workspace/validation/terraform-provider-hcp (38 director
   consul_versions                         data      -                                                            -
   dns_forwarding                          data      -                                                            -
   dns_forwarding_rule                     data      -                                                            -
-  group                                   data      -                                                            -
+  group                                   data      TestAccGroupDataSource                                       function_name
   hvn                                     data      -                                                            -
   hvn_peering_connection                  data      -                                                            -
   hvn_route                               data      -                                                            -
-  iam_policy                              data      TestAccIAMPolicyDataSource_Validation                        inferred_from_config
-  organization                            data      TestAccOrganizationDataSource                                inferred_from_config
+  iam_policy                              data      TestAccIAMPolicyDataSource                                   function_name
+                                                    TestAccIAMPolicyDataSource_Validation                        function_name
+  organization                            data      TestAccOrganizationDataSource                                function_name
   packer_bucket_names                     data      TestAcc_Packer_dataSourcePackerBucketNames                   file_proximity
   packer_run_task                         data      TestAcc_Packer_dataSourcePackerRunTask                       file_proximity
   private_link                            data      -                                                            -
-  project                                 data      -                                                            -
-  service_principal                       data      -                                                            -
-  user_principal                          data      TestAccUserPrincipalDataSource                               inferred_from_config
+  project                                 data      TestAccProjectDataSource                                     function_name
+  service_principal                       data      TestAccServicePrincipalDataSource                            function_name
+  user_principal                          data      TestAccUserPrincipalDataSource                               function_name
   vault_cluster                           data      -                                                            -
   vault_plugin                            data      -                                                            -
   vault_radar_resources                   data      -                                                            -
