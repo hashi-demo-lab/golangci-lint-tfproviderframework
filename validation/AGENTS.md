@@ -55,9 +55,17 @@ discovery, matching, or coverage behavior changes.
 
 ## Known issues
 
-- **Nondeterministic reports** for providers with a same-named resource across
-  multiple files (e.g. `tls` `private_key`). The FILE column varies between runs
-  via map iteration order. Do not refresh affected reports until fixed. See the
-  follow-up task and `VALIDATION_REPORT.md` addendum.
+- ~~Nondeterministic reports for same-named multi-file resources~~ **FIXED.**
+  `BuildRegistryFromFiles` now sorts files by name before processing, so the
+  FILE column and per-resource test order are stable across runs (the CLI
+  previously inherited `parser.ParseDir`'s map iteration order). `tls`, `aap`,
+  etc. now regenerate deterministically.
+- **Resource double-counting on central-map providers** (`awscc`, and to a
+  lesser extent `google-beta`): regenerating these reports shows roughly 2x the
+  real resource/data-source counts (e.g. `awscc` 1006 -> 2265 resources). A
+  resource registered both by the central-map/factory strategy and by
+  per-resource discovery lands under two keys. Because of this, **do not refresh
+  `awscc`/`google-beta` reports until the double-count is fixed** — the numbers
+  are not yet trustworthy. Tracked as a separate follow-up.
 - `terraform-provider-random` is absent; its `specs/reports/random-report.txt`
   is an error stub. Add the source or remove the stub.

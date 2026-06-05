@@ -10,6 +10,7 @@ import (
 	"go/token"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -1298,6 +1299,18 @@ func BuildRegistry(pass *analysis.Pass, settings config.Settings) *registry.Reso
 // function removes that divergence.
 func BuildRegistryFromFiles(files []*ast.File, fset *token.FileSet, settings config.Settings) *registry.ResourceRegistry {
 	reg := registry.NewResourceRegistry()
+
+	// Process files in a deterministic (filename-sorted) order. The CLI collects
+	// files from parser.ParseDir, which returns them in a map with nondeterministic
+	// iteration order; that order leaked into the report whenever the same
+	// canonical resource was defined in more than one file (RegisterResource keeps
+	// the last write) and into the order tests were appended per resource. Sorting
+	// here makes both deterministic for every caller. We copy the slice so we do
+	// not mutate the caller's ordering (e.g. the analysis pass's Files).
+	files = append([]*ast.File(nil), files...)
+	sort.SliceStable(files, func(i, j int) bool {
+		return fset.Position(files[i].Pos()).Filename < fset.Position(files[j].Pos()).Filename
+	})
 
 	// Discover local test helpers first.
 	localHelpers := findLocalTestHelpers(files, fset)
