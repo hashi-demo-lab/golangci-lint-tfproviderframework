@@ -2,7 +2,6 @@
 package matching
 
 import (
-	"fmt"
 	"go/ast"
 	"path/filepath"
 	"regexp"
@@ -267,11 +266,6 @@ func IsBaseClassFile(filePath string) bool {
 	return strings.HasPrefix(base, "base_") || strings.HasPrefix(base, "base.")
 }
 
-// isBaseClassFile is an unexported alias for backward compatibility
-func isBaseClassFile(filePath string) bool {
-	return IsBaseClassFile(filePath)
-}
-
 // IsSweeperFile checks if a file is a sweeper file that should be excluded.
 // Sweeper files are test infrastructure files for cleaning up resources after
 // acceptance tests. They follow the naming pattern *_sweeper.go.
@@ -360,15 +354,6 @@ func ShouldExcludeFileExported(filePath string, excludePaths []string) bool {
 	return shouldExcludeFile(filePath, excludePaths)
 }
 
-// FormatResourceLocation formats the resource location for enhanced issue reporting.
-// Returns a string like "Resource: /path/to/file.go:45"
-// Exported for use by external tools that need to format resource locations.
-func FormatResourceLocation(pass interface{}, resource interface{}) string {
-	// This is a placeholder - will be properly implemented after fixing imports
-	// The original signature uses *analysis.Pass and *ResourceInfo
-	return fmt.Sprintf("Resource: unknown")
-}
-
 // extractResourceName extracts the resource name from a type name.
 // For example: "WidgetResource" -> "widget", "HttpDataSource" -> "http", "JobAction" -> "job"
 func extractResourceName(typeName string) string {
@@ -379,148 +364,6 @@ func extractResourceName(typeName string) string {
 
 	// Convert CamelCase to snake_case
 	return toSnakeCase(name)
-}
-
-// hasRequiresReplace checks if a node contains RequiresReplace plan modifier
-func hasRequiresReplace(node ast.Node) bool {
-	found := false
-	ast.Inspect(node, func(n ast.Node) bool {
-		// Look for function calls like stringplanmodifier.RequiresReplace()
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-
-		// Check if the function name contains "RequiresReplace"
-		if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-			if strings.Contains(sel.Sel.Name, "RequiresReplace") {
-				found = true
-				return false
-			}
-		}
-
-		return true
-	})
-	return found
-}
-
-// extractAttributes parses the schema attributes from a Schema() function body
-func extractAttributes(body *ast.BlockStmt) []interface{} {
-	var attributes []interface{}
-	if body == nil {
-		return attributes
-	}
-
-	// Find the schema.Schema composite literal
-	ast.Inspect(body, func(n ast.Node) bool {
-		// Look for CompositeLit that represents schema.Schema{}
-		compLit, ok := n.(*ast.CompositeLit)
-		if !ok {
-			return true
-		}
-
-		// Check if this is schema.Schema type
-		if sel, ok := compLit.Type.(*ast.SelectorExpr); ok {
-			if sel.Sel.Name != "Schema" {
-				return true
-			}
-		}
-
-		// Find the Attributes field in schema.Schema
-		for _, elt := range compLit.Elts {
-			kv, ok := elt.(*ast.KeyValueExpr)
-			if !ok {
-				continue
-			}
-
-			// Check if this is the Attributes field
-			if ident, ok := kv.Key.(*ast.Ident); ok && ident.Name == "Attributes" {
-				// Parse the attributes map
-				if mapLit, ok := kv.Value.(*ast.CompositeLit); ok {
-					attributes = parseAttributesMap(mapLit)
-				}
-			}
-		}
-
-		return false // Don't recurse into nested schemas
-	})
-
-	return attributes
-}
-
-// parseAttributesMap parses the attributes map from a schema
-func parseAttributesMap(mapLit *ast.CompositeLit) []interface{} {
-	var attributes []interface{}
-
-	for _, elt := range mapLit.Elts {
-		kv, ok := elt.(*ast.KeyValueExpr)
-		if !ok {
-			continue
-		}
-
-		// Get attribute name
-		var attrName string
-		if lit, ok := kv.Key.(*ast.BasicLit); ok {
-			attrName = strings.Trim(lit.Value, `"`)
-		}
-
-		if attrName == "" {
-			continue
-		}
-
-		// Parse attribute properties
-		attr := map[string]interface{}{
-			"Name":        attrName,
-			"IsUpdatable": true, // Default to updatable unless RequiresReplace found
-		}
-
-		// Parse the attribute composite literal
-		if attrLit, ok := kv.Value.(*ast.CompositeLit); ok {
-			for _, attrElt := range attrLit.Elts {
-				attrKV, ok := attrElt.(*ast.KeyValueExpr)
-				if !ok {
-					continue
-				}
-
-				fieldName := ""
-				if ident, ok := attrKV.Key.(*ast.Ident); ok {
-					fieldName = ident.Name
-				}
-
-				switch fieldName {
-				case "Required":
-					if ident, ok := attrKV.Value.(*ast.Ident); ok {
-						attr["Required"] = ident.Name == "true"
-					}
-				case "Optional":
-					if ident, ok := attrKV.Value.(*ast.Ident); ok {
-						attr["Optional"] = ident.Name == "true"
-					}
-				case "Computed":
-					if ident, ok := attrKV.Value.(*ast.Ident); ok {
-						attr["Computed"] = ident.Name == "true"
-					}
-				case "PlanModifiers":
-					// Check if RequiresReplace is present
-					attr["IsUpdatable"] = !hasRequiresReplace(attrKV.Value)
-				case "Validators":
-					// Check for validators
-					if compLit, ok := attrKV.Value.(*ast.CompositeLit); ok {
-						attr["HasValidators"] = len(compLit.Elts) > 0
-					}
-				}
-			}
-
-			// Determine attribute type from the composite literal type
-			if sel, ok := attrLit.Type.(*ast.SelectorExpr); ok {
-				attr["Type"] = sel.Sel.Name
-			}
-		}
-
-		attributes = append(attributes, attr)
-	}
-
-	return attributes
 }
 
 // standardRequiresReplaceModifiers maps known plan modifier names that indicate RequiresReplace.
