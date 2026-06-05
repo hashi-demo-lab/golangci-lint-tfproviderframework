@@ -16,7 +16,6 @@ import (
 
 	"github.com/example/tfprovidertest"
 	"github.com/example/tfprovidertest/internal/discovery"
-	"github.com/example/tfprovidertest/internal/matching"
 	"github.com/example/tfprovidertest/internal/registry"
 	"github.com/example/tfprovidertest/pkg/config"
 	"golang.org/x/tools/go/analysis"
@@ -292,57 +291,12 @@ func findProviderCodeDir(providerPath string) string {
 	return ""
 }
 
-// buildRegistryFromFiles creates a registry from parsed AST files
+// buildRegistryFromFiles creates a registry from parsed AST files.
+// It delegates to discovery.BuildRegistryFromFiles — the single
+// registry-construction routine shared with the golangci-lint plugin — so the
+// CLI and plugin always produce identical results.
 func buildRegistryFromFiles(fset *token.FileSet, files []*ast.File, settings config.Settings) *registry.ResourceRegistry {
-	reg := registry.NewResourceRegistry()
-	parserConfig := discovery.DefaultParserConfig()
-
-	for _, file := range files {
-		filePath := fset.Position(file.Pos()).Filename
-
-		// Apply exclusion settings
-		if settings.ExcludeBaseClasses && discovery.IsBaseClassFile(filePath) {
-			continue
-		}
-		if settings.ExcludeSweeperFiles && discovery.IsSweeperFile(filePath) {
-			continue
-		}
-		if settings.ExcludeMigrationFiles && discovery.IsMigrationFile(filePath) {
-			continue
-		}
-
-		if strings.HasSuffix(filePath, "_test.go") {
-			testInfo := discovery.ParseTestFileWithConfig(file, fset, filePath, parserConfig)
-			if testInfo == nil {
-				continue
-			}
-			for i := range testInfo.TestFunctions {
-				reg.RegisterTestFunction(&testInfo.TestFunctions[i])
-			}
-		} else {
-			// Standard resource parsing (from Schema/Metadata methods)
-			resources := discovery.ParseResources(file, fset, filePath)
-			for _, resource := range resources {
-				reg.RegisterResource(resource)
-			}
-
-			// Also check for provider registry maps (e.g., generatedResources, generatedIAMDatasources)
-			// This handles providers like Google that define resources in central map variables
-			registryResources := discovery.ParseProviderRegistryMaps(file, fset, filePath)
-			for _, resource := range registryResources {
-				reg.RegisterResource(resource)
-			}
-		}
-	}
-
-	// Run linking
-	linker := matching.NewLinker(reg, &settings)
-	linker.LinkTestsToResources()
-
-	// Classify all tests to enable filtering of orphans
-	linker.ClassifyAllTests()
-
-	return reg
+	return discovery.BuildRegistryFromFiles(files, fset, settings)
 }
 
 // runReport generates a comprehensive coverage report with table views
@@ -382,23 +336,23 @@ func runReport(fset *token.FileSet, files []*ast.File, settings config.Settings,
 
 // ReportData holds all data for JSON output
 type ReportData struct {
-	Summary     ReportSummary      `json:"summary"`
-	Resources   []ResourceReport   `json:"resources"`
-	DataSources []ResourceReport   `json:"data_sources"`
-	Actions     []ResourceReport   `json:"actions"`
-	Orphans     []OrphanReport     `json:"orphan_tests"`
+	Summary     ReportSummary    `json:"summary"`
+	Resources   []ResourceReport `json:"resources"`
+	DataSources []ResourceReport `json:"data_sources"`
+	Actions     []ResourceReport `json:"actions"`
+	Orphans     []OrphanReport   `json:"orphan_tests"`
 }
 
 type ReportSummary struct {
-	TotalResources          int `json:"total_resources"`
-	UntestedResources       int `json:"untested_resources"`
-	TotalDataSources        int `json:"total_data_sources"`
-	UntestedDataSources     int `json:"untested_data_sources"`
-	TotalActions            int `json:"total_actions"`
-	UntestedActions         int `json:"untested_actions"`
-	OrphanTests             int `json:"orphan_tests"`
-	MissingCheckDestroy     int `json:"missing_check_destroy"`
-	MissingStateChecks      int `json:"missing_state_checks"`
+	TotalResources      int `json:"total_resources"`
+	UntestedResources   int `json:"untested_resources"`
+	TotalDataSources    int `json:"total_data_sources"`
+	UntestedDataSources int `json:"untested_data_sources"`
+	TotalActions        int `json:"total_actions"`
+	UntestedActions     int `json:"untested_actions"`
+	OrphanTests         int `json:"orphan_tests"`
+	MissingCheckDestroy int `json:"missing_check_destroy"`
+	MissingStateChecks  int `json:"missing_state_checks"`
 }
 
 type ResourceReport struct {
@@ -407,7 +361,7 @@ type ResourceReport struct {
 	TestFile             string       `json:"test_file"`
 	TestCount            int          `json:"test_count"`
 	HasCheckDestroy      bool         `json:"has_check_destroy"`
-	HasCheck             bool         `json:"has_check"`              // Legacy Check field
+	HasCheck             bool         `json:"has_check"`               // Legacy Check field
 	HasConfigStateChecks bool         `json:"has_config_state_checks"` // Modern ConfigStateChecks field
 	HasPlanCheck         bool         `json:"has_plan_check"`
 	HasImportTest        bool         `json:"has_import_test"`

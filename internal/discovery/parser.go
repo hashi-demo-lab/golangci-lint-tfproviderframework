@@ -24,6 +24,7 @@ import (
 //   - resource "example_widget" "name" {
 //   - data "example_datasource" "name" {
 //   - action "example_action" "name" {
+//
 // Captures the type (e.g., "example_widget", "google_compute_disk")
 var ResourceTypeRegex = regexp.MustCompile(`(?:resource|data|action)\s+"([^"]+)"\s+"[^"]+"\s+\{`)
 
@@ -1241,65 +1242,73 @@ func matchesExcludePattern(filePath string, patterns []string) ExclusionResult {
 //  1. Scan for Resources (Type-based discovery via AST)
 //  2. Scan ALL Test Files (unconditionally, to support function-first matching)
 //  3. Link tests to resources using the Linker (function name, file proximity, fuzzy)
+//
+// BuildRegistry builds the resource registry for the golangci-lint plugin.
+// It delegates to BuildRegistryFromFiles so the plugin and the standalone CLI
+// share one registry-construction path and always produce identical results.
 func BuildRegistry(pass *analysis.Pass, settings config.Settings) *registry.ResourceRegistry {
+	return BuildRegistryFromFiles(pass.Files, pass.Fset, settings)
+}
+
+// BuildRegistryFromFiles is the single registry-construction routine shared by
+// the golangci-lint plugin (BuildRegistry) and the standalone CLI
+// (buildRegistryFromFiles). It runs the full pipeline so both entry points
+// produce identical results:
+//
+//   - PHASE 1: per-resource discovery strategies AND provider central-map
+//     scanning (ParseProviderRegistryMaps, for Google-style generatedResources
+//     maps — previously run only by the CLI).
+//   - PHASE 2: test-file parsing with local + custom helpers.
+//   - PHASE 3: linking AND test classification (ClassifyAllTests, which feeds
+//     orphan filtering — previously run only by the CLI).
+//
+// Both ParseProviderRegistryMaps and ClassifyAllTests were missing from the
+// plugin path, so the plugin discovered fewer resources and miscounted
+// orphans relative to the CLI on the same provider. Routing both through this
+// function removes that divergence.
+func BuildRegistryFromFiles(files []*ast.File, fset *token.FileSet, settings config.Settings) *registry.ResourceRegistry {
 	reg := registry.NewResourceRegistry()
 
-	// Discover local test helpers first
-	localHelpers := findLocalTestHelpers(pass.Files, pass.Fset)
+	// Discover local test helpers first.
+	localHelpers := findLocalTestHelpers(files, fset)
 
-	// PHASE 1: Scan for Resources (Type-based discovery via AST)
-	for _, file := range pass.Files {
-		filename := pass.Fset.Position(file.Pos()).Filename
+	// PHASE 1: Scan non-test files for resources (per-resource strategies plus
+	// provider central-map variables).
+	for _, file := range files {
+		filename := fset.Position(file.Pos()).Filename
 
 		if strings.HasSuffix(filename, "_test.go") {
 			continue
 		}
-		if settings.ExcludeBaseClasses && IsBaseClassFile(filename) {
+		if isExcludedFile(filename, settings) {
 			continue
-		}
-		if settings.ExcludeSweeperFiles && IsSweeperFile(filename) {
-			continue
-		}
-		if settings.ExcludeMigrationFiles && IsMigrationFile(filename) {
-			continue
-		}
-		if shouldExcludeFile(filename, settings.ExcludePaths) {
-			continue
-		}
-		// Check custom exclude patterns
-		if len(settings.ExcludePatterns) > 0 {
-			if result := matchesExcludePattern(filename, settings.ExcludePatterns); result.Excluded {
-				continue
-			}
 		}
 
-		resources := parseResources(file, pass.Fset, filename)
+		resources := parseResources(file, fset, filename)
 		for _, resource := range resources {
+			reg.RegisterResource(resource)
+		}
+
+		// Provider registry maps (e.g. Google's generatedResources /
+		// generatedIAMDatasources central map variables).
+		registryResources := ParseProviderRegistryMaps(file, fset, filename)
+		for _, resource := range registryResources {
 			reg.RegisterResource(resource)
 		}
 	}
 
-	// PHASE 2: Scan ALL Test Files (unconditionally)
-	for _, file := range pass.Files {
-		filename := pass.Fset.Position(file.Pos()).Filename
+	// PHASE 2: Scan all test files.
+	for _, file := range files {
+		filename := fset.Position(file.Pos()).Filename
 
 		if !strings.HasSuffix(filename, "_test.go") {
 			continue
 		}
-
-		// Skip sweeper test files
-		if settings.ExcludeSweeperFiles && IsSweeperFile(filename) {
+		if isExcludedFile(filename, settings) {
 			continue
 		}
 
-		// Check custom exclude patterns
-		if len(settings.ExcludePatterns) > 0 {
-			if result := matchesExcludePattern(filename, settings.ExcludePatterns); result.Excluded {
-				continue
-			}
-		}
-
-		// Parse test file with custom and local helpers and test name patterns
+		// Parse test file with custom and local helpers and test name patterns.
 		config := ParserConfig{
 			CustomHelpers:         settings.CustomTestHelpers,
 			LocalHelpers:          localHelpers,
@@ -1310,12 +1319,12 @@ func BuildRegistry(pass *analysis.Pass, settings config.Settings) *registry.Reso
 			ResourcePathPattern:   settings.ResourcePathPattern,
 			DataSourcePathPattern: settings.DataSourcePathPattern,
 		}
-		testFileInfo := ParseTestFileWithConfig(file, pass.Fset, filename, config)
+		testFileInfo := ParseTestFileWithConfig(file, fset, filename, config)
 		if testFileInfo == nil {
 			continue
 		}
 
-		// Register each test function in global index
+		// Register each test function in the global index.
 		for i := range testFileInfo.TestFunctions {
 			fn := &testFileInfo.TestFunctions[i]
 			fn.FilePath = filename
@@ -1323,11 +1332,36 @@ func BuildRegistry(pass *analysis.Pass, settings config.Settings) *registry.Reso
 		}
 	}
 
-	// PHASE 3: Link tests to resources using the Linker
-	linker := matching.NewLinker(reg, settings)
+	// PHASE 3: Link tests to resources, then classify tests so provider and
+	// function tests are excluded from orphan counts.
+	linker := matching.NewLinker(reg, &settings)
 	linker.LinkTestsToResources()
+	linker.ClassifyAllTests()
 
 	return reg
+}
+
+// isExcludedFile centralizes the exclusion checks applied during registry
+// construction so the resource and test passes stay consistent.
+func isExcludedFile(filename string, settings config.Settings) bool {
+	if settings.ExcludeBaseClasses && IsBaseClassFile(filename) {
+		return true
+	}
+	if settings.ExcludeSweeperFiles && IsSweeperFile(filename) {
+		return true
+	}
+	if settings.ExcludeMigrationFiles && IsMigrationFile(filename) {
+		return true
+	}
+	if shouldExcludeFile(filename, settings.ExcludePaths) {
+		return true
+	}
+	if len(settings.ExcludePatterns) > 0 {
+		if result := matchesExcludePattern(filename, settings.ExcludePatterns); result.Excluded {
+			return true
+		}
+	}
+	return false
 }
 
 // matchesTestPattern checks if a function name matches the test patterns.
