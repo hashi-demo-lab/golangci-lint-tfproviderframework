@@ -1438,7 +1438,7 @@ func BuildRegistryFromFiles(files []*ast.File, fset *token.FileSet, settings con
 
 	// PHASE 3: Link tests to resources, then classify tests so provider and
 	// function tests are excluded from orphan counts.
-	linker := matching.NewLinker(reg, &settings)
+	linker := matching.NewLinker(reg, settings)
 	linker.LinkTestsToResources()
 	linker.ClassifyAllTests()
 

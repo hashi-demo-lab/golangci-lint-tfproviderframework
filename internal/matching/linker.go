@@ -3,10 +3,10 @@ package matching
 
 import (
 	"path/filepath"
-	"reflect"
 	"strings"
 
 	"github.com/example/tfprovidertest/internal/registry"
+	"github.com/example/tfprovidertest/pkg/config"
 )
 
 // Linker associates test functions with resources using multiple strategies.
@@ -17,11 +17,11 @@ import (
 // 4. Fuzzy matching (lowest confidence, optional)
 type Linker struct {
 	registry *registry.ResourceRegistry
-	settings interface{} // Settings - using interface{} to avoid circular imports during migration
+	settings config.Settings
 }
 
 // NewLinker creates a new Linker instance.
-func NewLinker(registry *registry.ResourceRegistry, settings interface{}) *Linker {
+func NewLinker(registry *registry.ResourceRegistry, settings config.Settings) *Linker {
 	return &Linker{
 		registry: registry,
 		settings: settings,
@@ -270,41 +270,9 @@ func (l *Linker) LinkTestsToResources() {
 	}
 }
 
-// isFuzzyMatchingEnabled checks if fuzzy matching is enabled in settings
+// isFuzzyMatchingEnabled checks if fuzzy matching is enabled in settings.
 func (l *Linker) isFuzzyMatchingEnabled() bool {
-	// Try to cast settings to *config.Settings
-	// We use interface{} to avoid circular imports during migration
-	type settingsWithFuzzy interface {
-		GetEnableFuzzyMatching() bool
-	}
-
-	// First try the interface method if available
-	if s, ok := l.settings.(settingsWithFuzzy); ok {
-		return s.GetEnableFuzzyMatching()
-	}
-
-	// Fallback for direct struct access using reflection
-	if l.settings != nil {
-		// Check if it has EnableFuzzyMatching field
-		switch s := l.settings.(type) {
-		case *struct{ EnableFuzzyMatching bool }:
-			return s.EnableFuzzyMatching
-		default:
-			// Try via reflection if the type has EnableFuzzyMatching field
-			val := reflect.ValueOf(l.settings)
-			if val.Kind() == reflect.Ptr {
-				val = val.Elem()
-			}
-			if val.Kind() == reflect.Struct {
-				field := val.FieldByName("EnableFuzzyMatching")
-				if field.IsValid() && field.Kind() == reflect.Bool {
-					return field.Bool()
-				}
-			}
-		}
-	}
-
-	return false
+	return l.settings.EnableFuzzyMatching
 }
 
 // GetAllDefinitions retrieves all definitions from the registry
