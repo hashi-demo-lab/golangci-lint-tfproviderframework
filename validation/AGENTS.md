@@ -55,17 +55,17 @@ discovery, matching, or coverage behavior changes.
 
 ## Known issues
 
-- ~~Nondeterministic reports for same-named multi-file resources~~ **FIXED.**
-  `BuildRegistryFromFiles` now sorts files by name before processing, so the
-  FILE column and per-resource test order are stable across runs (the CLI
-  previously inherited `parser.ParseDir`'s map iteration order). `tls`, `aap`,
-  etc. now regenerate deterministically.
-- **Resource double-counting on central-map providers** (`awscc`, and to a
-  lesser extent `google-beta`): regenerating these reports shows roughly 2x the
-  real resource/data-source counts (e.g. `awscc` 1006 -> 2265 resources). A
-  resource registered both by the central-map/factory strategy and by
-  per-resource discovery lands under two keys. Because of this, **do not refresh
-  `awscc`/`google-beta` reports until the double-count is fixed** — the numbers
-  are not yet trustworthy. Tracked as a separate follow-up.
+- ~~Nondeterministic reports~~ **FIXED (two causes).** (1) `BuildRegistryFromFiles`
+  sorts files by name before processing, stabilizing the FILE column and
+  per-resource registration order (the CLI previously inherited
+  `parser.ParseDir`'s map iteration order). (2) A test's inferred resources /
+  HCL blocks are now sorted, so the linker's first-match-wins no longer flips a
+  multi-resource test (e.g. a google IAM test) between candidate resources.
+  All 10 providers now regenerate byte-identically across runs.
+- ~~Resource double-counting on `awscc`~~ **FIXED.** `registry.Add*Factory`
+  resources were discovered twice (authoritative full name + a stripped
+  ReturnType guess). A pre-pass now marks those factory functions processed so
+  each is discovered once. `awscc` reports its true counts (~1260 resources /
+  ~2224 data sources).
 - `terraform-provider-random` is absent; its `specs/reports/random-report.txt`
   is an error stub. Add the source or remove the stub.

@@ -1,4 +1,4 @@
-Analyzing provider at: /workspace/validation/terraform-provider-helm (4 directories)
+Analyzing provider at: validation/terraform-provider-helm (4 directories)
 
 
 ╔════════════════════════════════════════════════════════════════════════════════╗

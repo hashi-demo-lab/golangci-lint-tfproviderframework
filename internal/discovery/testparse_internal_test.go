@@ -58,6 +58,53 @@ func TestAccViosResource_BasicLifecycle(t *testing.T) {
 	}
 }
 
+// TestParseTestFile_InferredResourcesAreSorted pins finding #13: a test that
+// configures multiple resources must expose its inferred resources in a stable
+// (sorted) order. The dedup maps the parser uses would otherwise yield
+// nondeterministic order, and the linker's first-match-wins would flip such a
+// test between candidate resources run-to-run (e.g. a google IAM test that
+// configures both the base resource and its *_iam_policy).
+func TestParseTestFile_InferredResourcesAreSorted(t *testing.T) {
+	src := `
+package provider
+
+import (
+	"testing"
+
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+)
+
+func TestAccZebraThenApple(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		Steps: []resource.TestStep{
+			{Config: ` + "`resource \"x_zebra\" \"z\" {}\nresource \"x_apple\" \"a\" {}`" + `},
+		},
+	})
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "misc_test.go", src, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	info := ParseTestFileWithConfig(file, fset, "misc_test.go", DefaultParserConfig())
+	if info == nil || len(info.TestFunctions) == 0 {
+		t.Fatalf("no test functions parsed")
+	}
+
+	got := info.TestFunctions[0].InferredResources
+	for i := 1; i < len(got); i++ {
+		if got[i-1] > got[i] {
+			t.Errorf("InferredResources not sorted: %v", got)
+			break
+		}
+	}
+	// Sanity: both resources were captured.
+	if len(got) < 2 {
+		t.Errorf("expected >=2 inferred resources, got %v", got)
+	}
+}
+
 // TestParseTestFile_NilCheckDestroyNotCounted pins finding F2 from U1.
 //
 // powerhmc's system_config tests all set `CheckDestroy: nil`, yet the report

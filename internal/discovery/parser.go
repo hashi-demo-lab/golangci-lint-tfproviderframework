@@ -1906,15 +1906,29 @@ func extractTestStepsWithHelpers(body *ast.BlockStmt, helperPatterns map[string]
 		return true
 	})
 
+	// uniqueInferred and uniqueBlocks are dedup maps; convert to slices in a
+	// stable (sorted) order. The linker matches a test to the first inferred
+	// resource/block that resolves to a known definition, so a nondeterministic
+	// order here would let a test (e.g. a google IAM acceptance test that
+	// configures both the base resource and its *_iam_policy) flip between
+	// candidate resources run-to-run, wobbling the untested/CheckDestroy counts
+	// (finding #13).
 	var inferredResources []string
 	for resourceName := range uniqueInferred {
 		inferredResources = append(inferredResources, resourceName)
 	}
+	sort.Strings(inferredResources)
 
 	var inferredBlocks []registry.InferredHCLBlock
 	for _, block := range uniqueBlocks {
 		inferredBlocks = append(inferredBlocks, block)
 	}
+	sort.Slice(inferredBlocks, func(i, j int) bool {
+		if inferredBlocks[i].BlockType != inferredBlocks[j].BlockType {
+			return inferredBlocks[i].BlockType < inferredBlocks[j].BlockType
+		}
+		return inferredBlocks[i].ResourceType < inferredBlocks[j].ResourceType
+	})
 
 	return steps, hasCheckDestroy, hasPreCheck, inferredResources, inferredBlocks
 }
