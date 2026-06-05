@@ -10,7 +10,7 @@ Analyzing provider at: validation/terraform-provider-powerhmc (5 directories)
 ├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤
 │ Category     │ Total │ Untested │ Issues                                          │
 ├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤
-│ Resources    │     3 │        1 │ 0 without CheckDestroy                          │
+│ Resources    │     3 │        1 │ 1 without CheckDestroy                          │
 │ Data Sources │     3 │        3 │ -                                               │
 │ Actions      │     2 │        2 │ 0 without Check func                            │
 │ Orphan Tests │     0 │        - │ -                                               │
@@ -22,7 +22,7 @@ Analyzing provider at: validation/terraform-provider-powerhmc (5 directories)
   NAME        TESTS  Update  ImportState  CheckDestroy  ExpectError  Check  ConfigStateChecks  PlanChecks  FILE                       TEST FILE
   ────        ─────  ──────  ───────────  ────────────  ───────────  ─────  ─────────────────  ──────────  ────                       ─────────
   lpar        0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           lpar_resource.go           -
-  sys_config  7      ✓       ✓            ✓             ✓            ✓      ✗                  ✗           system_config_resource.go  system_config_resource_test.go
+  sys_config  7      ✓       ✓            ✗             ✓            ✓      ✗                  ✗           system_config_resource.go  system_config_resource_test.go
   vios        10     ✓       ✓            ✓             ✓            ✓      ✗                  ✗           vios_resource.go           vios_resource_test.go
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐

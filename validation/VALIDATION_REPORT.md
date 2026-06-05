@@ -317,3 +317,39 @@ The core functionality is sound and the linter is ready for production use. The 
 3. Utility files (sweepers, migrations, base classes)
 
 These can be addressed through configurable patterns and file exclusions.
+
+---
+
+## Addendum — 2026-06-05: powerhmc onboarding + coverage-accuracy fixes
+
+**Added provider**: `terraform-provider-powerhmc` (IBM, pure plugin-framework).
+
+| Provider | Resources | Untested | Data Sources | Actions | Notes |
+|----------|-----------|----------|--------------|---------|-------|
+| terraform-provider-powerhmc | 3 | 1 (lpar) | 3 (all untested) | 2 (all untested) | 1 resource (sys_config) flagged without CheckDestroy |
+
+Onboarding powerhmc surfaced and fixed two **false-coverage** defects (see
+`docs/plans/2026-06-05-001-powerhmc-validation-findings.md`):
+
+- **F1 — ImportState receiver mismatch (analyzer/plugin path).** `hasImportStateMethod`
+  reconstructed the receiver as `toTitleCase(name)+"Resource"`, which never matched
+  unexported or `Metadata()`-renamed receivers (e.g. `systemConfigResource` →
+  `sys_config`). Now resolved from the actual receiver type.
+- **F2 — `CheckDestroy: nil` counted as a real destroy check.** A literal nil destroy
+  check is inert and is now treated as absent.
+
+**Impact on existing baselines:** the earlier "ZERO FALSE POSITIVES / 0 issues"
+verdict for `terraform-provider-time` was itself masking F2 — all four `time`
+resources set `CheckDestroy: nil`, so the linter now (correctly) reports **4 without
+CheckDestroy** rather than 0. This is an accuracy improvement, not a regression.
+
+**Known issue (follow-up):** report generation is **nondeterministic** for providers
+that define a same-named resource across multiple files (e.g. `terraform-provider-tls`
+`private_key`, present as both an ephemeral and a resource). The FILE column for such
+a resource varies between runs due to Go map iteration order. powerhmc and time are
+single-file-per-resource and regenerate deterministically. Reports for affected
+providers should not be refreshed until this is fixed.
+
+**Regeneration:** use `scripts/regenerate-reports.sh [provider...]` (no args =
+all vendored providers). Reports now use repo-relative `validation/...` header
+paths instead of the older `/workspace/...` paths.
