@@ -83,9 +83,8 @@ func (r *systemConfigResource) Schema(ctx context.Context, req resource.SchemaRe
 // as toTitleCase(name)+"Resource" = "SysConfigResource", which never matches
 // the real type `systemConfigResource`. The result is HasImportState=false
 // even though an ImportState method exists, producing a false "missing
-// ImportState" diagnostic in the analyzer/plugin path.
-//
-// SKIPPED until U6 resolves the receiver from the actual declaring type.
+// ImportState" diagnostic in the analyzer/plugin path. Fixed in U6 by
+// resolving the receiver from the actual declaring type.
 func TestParseResources_ImportStateOnUnexportedReceiver(t *testing.T) {
 	src := `
 package provider
@@ -115,6 +114,44 @@ func (r *systemConfigResource) ImportState(ctx context.Context, req resource.Imp
 	}
 	if !got.HasImportState {
 		t.Errorf("HasImportState = false; want true (ImportState method exists on unexported receiver systemConfigResource)")
+	}
+}
+
+// TestParseResources_ImportStateOnFactoryDiscoveredResource guards against a
+// regression in the F1 fix: RecvTypeToIndex stores a factory *function name*
+// (not a receiver type) for resources discovered via the return-type strategy.
+// Feeding that function name to hasImportStateMethod never matches, so the
+// post-processing must fall back to the reconstructed receiver type name for
+// conventionally-named exported receivers. Here the resource is discovered from
+// the factory's return type (no Schema() in scope), and its exported receiver
+// WidgetResource declares ImportState.
+func TestParseResources_ImportStateOnFactoryDiscoveredResource(t *testing.T) {
+	src := `
+package provider
+
+import (
+	"context"
+
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+)
+
+type WidgetResource struct{}
+
+func NewWidgetResource() resource.Resource { return &WidgetResource{} }
+
+func (r *WidgetResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {}
+`
+	resources := parseResourcesFromSrc(t, "widget_resource.go", src)
+	got := findResourceByName(resources, "widget")
+	if got == nil {
+		var names []string
+		for _, r := range resources {
+			names = append(names, r.Name)
+		}
+		t.Fatalf("resource widget not discovered; got %v", names)
+	}
+	if !got.HasImportState {
+		t.Errorf("HasImportState = false; want true (factory-discovered WidgetResource declares ImportState — fallback path)")
 	}
 }
 

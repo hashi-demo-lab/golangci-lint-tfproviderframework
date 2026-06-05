@@ -369,23 +369,6 @@ func FormatResourceLocation(pass interface{}, resource interface{}) string {
 	return fmt.Sprintf("Resource: unknown")
 }
 
-// getReceiverTypeName extracts the type name from a function receiver.
-func getReceiverTypeName(recv *ast.FieldList) string {
-	if len(recv.List) == 0 {
-		return ""
-	}
-
-	switch t := recv.List[0].Type.(type) {
-	case *ast.StarExpr:
-		if ident, ok := t.X.(*ast.Ident); ok {
-			return ident.Name
-		}
-	case *ast.Ident:
-		return t.Name
-	}
-	return ""
-}
-
 // extractResourceName extracts the resource name from a type name.
 // For example: "WidgetResource" -> "widget", "HttpDataSource" -> "http", "JobAction" -> "job"
 func extractResourceName(typeName string) string {
@@ -416,28 +399,6 @@ func hasRequiresReplace(node ast.Node) bool {
 			}
 		}
 
-		return true
-	})
-	return found
-}
-
-// hasImportStateMethod checks if a file has ImportState method for a resource
-func hasImportStateMethod(file *ast.File, resourceName string) bool {
-	found := false
-	ast.Inspect(file, func(n ast.Node) bool {
-		funcDecl, ok := n.(*ast.FuncDecl)
-		if !ok || funcDecl.Name.Name != "ImportState" {
-			return true
-		}
-
-		if funcDecl.Recv != nil {
-			recvType := getReceiverTypeName(funcDecl.Recv)
-			expectedType := toTitleCase(resourceName) + "Resource"
-			if recvType == expectedType || recvType == "*"+expectedType {
-				found = true
-				return false
-			}
-		}
 		return true
 	})
 	return found

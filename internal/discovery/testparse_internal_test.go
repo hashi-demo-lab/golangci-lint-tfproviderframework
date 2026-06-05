@@ -62,9 +62,8 @@ func TestAccViosResource_BasicLifecycle(t *testing.T) {
 //
 // powerhmc's system_config tests all set `CheckDestroy: nil`, yet the report
 // shows CheckDestroy present. A literal nil destroy check is inert and should
-// not count as coverage (same class as a t.Skip()'d test).
-//
-// SKIPPED until U6 treats `CheckDestroy: nil` as absent.
+// not count as coverage (same class as a t.Skip()'d test). Fixed in U6 via
+// isNilIdent.
 func TestParseTestFile_NilCheckDestroyNotCounted(t *testing.T) {
 	src := `
 package provider

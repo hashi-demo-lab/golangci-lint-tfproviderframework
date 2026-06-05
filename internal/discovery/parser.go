@@ -915,9 +915,16 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*reg
 		strategy.Discover(file, fset, filePath, state)
 	}
 
-	// Build a reverse map from resource index to its actual Go receiver type so
-	// ImportState detection matches the real type (handles unexported receivers
-	// and Metadata-renamed resources — finding F1).
+	// Build a reverse map from resource index to its tracked discovery key so
+	// ImportState detection can prefer the real receiver type (handles
+	// unexported receivers and Metadata-renamed resources — finding F1).
+	//
+	// NOTE: RecvTypeToIndex is overloaded. The Schema/Metadata strategies store
+	// the actual Go receiver type (e.g. "systemConfigResource"), but the
+	// factory/return-type strategies store the *factory function name* (e.g.
+	// "NewWidgetResource") under the same map. So a value here is only sometimes
+	// a receiver type; the ImportState check below treats it as a candidate and
+	// falls back to the conventional reconstructed name when it does not match.
 	indexToRecvType := make(map[int]string, len(state.RecvTypeToIndex))
 	for recvType, idx := range state.RecvTypeToIndex {
 		indexToRecvType[idx] = recvType
@@ -932,14 +939,22 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*reg
 		}
 
 		if resource.Kind == registry.KindResource {
-			recvType, ok := indexToRecvType[i]
-			if !ok {
-				// Resource discovered without a tracked receiver type (e.g. via a
-				// factory or return-type strategy): fall back to the conventional
-				// reconstructed type name.
-				recvType = toTitleCase(resource.Name) + "Resource"
+			// Prefer the tracked discovery key (the real receiver type for
+			// Schema/Metadata-discovered resources). If that does not match an
+			// ImportState method — because the tracked key was a factory
+			// function name, or there was no tracked key at all — fall back to
+			// the conventional reconstructed receiver type name. This keeps the
+			// F1 fix (unexported/renamed receivers) without regressing
+			// factory/return-type-discovered resources whose tracked key is a
+			// function name rather than a receiver type.
+			has := false
+			if recvType, ok := indexToRecvType[i]; ok {
+				has = hasImportStateMethod(file, recvType)
 			}
-			resource.HasImportState = hasImportStateMethod(file, recvType)
+			if !has {
+				has = hasImportStateMethod(file, toTitleCase(resource.Name)+"Resource")
+			}
+			resource.HasImportState = has
 		}
 		filtered = append(filtered, resource)
 	}
