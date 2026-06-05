@@ -142,17 +142,14 @@ plugins:
 ./validate -provider /path/to/provider -verbose
 ```
 
-### Diagnostic Commands
+### Coverage Report
 
 ```bash
-# Show all resource -> test function associations
-./validate -provider /path/to/provider -show-matches
-
-# Show test functions without resource association (orphans)
-./validate -provider /path/to/provider -show-unmatched
-
-# Show resources without any test coverage
-./validate -provider /path/to/provider -show-orphaned
+# Comprehensive coverage report with resource -> test associations,
+# orphan tests, and untested resources (text, table, or json)
+./validate -provider /path/to/provider -report
+./validate -provider /path/to/provider -report -format table
+./validate -provider /path/to/provider -report -format json
 ```
 
 ### Matching Options

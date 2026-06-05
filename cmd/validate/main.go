@@ -15,21 +15,12 @@ import (
 	"text/tabwriter"
 
 	"github.com/example/tfprovidertest"
+	tfanalysis "github.com/example/tfprovidertest/internal/analysis"
 	"github.com/example/tfprovidertest/internal/discovery"
-	"github.com/example/tfprovidertest/internal/matching"
 	"github.com/example/tfprovidertest/internal/registry"
 	"github.com/example/tfprovidertest/pkg/config"
 	"golang.org/x/tools/go/analysis"
 )
-
-// MatchInfo represents a resource-test association for diagnostic output
-type MatchInfo struct {
-	ResourceName string  `json:"resource_name"`
-	TestFunction string  `json:"test_function"`
-	TestFile     string  `json:"test_file"`
-	Confidence   float64 `json:"confidence"`
-	MatchType    string  `json:"match_type"`
-}
 
 func main() {
 	// Basic flags
@@ -38,10 +29,7 @@ func main() {
 	recursive := flag.Bool("recursive", false, "Recursively scan all subdirectories for Go packages")
 	scanPath := flag.String("scan-path", "", "Explicit path within provider to scan (overrides auto-detection)")
 
-	// Diagnostic flags
-	showMatches := flag.Bool("show-matches", false, "Show all resource -> test function associations")
-	showUnmatched := flag.Bool("show-unmatched", false, "Show test functions without resource association")
-	showOrphaned := flag.Bool("show-orphaned", false, "Show resources without any test coverage")
+	// Report flag
 	showReport := flag.Bool("report", false, "Show comprehensive coverage report with table views")
 	outputFormat := flag.String("format", "text", "Output format: text, json, or table")
 
@@ -103,9 +91,6 @@ func main() {
 	// Build settings from flags
 	settings := config.DefaultSettings()
 	settings.Verbose = *verbose
-	settings.ShowMatchConfidence = *showMatches
-	settings.ShowUnmatchedTests = *showUnmatched
-	settings.ShowOrphanedResources = *showOrphaned
 	settings.FuzzyMatchThreshold = *confidenceThreshold
 	settings.ProviderPrefix = *providerPrefix
 
@@ -160,12 +145,6 @@ func main() {
 		return
 	}
 
-	// Handle diagnostic commands
-	if *showMatches || *showUnmatched || *showOrphaned {
-		runDiagnostics(fset, allFiles, settings, *outputFormat, *showMatches, *showUnmatched, *showOrphaned)
-		return
-	}
-
 	// Run standard analysis
 	runAnalyzers(fset, allFiles, settings)
 }
@@ -183,15 +162,9 @@ func printUsage() {
 	fmt.Println("  -verbose")
 	fmt.Println("        Enable verbose diagnostic output")
 	fmt.Println()
-	fmt.Println("Diagnostic Options:")
+	fmt.Println("Report Options:")
 	fmt.Println("  -report")
 	fmt.Println("        Show comprehensive coverage report with table views")
-	fmt.Println("  -show-matches")
-	fmt.Println("        Show all resource -> test function associations")
-	fmt.Println("  -show-unmatched")
-	fmt.Println("        Show test functions without resource association")
-	fmt.Println("  -show-orphaned")
-	fmt.Println("        Show resources without any test coverage")
 	fmt.Println()
 	fmt.Println("Matching Options:")
 	fmt.Println("  -match-strategy string")
@@ -214,17 +187,11 @@ func printUsage() {
 	fmt.Println("  # Run standard analysis")
 	fmt.Println("  validate -provider ./terraform-provider-aws")
 	fmt.Println()
-	fmt.Println("  # Show all resource-test associations in table format")
-	fmt.Println("  validate -provider ./provider -show-matches -format table")
-	fmt.Println()
-	fmt.Println("  # Find unmatched tests with verbose output")
-	fmt.Println("  validate -provider ./provider -show-unmatched -verbose")
+	fmt.Println("  # Show comprehensive coverage report in table format")
+	fmt.Println("  validate -provider ./provider -report -format table")
 	fmt.Println()
 	fmt.Println("  # Use function-only matching with custom threshold")
 	fmt.Println("  validate -provider ./provider -match-strategy function -confidence-threshold 0.8")
-	fmt.Println()
-	fmt.Println("  # Export all matches as JSON")
-	fmt.Println("  validate -provider ./provider -show-matches -format json > matches.json")
 }
 
 // validateSettings performs validation on the settings configuration
@@ -236,104 +203,6 @@ func validateSettings(settings config.Settings) error {
 
 	// Function name matching and file-based matching always run (no validation needed)
 	return nil
-}
-
-// runDiagnostics handles diagnostic output modes
-func runDiagnostics(fset *token.FileSet, files []*ast.File, settings config.Settings, format string, showMatches, showUnmatched, showOrphaned bool) {
-	// Validate output format
-	if format != "text" && format != "json" && format != "table" {
-		fmt.Printf("Error: Invalid format '%s'. Must be one of: text, json, table\n", format)
-		os.Exit(1)
-	}
-
-	// TODO: Build registry and perform resource-test linking
-	// This requires exposing BuildRegistry or creating a diagnostic-specific function
-	// For now, output placeholder information
-
-	if showMatches {
-		fmt.Println("=== Resource -> Test Function Associations ===")
-		fmt.Println()
-		// TODO: Get actual matches from registry
-		// matches := getResourceTestMatches(fset, files, settings)
-		// outputMatches(matches, format)
-		fmt.Println("  (Diagnostic output requires registry access - implementation pending)")
-		fmt.Println("  This will show all detected resource -> test function mappings")
-		fmt.Println("  including confidence scores and match types.")
-		fmt.Println()
-	}
-
-	if showUnmatched {
-		fmt.Println("=== Unmatched Test Functions ===")
-		fmt.Println()
-		// TODO: Get unmatched tests from registry
-		// unmatched := registry.GetUnmatchedTestFunctions()
-		// outputUnmatched(unmatched, format)
-		fmt.Println("  (Diagnostic output requires registry access - implementation pending)")
-		fmt.Println("  This will show test functions that could not be associated")
-		fmt.Println("  with any known resource definition.")
-		fmt.Println()
-	}
-
-	if showOrphaned {
-		fmt.Println("=== Orphaned Resources (No Tests) ===")
-		fmt.Println()
-		// TODO: Get orphaned resources from registry
-		// orphaned := registry.GetUntestedResources()
-		// outputOrphaned(orphaned, format)
-		fmt.Println("  (Diagnostic output requires registry access - implementation pending)")
-		fmt.Println("  This will show resources that have no associated test coverage.")
-		fmt.Println()
-	}
-}
-
-// outputMatchesText outputs matches in human-readable text format
-//
-//nolint:unused // Prepared for future diagnostic output implementation
-func outputMatchesText(matches []MatchInfo) {
-	for _, m := range matches {
-		fmt.Printf("  %s -> %s (%.0f%%, %s)\n", m.ResourceName, m.TestFunction, m.Confidence*100, m.MatchType)
-		if m.TestFile != "" {
-			fmt.Printf("    File: %s\n", m.TestFile)
-		}
-	}
-}
-
-// outputMatchesTable outputs matches in a formatted table
-//
-//nolint:unused // Prepared for future diagnostic output implementation
-func outputMatchesTable(matches []MatchInfo) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "RESOURCE\tTEST FUNCTION\tCONFIDENCE\tMATCH TYPE\tTEST FILE")
-	fmt.Fprintln(w, "--------\t-------------\t----------\t----------\t---------")
-	for _, m := range matches {
-		fmt.Fprintf(w, "%s\t%s\t%.0f%%\t%s\t%s\n", m.ResourceName, m.TestFunction, m.Confidence*100, m.MatchType, m.TestFile)
-	}
-	w.Flush()
-}
-
-// outputMatchesJSON outputs matches as formatted JSON
-//
-//nolint:unused // Prepared for future diagnostic output implementation
-func outputMatchesJSON(matches []MatchInfo) {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(matches); err != nil {
-		fmt.Printf("Error encoding JSON: %v\n", err)
-	}
-}
-
-// outputMatches routes to the appropriate output formatter
-//
-//nolint:unused // Prepared for future diagnostic output implementation
-func outputMatches(matches []MatchInfo, format string) {
-	switch format {
-	case "json":
-		outputMatchesJSON(matches)
-	case "table":
-		outputMatchesTable(matches)
-	default:
-		outputMatchesText(matches)
-	}
 }
 
 // runAnalyzers executes the standard analysis workflow
@@ -423,57 +292,12 @@ func findProviderCodeDir(providerPath string) string {
 	return ""
 }
 
-// buildRegistryFromFiles creates a registry from parsed AST files
+// buildRegistryFromFiles creates a registry from parsed AST files.
+// It delegates to discovery.BuildRegistryFromFiles — the single
+// registry-construction routine shared with the golangci-lint plugin — so the
+// CLI and plugin always produce identical results.
 func buildRegistryFromFiles(fset *token.FileSet, files []*ast.File, settings config.Settings) *registry.ResourceRegistry {
-	reg := registry.NewResourceRegistry()
-	parserConfig := discovery.DefaultParserConfig()
-
-	for _, file := range files {
-		filePath := fset.Position(file.Pos()).Filename
-
-		// Apply exclusion settings
-		if settings.ExcludeBaseClasses && discovery.IsBaseClassFile(filePath) {
-			continue
-		}
-		if settings.ExcludeSweeperFiles && discovery.IsSweeperFile(filePath) {
-			continue
-		}
-		if settings.ExcludeMigrationFiles && discovery.IsMigrationFile(filePath) {
-			continue
-		}
-
-		if strings.HasSuffix(filePath, "_test.go") {
-			testInfo := discovery.ParseTestFileWithConfig(file, fset, filePath, parserConfig)
-			if testInfo == nil {
-				continue
-			}
-			for i := range testInfo.TestFunctions {
-				reg.RegisterTestFunction(&testInfo.TestFunctions[i])
-			}
-		} else {
-			// Standard resource parsing (from Schema/Metadata methods)
-			resources := discovery.ParseResources(file, fset, filePath)
-			for _, resource := range resources {
-				reg.RegisterResource(resource)
-			}
-
-			// Also check for provider registry maps (e.g., generatedResources, generatedIAMDatasources)
-			// This handles providers like Google that define resources in central map variables
-			registryResources := discovery.ParseProviderRegistryMaps(file, fset, filePath)
-			for _, resource := range registryResources {
-				reg.RegisterResource(resource)
-			}
-		}
-	}
-
-	// Run linking
-	linker := matching.NewLinker(reg, &settings)
-	linker.LinkTestsToResources()
-
-	// Classify all tests to enable filtering of orphans
-	linker.ClassifyAllTests()
-
-	return reg
+	return discovery.BuildRegistryFromFiles(files, fset, settings)
 }
 
 // runReport generates a comprehensive coverage report with table views
@@ -513,23 +337,23 @@ func runReport(fset *token.FileSet, files []*ast.File, settings config.Settings,
 
 // ReportData holds all data for JSON output
 type ReportData struct {
-	Summary     ReportSummary      `json:"summary"`
-	Resources   []ResourceReport   `json:"resources"`
-	DataSources []ResourceReport   `json:"data_sources"`
-	Actions     []ResourceReport   `json:"actions"`
-	Orphans     []OrphanReport     `json:"orphan_tests"`
+	Summary     ReportSummary    `json:"summary"`
+	Resources   []ResourceReport `json:"resources"`
+	DataSources []ResourceReport `json:"data_sources"`
+	Actions     []ResourceReport `json:"actions"`
+	Orphans     []OrphanReport   `json:"orphan_tests"`
 }
 
 type ReportSummary struct {
-	TotalResources          int `json:"total_resources"`
-	UntestedResources       int `json:"untested_resources"`
-	TotalDataSources        int `json:"total_data_sources"`
-	UntestedDataSources     int `json:"untested_data_sources"`
-	TotalActions            int `json:"total_actions"`
-	UntestedActions         int `json:"untested_actions"`
-	OrphanTests             int `json:"orphan_tests"`
-	MissingCheckDestroy     int `json:"missing_check_destroy"`
-	MissingStateChecks      int `json:"missing_state_checks"`
+	TotalResources      int `json:"total_resources"`
+	UntestedResources   int `json:"untested_resources"`
+	TotalDataSources    int `json:"total_data_sources"`
+	UntestedDataSources int `json:"untested_data_sources"`
+	TotalActions        int `json:"total_actions"`
+	UntestedActions     int `json:"untested_actions"`
+	OrphanTests         int `json:"orphan_tests"`
+	MissingCheckDestroy int `json:"missing_check_destroy"`
+	MissingStateChecks  int `json:"missing_state_checks"`
 }
 
 type ResourceReport struct {
@@ -538,7 +362,7 @@ type ResourceReport struct {
 	TestFile             string       `json:"test_file"`
 	TestCount            int          `json:"test_count"`
 	HasCheckDestroy      bool         `json:"has_check_destroy"`
-	HasCheck             bool         `json:"has_check"`              // Legacy Check field
+	HasCheck             bool         `json:"has_check"`               // Legacy Check field
 	HasConfigStateChecks bool         `json:"has_config_state_checks"` // Modern ConfigStateChecks field
 	HasPlanCheck         bool         `json:"has_plan_check"`
 	HasImportTest        bool         `json:"has_import_test"`
@@ -681,39 +505,31 @@ func buildActionReport(reg *registry.ResourceRegistry, info *registry.ResourceIn
 func outputReportJSON(reg *registry.ResourceRegistry, resources, dataSources, actions []*registry.ResourceInfo, orphans []*registry.TestFunctionInfo) {
 	data := ReportData{}
 
-	// Build resource reports
+	// Summary counts come from the single shared computation so the JSON and
+	// table renderers cannot disagree.
+	summary := tfanalysis.NewCoverageCalculator(reg).Summarize()
+	data.Summary = ReportSummary{
+		TotalResources:      summary.TotalResources,
+		UntestedResources:   summary.UntestedResources,
+		MissingCheckDestroy: summary.MissingCheckDestroy,
+		TotalDataSources:    summary.TotalDataSources,
+		UntestedDataSources: summary.UntestedDataSources,
+		TotalActions:        summary.TotalActions,
+		UntestedActions:     summary.UntestedActions,
+		MissingStateChecks:  summary.MissingStateChecks,
+		OrphanTests:         len(orphans),
+	}
+
+	// Build per-item detail reports.
 	for _, info := range resources {
-		report := buildResourceReport(reg, info)
-		data.Resources = append(data.Resources, report)
-		if report.TestCount == 0 {
-			data.Summary.UntestedResources++
-		} else if !report.HasCheckDestroy {
-			data.Summary.MissingCheckDestroy++
-		}
+		data.Resources = append(data.Resources, buildResourceReport(reg, info))
 	}
-	data.Summary.TotalResources = len(resources)
-
-	// Build data source reports
 	for _, info := range dataSources {
-		report := buildResourceReport(reg, info)
-		data.DataSources = append(data.DataSources, report)
-		if report.TestCount == 0 {
-			data.Summary.UntestedDataSources++
-		}
+		data.DataSources = append(data.DataSources, buildResourceReport(reg, info))
 	}
-	data.Summary.TotalDataSources = len(dataSources)
-
-	// Build action reports
 	for _, info := range actions {
-		report := buildActionReport(reg, info)
-		data.Actions = append(data.Actions, report)
-		if report.TestCount == 0 {
-			data.Summary.UntestedActions++
-		} else if !report.HasCheck && !report.HasConfigStateChecks {
-			data.Summary.MissingStateChecks++
-		}
+		data.Actions = append(data.Actions, buildActionReport(reg, info))
 	}
-	data.Summary.TotalActions = len(actions)
 
 	// Build orphan reports
 	for _, fn := range orphans {
@@ -733,55 +549,14 @@ func outputReportJSON(reg *registry.ResourceRegistry, resources, dataSources, ac
 }
 
 func outputReportTable(reg *registry.ResourceRegistry, resources, dataSources, actions []*registry.ResourceInfo, orphans []*registry.TestFunctionInfo) {
-	// Calculate summary stats first
-	var untestedResources, untestedDataSources, untestedActions int
-	var missingCheckDestroy, missingStateCheck int
-
-	for _, info := range resources {
-		key := registry.KindResource.String() + ":" + info.Name
-		tests := reg.GetResourceTests(key)
-		if len(tests) == 0 {
-			untestedResources++
-		} else {
-			hasCheckDestroy := false
-			for _, t := range tests {
-				if t.HasCheckDestroy {
-					hasCheckDestroy = true
-					break
-				}
-			}
-			if !hasCheckDestroy {
-				missingCheckDestroy++
-			}
-		}
-	}
-
-	for _, info := range dataSources {
-		key := registry.KindDataSource.String() + ":" + info.Name
-		tests := reg.GetResourceTests(key)
-		if len(tests) == 0 {
-			untestedDataSources++
-		}
-	}
-
-	for _, info := range actions {
-		key := registry.KindAction.String() + ":" + info.Name
-		tests := reg.GetResourceTests(key)
-		if len(tests) == 0 {
-			untestedActions++
-		} else {
-			hasStateCheck := false
-			for _, t := range tests {
-				if t.HasStateOrPlanCheck() {
-					hasStateCheck = true
-					break
-				}
-			}
-			if !hasStateCheck {
-				missingStateCheck++
-			}
-		}
-	}
+	// Calculate summary stats via the single shared computation so the table
+	// and JSON renderers cannot disagree.
+	summary := tfanalysis.NewCoverageCalculator(reg).Summarize()
+	untestedResources := summary.UntestedResources
+	untestedDataSources := summary.UntestedDataSources
+	untestedActions := summary.UntestedActions
+	missingCheckDestroy := summary.MissingCheckDestroy
+	missingStateCheck := summary.MissingStateChecks
 
 	// Print header
 	fmt.Println()

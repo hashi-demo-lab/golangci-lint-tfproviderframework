@@ -1,0 +1,78 @@
+Analyzing provider at: validation/terraform-provider-powerhmc (5 directories)
+
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                        TERRAFORM PROVIDER TEST COVERAGE REPORT                 ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ SUMMARY                                                                         │
+├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤
+│ Category     │ Total │ Untested │ Issues                                          │
+├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤
+│ Resources    │     3 │        1 │ 1 without CheckDestroy                          │
+│ Data Sources │     3 │        3 │ -                                               │
+│ Actions      │     2 │        2 │ 0 without Check func                            │
+│ Orphan Tests │     0 │        - │ -                                               │
+└──────────────┴───────┴──────────┴─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ RESOURCES                                                                       │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME        TESTS  Update  ImportState  CheckDestroy  ExpectError  Check  ConfigStateChecks  PlanChecks  FILE                       TEST FILE
+  ────        ─────  ──────  ───────────  ────────────  ───────────  ─────  ─────────────────  ──────────  ────                       ─────────
+  lpar        0      ✗       ✗            ✗             ✗            ✗      ✗                  ✗           lpar_resource.go           -
+  sys_config  7      ✓       ✓            ✗             ✓            ✓      ✗                  ✗           system_config_resource.go  system_config_resource_test.go
+  vios        10     ✓       ✓            ✓             ✓            ✓      ✗                  ✗           vios_resource.go           vios_resource_test.go
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ DATA SOURCES                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME        TESTS  Check  ConfigStateChecks  FILE                          TEST FILE
+  ────        ─────  ─────  ─────────────────  ────                          ─────────
+  lpar        0      ✗      ✗                  lpar_data_source.go           -
+  sys_config  0      ✗      ✗                  system_config_data_source.go  -
+  vios        0      ✗      ✗                  vios_data_source.go           -
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ ACTIONS                                                                         │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  NAME          TESTS  Update  ExpectError  Check  ConfigStateChecks  PreCheck  FILE                    TEST FILE
+  ────          ─────  ──────  ───────────  ─────  ─────────────────  ────────  ────                    ─────────
+  sys_on_off    0      ✗       ✗            ✗      ✗                  ✗         system_powercycle.go    -
+  vios_install  0      ✗       ✗            ✗      ✗                  ✗         vios_install_action.go  -
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ ORPHAN TESTS                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  ✓ All test functions are associated with resources!
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ TEST ASSOCIATIONS                                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  RESOURCE      KIND      TEST FUNCTION                                          MATCH TYPE
+  ────────      ────      ─────────────                                          ──────────
+  lpar          resource  -                                                      -
+  sys_config    resource  TestAccSystemConfigResource_ValidateUpdate             inferred_from_config
+                          TestAccSystemConfigResource_HugePagesRequiresPowerOff  inferred_from_config
+                          TestAccSystemConfigResource_InvalidEnumValidation      inferred_from_config
+                          TestAccSystemConfigResource_ImportState                inferred_from_config
+                          TestAccSystemConfigResource_PowerSavingModeUpdate      inferred_from_config
+                          TestAccSystemConfigResource_TimeoutUsage               inferred_from_config
+                          TestAccSystemConfigResource_TimeoutValidation          inferred_from_config
+  vios          resource  TestAccViosResource_BasicLifecycle                     inferred_from_config
+                          TestAccViosResource_IdleMode                           inferred_from_config
+                          TestAccViosResource_UncappedMode                       inferred_from_config
+                          TestAccViosResource_WithIOSlots                        inferred_from_config
+                          TestAccViosResource_CustomProfile                      inferred_from_config
+                          TestAccViosResource_ValidationErrors                   inferred_from_config
+                          TestAccViosResource_ImportInvalidID                    inferred_from_config
+                          TestAccViosResource_UpdateNotSupported                 inferred_from_config
+                          TestAccViosResource_ReadNonExistent                    inferred_from_config
+                          TestAccViosResource_ImportMissingID                    inferred_from_config
+  lpar          data      -                                                      -
+  sys_config    data      -                                                      -
+  vios          data      -                                                      -
+  sys_on_off    action    -                                                      -
+  vios_install  action    -                                                      -
+

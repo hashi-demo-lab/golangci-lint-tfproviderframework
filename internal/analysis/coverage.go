@@ -114,6 +114,61 @@ func (c *CoverageCalculator) GetResourcesMissingStateChecks() []*registry.Resour
 	return missing
 }
 
+// CoverageSummary holds aggregate coverage counts broken down by kind. It is
+// the single source of truth for report summary numbers, consumed by both the
+// CLI table and JSON renderers so they cannot disagree.
+type CoverageSummary struct {
+	TotalResources      int
+	UntestedResources   int
+	MissingCheckDestroy int // resources that have tests but no CheckDestroy
+	TotalDataSources    int
+	UntestedDataSources int
+	TotalActions        int
+	UntestedActions     int
+	MissingStateChecks  int // actions that have tests but no state/plan check
+}
+
+// Summarize computes aggregate coverage counts in one place.
+//
+// Semantics (preserved from the previous CLI table path, which was the more
+// correct of the two renderers):
+//   - A resource/data source/action is "untested" when it has no tests.
+//   - "MissingCheckDestroy" counts resources (not data sources) that have tests
+//     but where no test sets CheckDestroy.
+//   - "MissingStateChecks" counts actions that have tests but where no test step
+//     has a Check, ConfigStateChecks, OR ConfigPlanChecks. The old JSON path
+//     omitted plan checks here and so disagreed with the table; this unifies on
+//     the plan-check-inclusive semantics.
+func (c *CoverageCalculator) Summarize() CoverageSummary {
+	var s CoverageSummary
+	for _, cov := range c.GetAllResourceCoverage() {
+		switch cov.Resource.Kind {
+		case registry.KindResource:
+			s.TotalResources++
+			switch {
+			case !cov.HasBasicTest:
+				s.UntestedResources++
+			case !cov.HasCheckDestroy:
+				s.MissingCheckDestroy++
+			}
+		case registry.KindDataSource:
+			s.TotalDataSources++
+			if !cov.HasBasicTest {
+				s.UntestedDataSources++
+			}
+		case registry.KindAction:
+			s.TotalActions++
+			switch {
+			case !cov.HasBasicTest:
+				s.UntestedActions++
+			case !cov.HasStateCheck && !cov.HasPlanCheck:
+				s.MissingStateChecks++
+			}
+		}
+	}
+	return s
+}
+
 // GetResourcesMissingCheckDestroy returns resources that have tests but no CheckDestroy.
 func (c *CoverageCalculator) GetResourcesMissingCheckDestroy() []*registry.ResourceCoverage {
 	coverages := c.GetAllResourceCoverage()

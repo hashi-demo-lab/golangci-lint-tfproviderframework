@@ -1,4 +1,4 @@
-Analyzing provider at: /workspace/validation/terraform-provider-time (6 directories)
+Analyzing provider at: validation/terraform-provider-time (6 directories)
 
 
 ╔════════════════════════════════════════════════════════════════════════════════╗
@@ -10,7 +10,7 @@ Analyzing provider at: /workspace/validation/terraform-provider-time (6 director
 ├──────────────┬───────┬──────────┬─────────────────────────────────────────────────┤
 │ Category     │ Total │ Untested │ Issues                                          │
 ├──────────────┼───────┼──────────┼─────────────────────────────────────────────────┤
-│ Resources    │     4 │        0 │ 0 without CheckDestroy                          │
+│ Resources    │     4 │        0 │ 4 without CheckDestroy                          │
 │ Data Sources │     0 │        0 │ -                                               │
 │ Actions      │     0 │        0 │ 0 without Check func                            │
 │ Orphan Tests │     0 │        - │ -                                               │
@@ -21,10 +21,10 @@ Analyzing provider at: /workspace/validation/terraform-provider-time (6 director
 └─────────────────────────────────────────────────────────────────────────────────┘
   NAME      TESTS  Update  ImportState  CheckDestroy  ExpectError  Check  ConfigStateChecks  PlanChecks  FILE                       TEST FILE
   ────      ─────  ──────  ───────────  ────────────  ───────────  ─────  ─────────────────  ──────────  ────                       ─────────
-  offset    10     ✓       ✓            ✓             ✓            ✗      ✓                  ✗           resource_time_offset.go    resource_time_offset_test.go
-  rotating  25     ✓       ✓            ✓             ✓            ✗      ✓                  ✓           resource_time_rotating.go  resource_time_rotating_test.go
-  sleep     5      ✓       ✗            ✓             ✓            ✗      ✓                  ✗           resource_time_sleep.go     resource_time_sleep_test.go
-  static    5      ✓       ✓            ✓             ✓            ✗      ✓                  ✓           resource_time_static.go    resource_time_static_test.go
+  offset    10     ✓       ✓            ✗             ✓            ✗      ✓                  ✗           resource_time_offset.go    resource_time_offset_test.go
+  rotating  25     ✓       ✓            ✗             ✓            ✗      ✓                  ✓           resource_time_rotating.go  resource_time_rotating_test.go
+  sleep     5      ✓       ✗            ✗             ✓            ✗      ✓                  ✗           resource_time_sleep.go     resource_time_sleep_test.go
+  static    5      ✓       ✓            ✗             ✓            ✗      ✓                  ✓           resource_time_static.go    resource_time_static_test.go
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │ ORPHAN TESTS                                                                    │

@@ -322,41 +322,6 @@ func (l *Linker) LinkTestToResource(key string, fn *registry.TestFunctionInfo) {
 	l.registry.LinkTestToResource(key, fn)
 }
 
-// findResourceMatches finds all matching resources for a test function.
-// It tries strategies in order of confidence and returns early on high-confidence matches.
-func (l *Linker) findResourceMatches(fn interface{}, resourceNames map[string]bool) []ResourceMatch {
-	var matches []ResourceMatch
-
-	// Strategy 0: Inferred Content Matching (highest priority)
-	// Check if the test explicitly configures known resources in its Config strings.
-	// This is the most reliable strategy as it comes from parsing the actual HCL configuration
-	// that the test uses. If a test's Config string contains resource blocks, we know
-	// definitively which resources it's testing.
-	// We collect ALL matching inferred resources (not just the first one), because a test
-	// may legitimately test multiple resources (e.g., an action test that also creates inventory).
-	// We try both the full name (e.g., "aap_eda_eventstream_post") and the name without
-	// provider prefix (e.g., "eda_eventstream_post").
-	// TODO: Implement inferred resource matching after fixing registry imports
-
-	// Strategy 1: Function name extraction (high confidence)
-	// Always enabled as it's fast and accurate
-	// Try all possible resource names from the function name
-	// TODO: Implement function name matching after fixing registry imports
-
-	// Strategy 2: File proximity (medium confidence)
-	// Always enabled as it's fast and accurate
-	// TODO: Implement file proximity matching after fixing registry imports
-
-	// Strategy 3: Fuzzy matching (low confidence, optional)
-	// Only runs if enabled (disabled by default due to performance cost and false positives)
-	// TODO: Implement fuzzy matching after fixing registry imports
-
-	_ = fn
-	_ = resourceNames
-
-	return matches
-}
-
 // MatchByFileProximity tries to match based on file naming convention.
 // It uses ExtractResourceNameFromPath to handle all standard patterns:
 // - resource_widget_test.go -> resource:widget
