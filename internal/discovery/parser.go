@@ -915,16 +915,31 @@ func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*reg
 		strategy.Discover(file, fset, filePath, state)
 	}
 
+	// Build a reverse map from resource index to its actual Go receiver type so
+	// ImportState detection matches the real type (handles unexported receivers
+	// and Metadata-renamed resources — finding F1).
+	indexToRecvType := make(map[int]string, len(state.RecvTypeToIndex))
+	for recvType, idx := range state.RecvTypeToIndex {
+		indexToRecvType[idx] = recvType
+	}
+
 	// Post-processing: filter out nested schema types and check for ImportState
 	var filtered []*registry.ResourceInfo
-	for _, resource := range state.Resources {
+	for i, resource := range state.Resources {
 		// Skip nested schema types (false positives)
 		if isNestedSchemaType(resource.Name) {
 			continue
 		}
 
 		if resource.Kind == registry.KindResource {
-			resource.HasImportState = hasImportStateMethod(file, resource.Name)
+			recvType, ok := indexToRecvType[i]
+			if !ok {
+				// Resource discovered without a tracked receiver type (e.g. via a
+				// factory or return-type strategy): fall back to the conventional
+				// reconstructed type name.
+				recvType = toTitleCase(resource.Name) + "Resource"
+			}
+			resource.HasImportState = hasImportStateMethod(file, recvType)
 		}
 		filtered = append(filtered, resource)
 	}
@@ -1846,7 +1861,12 @@ func extractStepsFromTestCaseWithHelpersTyped(testCaseExpr ast.Expr, stepNumber 
 
 		switch key.Name {
 		case "CheckDestroy":
-			hasCheckDestroy = true
+			// A literal `CheckDestroy: nil` is inert and must not be counted as
+			// real coverage (e.g. terraform-provider-powerhmc's system_config
+			// tests set CheckDestroy: nil). Only a non-nil destroy check counts.
+			if !isNilIdent(kv.Value) {
+				hasCheckDestroy = true
+			}
 		case "PreCheck":
 			hasPreCheck = true
 		case "Steps":

@@ -11,6 +11,13 @@ import (
 	"github.com/example/tfprovidertest/internal/registry"
 )
 
+// isNilIdent reports whether expr is the predeclared identifier `nil`.
+// Used to distinguish an inert `Field: nil` from a real value.
+func isNilIdent(expr ast.Expr) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && ident.Name == "nil"
+}
+
 // getReceiverTypeName extracts the receiver type name from a function declaration.
 // For example: func (r *WidgetResource) Schema(...) returns "WidgetResource"
 func getReceiverTypeName(recv *ast.FieldList) string {
@@ -103,22 +110,30 @@ func toTitleCase(s string) string {
 	return result.String()
 }
 
-// hasImportStateMethod checks if a file has ImportState method for a resource
-func hasImportStateMethod(file *ast.File, resourceName string) bool {
+// hasImportStateMethod reports whether the file declares an ImportState method
+// on the given receiver type.
+//
+// recvType must be the ACTUAL Go receiver type name (e.g. "systemConfigResource"),
+// resolved from discovery's RecvTypeToIndex map. An earlier version reconstructed
+// the expected receiver as toTitleCase(resourceName)+"Resource", which failed for
+// unexported receivers and for resources whose canonical name was renamed via
+// Metadata() — e.g. terraform-provider-powerhmc's `systemConfigResource` with
+// canonical name "sys_config" would never match the reconstructed
+// "SysConfigResource", producing a false "missing ImportState" diagnostic in the
+// analyzer/plugin path (finding F1).
+func hasImportStateMethod(file *ast.File, recvType string) bool {
+	if recvType == "" {
+		return false
+	}
 	found := false
 	ast.Inspect(file, func(n ast.Node) bool {
 		funcDecl, ok := n.(*ast.FuncDecl)
 		if !ok || funcDecl.Name.Name != "ImportState" {
 			return true
 		}
-
-		if funcDecl.Recv != nil {
-			recvType := getReceiverTypeName(funcDecl.Recv)
-			expectedType := toTitleCase(resourceName) + "Resource"
-			if recvType == expectedType || recvType == "*"+expectedType {
-				found = true
-				return false
-			}
+		if funcDecl.Recv != nil && getReceiverTypeName(funcDecl.Recv) == recvType {
+			found = true
+			return false
 		}
 		return true
 	})

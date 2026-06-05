@@ -66,8 +66,6 @@ func TestAccViosResource_BasicLifecycle(t *testing.T) {
 //
 // SKIPPED until U6 treats `CheckDestroy: nil` as absent.
 func TestParseTestFile_NilCheckDestroyNotCounted(t *testing.T) {
-	t.Skip("U6/F2: `CheckDestroy: nil` is counted as present — see docs/plans/2026-06-05-001-powerhmc-validation-findings.md")
-
 	src := `
 package provider
 

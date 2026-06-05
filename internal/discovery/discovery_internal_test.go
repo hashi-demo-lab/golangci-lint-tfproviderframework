@@ -87,8 +87,6 @@ func (r *systemConfigResource) Schema(ctx context.Context, req resource.SchemaRe
 //
 // SKIPPED until U6 resolves the receiver from the actual declaring type.
 func TestParseResources_ImportStateOnUnexportedReceiver(t *testing.T) {
-	t.Skip("U6/F1: hasImportStateMethod reconstructs the wrong receiver name for unexported, Metadata-renamed resources — see docs/plans/2026-06-05-001-powerhmc-validation-findings.md")
-
 	src := `
 package provider
 
