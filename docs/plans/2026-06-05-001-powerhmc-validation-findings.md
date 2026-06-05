@@ -24,14 +24,20 @@ Generated the report via `go run ./cmd/validate -provider validation/terraform-p
 Report shows `sys_config` CheckDestroy ✓, but **every** `CheckDestroy` in `system_config_resource_test.go` is literally `CheckDestroy: nil` (lines 25, 89, 220, 262). Detection records `HasCheckDestroy` from the presence of the field key regardless of a `nil` value, so the summary "0 without CheckDestroy" is misleading — `sys_config` has no real destroy check. (`vios` ✓ is legitimate — it has `CheckDestroy: testAccCheckViosDestroy` at `vios_resource_test.go:24`.)
 - **Fix (U6)**: treat `CheckDestroy: nil` as absent, mirroring the planned `t.Skip()` skip-detection. Same class of "field present but inert" false positive.
 
-### F3 → U6 + U5/KTD-5: `lpar` data source reported but never registered
+### F3 → DEFERRED (KTD-5): `lpar` data source reported but never registered
 `lpar_data_source.go` is discovered and reported as a data source, but `DataSources()` (`provider.go:196`) registers only `NewSystemConfigDataSource` + `NewViosDataSource`. The linter reports **3** data sources; the provider **ships 2**.
-- **Fix (U6)**: add the aggregator-reading strategy (`Resources()`/`DataSources()`/`Actions()`) and flag discovered-but-unregistered types rather than silently counting them as shipped.
+
+**Decision (during U6): deferred to follow-up.** Implementing this safely is harder than the plan assumed. The aggregator lists *constructor functions* (`NewSystemConfigDataSource`), while discovered resources are keyed by their *canonical Metadata name* (`sys_config`, not `system_config`). A convention-based constructor→name mapping (`NewSystemConfigDataSource` → `system_config`) would **mismatch the Metadata-renamed canonical name** (`sys_config`) and falsely flag a *registered* resource as unregistered — introducing a new false positive, the opposite of the goal. Doing it correctly requires resolving constructor → returned type → that type's `Metadata()` canonical name (cross-referencing across the file/package), which is a non-trivial new analysis pass plus a new registry field and report column.
+
+Given F1 and F2 (the two confirmed *false-coverage* defects) are fixed and tested, and F3 is a discovery-accuracy *enhancement* (the `lpar` data-source code genuinely exists — reporting it is not a wrong coverage number, just an unregistered-vs-shipped nuance), F3 is deferred rather than shipped as a risky heuristic. Tracked as follow-up work; see the plan's Scope Boundaries.
+
+**Follow-up sketch**: build a constructor→canonical-name resolver (constructor body returns `&fooResource{}` → type `fooResource` → its `Metadata()` TypeName), diff against the aggregator slice, add a `Registered`/`DiscoveredButUnregistered` field to `ResourceInfo`, and surface it as a report annotation. Add a regression test using powerhmc's `lpar` data source.
 
 ## Plan corrections (feed forward into U6)
 - The plan framed F1 as a report-visible false-negative; it is actually a **plugin-path-only** false-*positive* diagnostic, and is entangled with the U4 divergence. U6's ImportState test must assert the **analyzer** path, not just the CLI column.
 - **F2 (CheckDestroy: nil) is net-new** — add it to U6 scope alongside skip-detection.
 - The plan's pessimism about name-matching fragility was not borne out on this provider; keep U7 (FIX-010/011) but treat it as lower-confidence-of-impact here (no powerhmc evidence; prior-review evidence stands).
+- **SDKv2 import-substring cross-fire (plan U6 item) does not manifest** — `classifyReturnType` checks `"datasource"` before `"resource"`, framework `datasource.DataSource` types are caught by a separate `.DataSource` branch, and the literal `"datasource"` does not contain `"resource"` as a substring. The current classification is correct; the U3 SDKv2 test locks it. No code change made — adding speculative hardening with no failing case would be gold-plating.
 
 ## Expected post-fix numbers (regression lock — U8)
 After U6: `sys_config` CheckDestroy → ✗ (all nil); `lpar` data source → flagged discovered-but-unregistered; plugin-path ImportState for `sys_config`/`vios` → ✓ (method correctly detected). Resources still 3, actions 2, orphans 0.
