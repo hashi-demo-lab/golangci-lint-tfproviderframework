@@ -268,6 +268,12 @@ type ResourceInfo struct {
 	Attributes     []AttributeInfo
 	HasImportState bool
 	ImportStatePos token.Pos
+	// Unregistered is set when the resource is discovered in source (it has a
+	// framework constructor) but its constructor is not listed in the provider's
+	// Resources()/DataSources()/Actions() aggregator — i.e. it is defined but
+	// never shipped. Only meaningful for providers that use the aggregator
+	// pattern; left false otherwise.
+	Unregistered bool
 }
 
 // AttributeInfo represents a single attribute from a resource schema.
@@ -396,19 +402,19 @@ func (t *TestFunctionInfo) HasStateOrPlanCheck() bool {
 
 // ResourceCoverage represents aggregated test coverage for a single resource or data source.
 type ResourceCoverage struct {
-	Resource         *ResourceInfo
-	Tests            []*TestFunctionInfo
-	HasBasicTest     bool // At least one test exists
-	HasStateCheck    bool // At least one test has Check field
-	HasPlanCheck     bool // At least one test has ConfigPlanChecks
-	HasCheckDestroy  bool // At least one test has CheckDestroy
-	HasImportTest    bool // At least one test has ImportState step
-	HasUpdateTest    bool // At least one test has update steps (multiple configs)
-	HasErrorTest     bool // At least one test has ExpectError
-	TestCount        int
-	StepCount        int
-	UpdateStepCount  int
-	ImportStepCount  int
+	Resource        *ResourceInfo
+	Tests           []*TestFunctionInfo
+	HasBasicTest    bool // At least one test exists
+	HasStateCheck   bool // At least one test has Check field
+	HasPlanCheck    bool // At least one test has ConfigPlanChecks
+	HasCheckDestroy bool // At least one test has CheckDestroy
+	HasImportTest   bool // At least one test has ImportState step
+	HasUpdateTest   bool // At least one test has update steps (multiple configs)
+	HasErrorTest    bool // At least one test has ExpectError
+	TestCount       int
+	StepCount       int
+	UpdateStepCount int
+	ImportStepCount int
 }
 
 // TestFileSearchResult represents a test file that was searched for a resource.

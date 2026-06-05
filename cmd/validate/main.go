@@ -303,6 +303,12 @@ func buildRegistryFromFiles(fset *token.FileSet, files []*ast.File, settings con
 // runReport generates a comprehensive coverage report with table views
 func runReport(fset *token.FileSet, files []*ast.File, settings config.Settings, format string) {
 	reg := buildRegistryFromFiles(fset, files, settings)
+
+	// Flag resources defined in source but not listed in the provider's
+	// Resources()/DataSources()/Actions() aggregators (no-op for non-aggregator
+	// providers).
+	discovery.DetectUnregisteredResources(files, fset, reg)
+
 	allDefs := reg.GetAllDefinitions()
 
 	// Group definitions by kind
@@ -716,6 +722,49 @@ func outputReportTable(reg *registry.ResourceRegistry, resources, dataSources, a
 				fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", name, kind, t.Name, t.MatchType.String())
 			}
 		}
+	}
+	w.Flush()
+	fmt.Println()
+
+	printUnregisteredSection(resources, dataSources, actions)
+}
+
+// printUnregisteredSection prints a section listing resources that are defined
+// in source but not registered in the provider's aggregator methods. It prints
+// nothing when there are none, so reports for providers without the issue (or
+// without the aggregator pattern) are unchanged.
+func printUnregisteredSection(resources, dataSources, actions []*registry.ResourceInfo) {
+	type row struct{ name, kind string }
+	var rows []row
+	for _, info := range resources {
+		if info.Unregistered {
+			rows = append(rows, row{info.Name, "resource"})
+		}
+	}
+	for _, info := range dataSources {
+		if info.Unregistered {
+			rows = append(rows, row{info.Name, "data source"})
+		}
+	}
+	for _, info := range actions {
+		if info.Unregistered {
+			rows = append(rows, row{info.Name, "action"})
+		}
+	}
+	if len(rows) == 0 {
+		return
+	}
+
+	fmt.Println("┌─────────────────────────────────────────────────────────────────────────────────┐")
+	fmt.Println("│ DEFINED BUT NOT REGISTERED                                                       │")
+	fmt.Println("└─────────────────────────────────────────────────────────────────────────────────┘")
+	fmt.Println("  These types have a constructor and schema but are not listed in the provider's")
+	fmt.Println("  Resources()/DataSources()/Actions() aggregator, so they do not ship:")
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "  NAME\tKIND")
+	fmt.Fprintln(w, "  ────\t────")
+	for _, r := range rows {
+		fmt.Fprintf(w, "  %s\t%s\n", r.name, r.kind)
 	}
 	w.Flush()
 	fmt.Println()
