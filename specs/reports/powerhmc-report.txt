@@ -76,3 +76,12 @@ Analyzing provider at: validation/terraform-provider-powerhmc (5 directories)
   sys_on_off    action    -                                                      -
   vios_install  action    -                                                      -
 
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ DEFINED BUT NOT REGISTERED                                                       │
+└─────────────────────────────────────────────────────────────────────────────────┘
+  These types have a constructor and schema but are not listed in the provider's
+  Resources()/DataSources()/Actions() aggregator, so they do not ship:
+  NAME  KIND
+  ────  ────
+  lpar  data source
+
