@@ -85,3 +85,49 @@ func TestCoverage_MissingCheckDestroy(t *testing.T) {
 		t.Errorf("untested lpar should not appear in MissingCheckDestroy (it is reported as untested, not missing-destroy)")
 	}
 }
+
+// TestCoverage_Summarize covers the single summary computation U5 introduced so
+// the CLI table and JSON renderers can agree. It also pins the divergence fix:
+// an action whose only state check is a plan check (ConfigPlanChecks) must NOT
+// be counted as missing state checks — the old JSON path checked only
+// HasCheck/HasConfigStateChecks and missed plan checks, disagreeing with the
+// table path.
+func TestCoverage_Summarize(t *testing.T) {
+	reg := registry.NewResourceRegistry()
+
+	reg.RegisterResource(&registry.ResourceInfo{Name: "widget", Kind: registry.KindResource})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "widget", Kind: registry.KindDataSource})
+	reg.RegisterResource(&registry.ResourceInfo{Name: "do_thing", Kind: registry.KindAction})
+
+	// widget resource: tested, no CheckDestroy -> missing CheckDestroy.
+	rTest := &registry.TestFunctionInfo{Name: "TestAccWidgetResource_basic", UsesResourceTest: true}
+	reg.RegisterTestFunction(rTest)
+	reg.LinkTestToResource("resource:widget", rTest)
+
+	// do_thing action: tested, with a PLAN check only (no Check / ConfigStateChecks).
+	aTest := &registry.TestFunctionInfo{
+		Name:             "TestAccDoThingAction_basic",
+		UsesResourceTest: true,
+		TestSteps:        []registry.TestStepInfo{{HasPlanCheck: true}},
+	}
+	reg.RegisterTestFunction(aTest)
+	reg.LinkTestToResource("action:do_thing", aTest)
+
+	// widget data source: untested.
+
+	s := NewCoverageCalculator(reg).Summarize()
+
+	if s.TotalResources != 1 || s.UntestedResources != 0 || s.MissingCheckDestroy != 1 {
+		t.Errorf("resources: got total=%d untested=%d missingCD=%d; want 1/0/1", s.TotalResources, s.UntestedResources, s.MissingCheckDestroy)
+	}
+	if s.TotalDataSources != 1 || s.UntestedDataSources != 1 {
+		t.Errorf("data sources: got total=%d untested=%d; want 1/1", s.TotalDataSources, s.UntestedDataSources)
+	}
+	if s.TotalActions != 1 || s.UntestedActions != 0 {
+		t.Errorf("actions: got total=%d untested=%d; want 1/0", s.TotalActions, s.UntestedActions)
+	}
+	// The plan-check-only action must count as covered, not missing state checks.
+	if s.MissingStateChecks != 0 {
+		t.Errorf("actions missingStateChecks = %d; want 0 (a ConfigPlanChecks-only action has a state/plan check)", s.MissingStateChecks)
+	}
+}

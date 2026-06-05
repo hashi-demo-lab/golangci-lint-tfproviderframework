@@ -15,6 +15,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/example/tfprovidertest"
+	tfanalysis "github.com/example/tfprovidertest/internal/analysis"
 	"github.com/example/tfprovidertest/internal/discovery"
 	"github.com/example/tfprovidertest/internal/registry"
 	"github.com/example/tfprovidertest/pkg/config"
@@ -504,39 +505,31 @@ func buildActionReport(reg *registry.ResourceRegistry, info *registry.ResourceIn
 func outputReportJSON(reg *registry.ResourceRegistry, resources, dataSources, actions []*registry.ResourceInfo, orphans []*registry.TestFunctionInfo) {
 	data := ReportData{}
 
-	// Build resource reports
+	// Summary counts come from the single shared computation so the JSON and
+	// table renderers cannot disagree.
+	summary := tfanalysis.NewCoverageCalculator(reg).Summarize()
+	data.Summary = ReportSummary{
+		TotalResources:      summary.TotalResources,
+		UntestedResources:   summary.UntestedResources,
+		MissingCheckDestroy: summary.MissingCheckDestroy,
+		TotalDataSources:    summary.TotalDataSources,
+		UntestedDataSources: summary.UntestedDataSources,
+		TotalActions:        summary.TotalActions,
+		UntestedActions:     summary.UntestedActions,
+		MissingStateChecks:  summary.MissingStateChecks,
+		OrphanTests:         len(orphans),
+	}
+
+	// Build per-item detail reports.
 	for _, info := range resources {
-		report := buildResourceReport(reg, info)
-		data.Resources = append(data.Resources, report)
-		if report.TestCount == 0 {
-			data.Summary.UntestedResources++
-		} else if !report.HasCheckDestroy {
-			data.Summary.MissingCheckDestroy++
-		}
+		data.Resources = append(data.Resources, buildResourceReport(reg, info))
 	}
-	data.Summary.TotalResources = len(resources)
-
-	// Build data source reports
 	for _, info := range dataSources {
-		report := buildResourceReport(reg, info)
-		data.DataSources = append(data.DataSources, report)
-		if report.TestCount == 0 {
-			data.Summary.UntestedDataSources++
-		}
+		data.DataSources = append(data.DataSources, buildResourceReport(reg, info))
 	}
-	data.Summary.TotalDataSources = len(dataSources)
-
-	// Build action reports
 	for _, info := range actions {
-		report := buildActionReport(reg, info)
-		data.Actions = append(data.Actions, report)
-		if report.TestCount == 0 {
-			data.Summary.UntestedActions++
-		} else if !report.HasCheck && !report.HasConfigStateChecks {
-			data.Summary.MissingStateChecks++
-		}
+		data.Actions = append(data.Actions, buildActionReport(reg, info))
 	}
-	data.Summary.TotalActions = len(actions)
 
 	// Build orphan reports
 	for _, fn := range orphans {
@@ -556,55 +549,14 @@ func outputReportJSON(reg *registry.ResourceRegistry, resources, dataSources, ac
 }
 
 func outputReportTable(reg *registry.ResourceRegistry, resources, dataSources, actions []*registry.ResourceInfo, orphans []*registry.TestFunctionInfo) {
-	// Calculate summary stats first
-	var untestedResources, untestedDataSources, untestedActions int
-	var missingCheckDestroy, missingStateCheck int
-
-	for _, info := range resources {
-		key := registry.KindResource.String() + ":" + info.Name
-		tests := reg.GetResourceTests(key)
-		if len(tests) == 0 {
-			untestedResources++
-		} else {
-			hasCheckDestroy := false
-			for _, t := range tests {
-				if t.HasCheckDestroy {
-					hasCheckDestroy = true
-					break
-				}
-			}
-			if !hasCheckDestroy {
-				missingCheckDestroy++
-			}
-		}
-	}
-
-	for _, info := range dataSources {
-		key := registry.KindDataSource.String() + ":" + info.Name
-		tests := reg.GetResourceTests(key)
-		if len(tests) == 0 {
-			untestedDataSources++
-		}
-	}
-
-	for _, info := range actions {
-		key := registry.KindAction.String() + ":" + info.Name
-		tests := reg.GetResourceTests(key)
-		if len(tests) == 0 {
-			untestedActions++
-		} else {
-			hasStateCheck := false
-			for _, t := range tests {
-				if t.HasStateOrPlanCheck() {
-					hasStateCheck = true
-					break
-				}
-			}
-			if !hasStateCheck {
-				missingStateCheck++
-			}
-		}
-	}
+	// Calculate summary stats via the single shared computation so the table
+	// and JSON renderers cannot disagree.
+	summary := tfanalysis.NewCoverageCalculator(reg).Summarize()
+	untestedResources := summary.UntestedResources
+	untestedDataSources := summary.UntestedDataSources
+	untestedActions := summary.UntestedActions
+	missingCheckDestroy := summary.MissingCheckDestroy
+	missingStateCheck := summary.MissingStateChecks
 
 	// Print header
 	fmt.Println()
