@@ -633,6 +633,59 @@ func (r *RegistryFactoryStrategy) Discover(file *ast.File, fset *token.FileSet, 
 	return resources
 }
 
+// markRegistryFactoryFuncs records the factory function name of every
+// registry.Add{Resource,DataSource,ListResource}Factory call in the file into
+// state.ProcessedFactoryFuncs. ReturnTypeStrategy skips functions already in
+// that set, so those resources are discovered only once — by
+// RegistryFactoryStrategy, under their authoritative Terraform type name —
+// rather than also as a stripped-name duplicate (finding #11 / AWSCC).
+func markRegistryFactoryFuncs(file *ast.File, state *DiscoveryState) {
+	ast.Inspect(file, func(n ast.Node) bool {
+		callExpr, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := callExpr.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		pkgIdent, ok := sel.X.(*ast.Ident)
+		if !ok || pkgIdent.Name != "registry" {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "AddResourceFactory", "AddDataSourceFactory", "AddListResourceFactory":
+			if fn := extractFactoryFuncName(callExpr.Args); fn != "" {
+				state.ProcessedFactoryFuncs[fn] = true
+			}
+		}
+		return true
+	})
+}
+
+// extractFactoryFuncName returns the name of the factory function passed to a
+// registry.Add*Factory call. It handles a direct identifier
+// (AddResourceFactory("name", newFooResource)) and a single-level wrapper call
+// (AddListResourceFactory("name", generic.NewListResource(newFooResource))) by
+// returning the first identifier argument of the wrapper. Returns "" when no
+// factory function identifier can be determined.
+func extractFactoryFuncName(args []ast.Expr) string {
+	if len(args) < 2 {
+		return ""
+	}
+	switch a := args[1].(type) {
+	case *ast.Ident:
+		return a.Name
+	case *ast.CallExpr:
+		for _, inner := range a.Args {
+			if id, ok := inner.(*ast.Ident); ok {
+				return id.Name
+			}
+		}
+	}
+	return ""
+}
+
 // extractResourceName tries to extract the resource name from the factory function.
 // It first looks for Metadata method calls or TypeName assignments, then falls back to function name parsing.
 func (r *ReturnTypeStrategy) extractResourceName(funcDecl *ast.FuncDecl, file *ast.File, kind registry.ResourceKind) string {
@@ -900,6 +953,14 @@ func matchesNestedPattern(name, pattern string) bool {
 func parseResources(file *ast.File, fset *token.FileSet, filePath string) []*registry.ResourceInfo {
 	// Initialize shared discovery state
 	state := NewDiscoveryState()
+
+	// Pre-pass: mark every factory function referenced by a registry.Add*Factory
+	// call as already processed, so ReturnTypeStrategy does not also register a
+	// stripped-name guess (e.g. "analyzer" from newResourceAnalyzer) for a
+	// resource that RegistryFactoryStrategy will register under its authoritative
+	// Terraform type name (e.g. "awscc_accessanalyzer_analyzer"). Without this,
+	// AWSCC-style providers double-count every resource (finding #11).
+	markRegistryFactoryFuncs(file, state)
 
 	// Define strategies in execution order
 	strategies := []DiscoveryStrategy{
