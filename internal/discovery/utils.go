@@ -6,8 +6,8 @@ import (
 	"go/ast"
 	"path/filepath"
 	"strings"
-	"unicode"
 
+	"github.com/example/tfprovidertest/internal/fileutil"
 	"github.com/example/tfprovidertest/internal/registry"
 )
 
@@ -39,13 +39,7 @@ func getReceiverTypeName(recv *ast.FieldList) string {
 // extractResourceName extracts the resource name from a type name.
 // For example: "WidgetResource" -> "widget", "HttpDataSource" -> "http", "JobAction" -> "job"
 func extractResourceName(typeName string) string {
-	// Remove "Resource", "DataSource", or "Action" suffix
-	name := strings.TrimSuffix(typeName, "Resource")
-	name = strings.TrimSuffix(name, "DataSource")
-	name = strings.TrimSuffix(name, "Action")
-
-	// Convert CamelCase to snake_case
-	return toSnakeCase(name)
+	return fileutil.ExtractResourceName(typeName)
 }
 
 // isBaseClassType checks if a type name represents a base/infrastructure class
@@ -74,40 +68,12 @@ func isBaseClassType(typeName string) bool {
 
 // toSnakeCase converts CamelCase to snake_case (e.g., "MyResource" -> "my_resource")
 func toSnakeCase(s string) string {
-	var result strings.Builder
-	runes := []rune(s)
-	for i, r := range runes {
-		if i > 0 && unicode.IsUpper(r) {
-			// Add underscore before uppercase if:
-			// 1. Previous char is lowercase, OR
-			// 2. Next char exists and is lowercase (handles acronyms like "HTTPServer" -> "http_server")
-			prev := runes[i-1]
-			if unicode.IsLower(prev) || (i+1 < len(runes) && unicode.IsLower(runes[i+1])) {
-				result.WriteRune('_')
-			}
-		}
-		result.WriteRune(unicode.ToLower(r))
-	}
-	return result.String()
+	return fileutil.SnakeCase(s)
 }
 
 // toTitleCase converts snake_case to TitleCase (e.g., "my_resource" -> "MyResource")
 func toTitleCase(s string) string {
-	var result strings.Builder
-	capitalizeNext := true
-	for _, r := range s {
-		if r == '_' {
-			capitalizeNext = true
-			continue
-		}
-		if capitalizeNext {
-			result.WriteRune(unicode.ToUpper(r))
-			capitalizeNext = false
-		} else {
-			result.WriteRune(r)
-		}
-	}
-	return result.String()
+	return fileutil.TitleCase(s)
 }
 
 // hasImportStateMethod reports whether the file declares an ImportState method
@@ -319,45 +285,26 @@ func hasRequiresReplace(node ast.Node) bool {
 // Base class files typically contain abstract base classes for resources.
 // They follow naming patterns: base_*.go or base.*.go
 func IsBaseClassFile(filePath string) bool {
-	base := filepath.Base(filePath)
-	return strings.HasPrefix(base, "base_") || strings.HasPrefix(base, "base.")
+	return fileutil.IsBaseClassFile(filePath)
 }
 
 // IsSweeperFile checks if a file is a sweeper file that should be excluded.
 // Sweeper files are test infrastructure files for cleaning up resources after
 // acceptance tests. They follow the naming pattern *_sweeper.go.
 func IsSweeperFile(filePath string) bool {
-	base := filepath.Base(filePath)
-	return strings.HasSuffix(base, "_sweeper.go")
+	return fileutil.IsSweeperFile(filePath)
 }
 
 // IsMigrationFile checks if a file is a state migration file that should be excluded.
 // Migration files are state migration utilities, not production resources. They follow
 // naming patterns: *_migrate.go, *_migration*.go, *_state_upgrader.go
 func IsMigrationFile(filePath string) bool {
-	base := filepath.Base(filePath)
-	return strings.HasSuffix(base, "_migrate.go") ||
-		strings.Contains(base, "_migration") ||
-		strings.HasSuffix(base, "_state_upgrader.go")
+	return fileutil.IsMigrationFile(filePath)
 }
 
 // shouldExcludeFile checks if a file path matches any of the exclude patterns
 func shouldExcludeFile(filePath string, excludePaths []string) bool {
-	for _, pattern := range excludePaths {
-		// Try matching the full path
-		if matched, _ := filepath.Match(pattern, filePath); matched {
-			return true
-		}
-		// Try matching just the base name
-		if matched, _ := filepath.Match(pattern, filepath.Base(filePath)); matched {
-			return true
-		}
-		// Try matching with Contains for patterns like "vendor/"
-		if strings.Contains(filePath, strings.TrimSuffix(pattern, "/")) {
-			return true
-		}
-	}
-	return false
+	return fileutil.ShouldExcludeFile(filePath, excludePaths)
 }
 
 // ExtractResourceNameFromPath extracts resource name from file path.
